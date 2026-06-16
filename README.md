@@ -1,0 +1,101 @@
+# Robinhood Agentic Trading
+
+An autonomous US-equities trading agent. On a cron schedule, Claude (via the
+Anthropic API) reviews the account and market data through the Robinhood trading
+MCP, and decides whether to place trades — inside **hard, code-enforced safety
+rails**. It defaults to **paper (dry-run) mode** and only places real orders when
+you explicitly switch it to live.
+
+> ⚠️ This trades real money when live. Read [Safety](#safety) before enabling it.
+> The author of this software does not run it or place trades for you — funding
+> the account and flipping `LIVE=true` is your decision, and PDT rules, taxes,
+> and Robinhood's API terms are your responsibility.
+
+## How it works
+
+One cron tick = one run:
+
+```
+cron → python -m rhagent.runner
+        ├─ load config + guardrail limits
+        ├─ check HALT file + daily-loss kill-switch → abort if tripped
+        ├─ Claude reasons over account + quotes (read via the RH MCP)
+        │     and proposes orders by calling place_order
+        ├─ every proposed order is validated in code (guardrails.py)
+        ├─ DRY-RUN: log the intended order, place nothing
+        │  LIVE:    place via the broker, record the fill
+        └─ append every decision to journal/runs.jsonl
+```
+
+**Claude never calls the broker's order API directly.** Its `place_order` tool
+is dispatched to `OrderExecutor`, which runs the guardrails first. The model
+cannot talk its way past a hard cap — the cap is enforced in code.
+
+## Layout
+
+| File | Role |
+|------|------|
+| `src/rhagent/guardrails.py` | Pure, exhaustively-tested safety checks. The core. |
+| `src/rhagent/executor.py` | The single funnel every order passes through. |
+| `src/rhagent/broker.py` | The only code that touches the broker (`MockBroker` / `McpBroker`). |
+| `src/rhagent/mcp_session.py` | Connects to the Robinhood MCP (streamable HTTP). |
+| `src/rhagent/agent.py` | The Claude decision loop (manual agentic loop). |
+| `src/rhagent/runner.py` | Orchestrates one cron tick. |
+| `src/rhagent/journal.py` | Append-only JSONL audit trail. |
+| `config.yaml` | Guardrail limits + model config. |
+
+## Setup
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp .env.example .env   # then fill in ANTHROPIC_API_KEY
+```
+
+## Running
+
+```bash
+# Dry-run (default). With no Robinhood MCP token set, uses a simulated account.
+.venv/bin/python -m rhagent.runner
+```
+
+Schedule it (example: every 30 min during market hours, Mon–Fri):
+
+```cron
+*/30 13-20 * * 1-5  cd /path/to/project && .venv/bin/python -m rhagent.runner >> cron.log 2>&1
+```
+
+### Going live
+
+1. **Authenticate the Robinhood MCP.** In an interactive `claude` session in
+   this directory, run `/mcp`, pick `robinhood-trading`, and complete the OAuth
+   flow. Then put the resulting bearer token in `.env` as `ROBINHOOD_MCP_TOKEN`.
+   (Confirm the MCP's actual read/order tool names against its `list_tools` and
+   adjust the mapping in `broker.py` if they differ from the placeholders.)
+2. **Watch it on paper first.** Let it run in dry-run and review
+   `journal/runs.jsonl` until you trust its behavior.
+3. **Flip the switch.** Set `LIVE=true` in your environment. Only the literal
+   string `true` enables live trading; anything else stays paper.
+
+## Safety
+
+- **Dry-run by default.** `LIVE` must equal `true` to place real orders.
+- **Per-trade cap, total-deployed cap, max new positions/run, max orders/run** —
+  all in `config.yaml`, all enforced in `guardrails.py`.
+- **Daily realized-loss kill switch** halts trading for the day once breached.
+- **`HALT` file** — `touch HALT` in the project root to stop all trading
+  immediately on the next run.
+- **US equities only** — non-equity symbols are rejected.
+
+## Tests
+
+```bash
+.venv/bin/python -m pytest
+```
+
+The guardrails are covered exhaustively (every rejection path), the broker is
+mocked, and an end-to-end dry-run smoke test asserts zero orders are placed.
+
+## Out of scope (v1)
+
+Options, crypto, shorting, backtesting, real-time streaming, web UI.

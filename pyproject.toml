@@ -1,0 +1,9 @@
+[project]
+name = "rhagent"
+version = "0.1.0"
+description = "Autonomous US-equities trading agent (cron + Claude Agent loop) with hard safety rails."
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

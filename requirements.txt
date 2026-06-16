@@ -1,0 +1,8 @@
+anthropic>=0.69
+PyYAML>=6.0
+python-dotenv>=1.0
+# MCP client for the Robinhood read tools (streamable HTTP transport).
+mcp>=1.2
+
+# Dev
+pytest>=8.0

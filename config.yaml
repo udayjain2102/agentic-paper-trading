@@ -1,0 +1,26 @@
+# Guardrail limits. Conservative defaults — tighten before going live.
+# All dollar amounts are USD.
+
+limits:
+  # Max dollars committed to any single order.
+  per_trade_max_usd: 250
+
+  # Max total dollars deployed across all positions. New buys that would push
+  # total position value above this are rejected.
+  total_deployed_max_usd: 2000
+
+  # Max number of *new* positions (symbols not already held) opened per run.
+  max_new_positions_per_run: 2
+
+  # Max number of orders (buys + sells) placed per run. Rate limit.
+  max_orders_per_run: 5
+
+  # Daily realized-loss kill switch. If realized P&L for the day is at or below
+  # negative this value, the agent halts for the rest of the day.
+  daily_loss_limit_usd: 200
+
+# Model configuration for the decision agent.
+agent:
+  model: claude-opus-4-8
+  effort: high
+  max_tokens: 16000

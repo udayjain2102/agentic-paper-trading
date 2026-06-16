@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+.pytest_cache/
+.DS_Store
+
+# Runtime state (never commit account data / audit trail)
+journal/
+state/
+HALT
