@@ -1,4 +1,6 @@
 anthropic>=0.69
+# Decision agent talks to NVIDIA's OpenAI-compatible API (integrate.api.nvidia.com).
+openai>=1.0
 PyYAML>=6.0
 python-dotenv>=1.0
 # MCP client for the Robinhood read tools (streamable HTTP transport).

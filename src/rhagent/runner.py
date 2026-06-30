@@ -10,6 +10,7 @@ uses the in-memory mock broker so you can exercise the full path on paper.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -65,15 +66,31 @@ def run() -> int:
             dry_run=cfg.dry_run,
         )
 
-        import anthropic
+        if os.environ.get("MOCK_AGENT", "").strip().lower() == "true":
+            # No API key needed: a scripted decision still flows through the
+            # executor + guardrails, so the full dry-run pipeline is exercised.
+            summary = agent_mod.run_scripted_session(
+                broker=broker,
+                executor=executor,
+            )
+        else:
+            from openai import OpenAI
 
-        client = anthropic.Anthropic()
-        summary = agent_mod.run_session(
-            client=client,
-            broker=broker,
-            executor=executor,
-            agent_cfg=cfg.agent,
-        )
+            if not cfg.nvidia_api_key:
+                raise SystemExit(
+                    "NVIDIA_API_KEY is not set. Put it in .env, or run with "
+                    "MOCK_AGENT=true to exercise the pipeline without an LLM."
+                )
+            client = OpenAI(
+                api_key=cfg.nvidia_api_key,
+                base_url=cfg.nvidia_base_url,
+            )
+            summary = agent_mod.run_session(
+                client=client,
+                broker=broker,
+                executor=executor,
+                agent_cfg=cfg.agent,
+            )
         journal.record("run_end", mode=mode, summary=summary)
         print(f"[{mode}] Run complete.\n{summary}")
         return 0

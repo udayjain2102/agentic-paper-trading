@@ -25,7 +25,7 @@ when explicitly switched to live.
 
 ## Architecture (single run = one cron tick)
 
-```
+```javascript
 cron → runner.py
         ├─ load config + guardrail limits (env / config.yaml)
         ├─ check halt file + daily-loss kill-switch → abort if tripped
@@ -76,7 +76,7 @@ tools (quotes, positions, account) are exposed to Claude directly via the MCP.
 - No database for v1. Positions and buying power are read live from Robinhood
   each run. Local state is limited to:
   - the append-only JSONL journal (audit trail), and
-  - a small daily P&L tracker file backing the kill-switch.
+  - a small daily P\&L tracker file backing the kill-switch.
 
 ## Testing
 

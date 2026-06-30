@@ -20,7 +20,8 @@ limits:
   daily_loss_limit_usd: 200
 
 # Model configuration for the decision agent.
+# Served by NVIDIA's OpenAI-compatible API (integrate.api.nvidia.com).
 agent:
-  model: claude-opus-4-8
-  effort: high
+  model: nvidia/llama-3.3-nemotron-super-49b-v1.5
+  effort: high  # unused by the NVIDIA backend; kept for config compatibility
   max_tokens: 16000

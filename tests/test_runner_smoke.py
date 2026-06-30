@@ -1,10 +1,11 @@
 """End-to-end dry-run smoke test.
 
-Drives the real agent loop with a stubbed Anthropic client (no network), where
-the model proposes a buy. Asserts the full path runs and — because we're in
-dry-run — nothing reaches the broker.
+Drives the real agent loop with a stubbed OpenAI/NVIDIA client (no network),
+where the model proposes a buy. Asserts the full path runs and — because we're
+in dry-run — nothing reaches the broker.
 """
 
+import json
 from types import SimpleNamespace
 
 from rhagent.agent import run_session
@@ -15,38 +16,38 @@ from rhagent.guardrails import Limits, RunState
 from rhagent.journal import Journal
 
 
-class _Block(SimpleNamespace):
-    pass
+class _FakeMessage:
+    """Mimics openai's ChatCompletionMessage (content, tool_calls, model_dump)."""
+
+    def __init__(self, content=None, tool_calls=None):
+        self.content = content
+        self.tool_calls = tool_calls or []
+
+    def model_dump(self, **_kwargs):
+        return {"role": "assistant", "content": self.content}
 
 
-class _FakeStream:
-    def __init__(self, message):
-        self._message = message
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def get_final_message(self):
-        return self._message
+def _tool_call(call_id, name, args):
+    return SimpleNamespace(
+        id=call_id,
+        function=SimpleNamespace(name=name, arguments=json.dumps(args)),
+    )
 
 
-class _FakeMessages:
+class _FakeCompletions:
     def __init__(self, scripted):
         self._scripted = scripted
         self.calls = 0
 
-    def stream(self, **kwargs):
+    def create(self, **kwargs):
         msg = self._scripted[self.calls]
         self.calls += 1
-        return _FakeStream(msg)
+        return SimpleNamespace(choices=[SimpleNamespace(message=msg)])
 
 
 class _FakeClient:
     def __init__(self, scripted):
-        self.messages = _FakeMessages(scripted)
+        self.chat = SimpleNamespace(completions=_FakeCompletions(scripted))
 
 
 def test_full_dry_run_places_nothing(tmp_path):
@@ -69,21 +70,16 @@ def test_full_dry_run_places_nothing(tmp_path):
 
     # Turn 1: model calls place_order. Turn 2: model finishes with text.
     scripted = [
-        SimpleNamespace(
-            stop_reason="tool_use",
-            content=[
-                _Block(
-                    type="tool_use",
-                    name="place_order",
-                    id="t1",
-                    input={"symbol": "AAPL", "side": "buy", "notional_usd": 100},
+        _FakeMessage(
+            tool_calls=[
+                _tool_call(
+                    "t1",
+                    "place_order",
+                    {"symbol": "AAPL", "side": "buy", "notional_usd": 100},
                 )
             ],
         ),
-        SimpleNamespace(
-            stop_reason="end_turn",
-            content=[_Block(type="text", text="Placed a starter position in AAPL.")],
-        ),
+        _FakeMessage(content="Placed a starter position in AAPL."),
     ]
     client = _FakeClient(scripted)
 
@@ -91,7 +87,11 @@ def test_full_dry_run_places_nothing(tmp_path):
         client=client,
         broker=broker,
         executor=executor,
-        agent_cfg=AgentConfig(model="claude-opus-4-8", effort="high", max_tokens=16000),
+        agent_cfg=AgentConfig(
+            model="nvidia/llama-3.3-nemotron-super-49b-v1.5",
+            effort="high",
+            max_tokens=16000,
+        ),
     )
 
     assert "AAPL" in summary

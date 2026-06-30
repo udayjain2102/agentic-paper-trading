@@ -1,6 +1,9 @@
-"""The decision agent: Claude reasons over the portfolio and proposes trades.
+"""The decision agent: an LLM reasons over the portfolio and proposes trades.
 
-We use a manual agentic loop (not the auto tool-runner) on purpose: it gives us
+The model is served by NVIDIA's OpenAI-compatible API (integrate.api.nvidia.com),
+driven through the ``openai`` SDK.
+
+We use a manual agentic loop (not an auto tool-runner) on purpose: it gives us
 a code-controlled choke point where the ``place_order`` tool is dispatched to
 ``OrderExecutor`` — which enforces the guardrails before anything reaches the
 broker. The model decides; the code decides what's allowed.
@@ -8,9 +11,10 @@ broker. The model decides; the code decides what's allowed.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List
 
-import anthropic
+from openai import OpenAI
 
 from .broker import Broker
 from .config import AgentConfig
@@ -78,6 +82,20 @@ TOOLS: List[Dict[str, Any]] = [
 ]
 
 
+# OpenAI/NVIDIA tool-calling schema, derived from the single source above.
+OPENAI_TOOLS: List[Dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": t["name"],
+            "description": t["description"],
+            "parameters": t["input_schema"],
+        },
+    }
+    for t in TOOLS
+]
+
+
 def _dispatch(name: str, args: Dict[str, Any], broker: Broker, executor: OrderExecutor) -> str:
     if name == "get_account":
         a = broker.get_account()
@@ -97,54 +115,79 @@ def _dispatch(name: str, args: Dict[str, Any], broker: Broker, executor: OrderEx
     return f"Unknown tool: {name}"
 
 
+def run_scripted_session(
+    *,
+    broker: Broker,
+    executor: OrderExecutor,
+    **_ignored: Any,
+) -> str:
+    """A no-API stand-in for ``run_session``.
+
+    Walks the same tool-dispatch path the real Claude loop would (the
+    ``place_order`` calls still go through ``OrderExecutor`` and the guardrails),
+    but the "decision" is a fixed script instead of a model call. Lets you
+    exercise the full executor/journal/dry-run pipeline with no ANTHROPIC_API_KEY.
+    The script deliberately includes one order that should clear the per-trade
+    cap and one that should be rejected by it, so you can see both paths.
+    """
+    acct = _dispatch("get_account", {}, broker, executor)
+    lines = [f"[scripted] get_account -> {acct}"]
+
+    plan = [
+        ("get_quote", {"symbol": "AAPL"}),
+        ("place_order", {"symbol": "AAPL", "side": "buy", "notional_usd": 250}),
+        ("place_order", {"symbol": "AAPL", "side": "buy", "notional_usd": 10_000}),
+    ]
+    for name, args in plan:
+        out = _dispatch(name, args, broker, executor)
+        lines.append(f"[scripted] {name}({args}) -> {out}")
+
+    return "\n".join(lines)
+
+
 def run_session(
     *,
-    client: anthropic.Anthropic,
+    client: OpenAI,
     broker: Broker,
     executor: OrderExecutor,
     agent_cfg: AgentConfig,
     max_turns: int = 12,
 ) -> str:
-    """Run the agent loop for one cron tick. Returns Claude's final text."""
+    """Run the agent loop for one cron tick. Returns the model's final text."""
     messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM_PROMPT},
         {
             "role": "user",
             "content": "Review the account and decide whether to trade right now.",
-        }
+        },
     ]
 
     final_text = ""
     for _ in range(max_turns):
-        with client.messages.stream(
+        response = client.chat.completions.create(
             model=agent_cfg.model,
             max_tokens=agent_cfg.max_tokens,
-            thinking={"type": "adaptive"},
-            output_config={"effort": agent_cfg.effort},
-            system=SYSTEM_PROMPT,
-            tools=TOOLS,
             messages=messages,
-        ) as stream:
-            response = stream.get_final_message()
-
-        final_text = "".join(
-            b.text for b in response.content if b.type == "text"
+            tools=OPENAI_TOOLS,
+            tool_choice="auto",
         )
+        msg = response.choices[0].message
+        final_text = msg.content or ""
 
-        if response.stop_reason != "tool_use":
+        if not msg.tool_calls:
             break
 
-        messages.append({"role": "assistant", "content": response.content})
-        tool_results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                output = _dispatch(block.name, block.input, broker, executor)
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": output,
-                    }
-                )
-        messages.append({"role": "user", "content": tool_results})
+        # Echo the assistant turn (with its tool_calls) back into the history.
+        messages.append(msg.model_dump(exclude_none=True))
+        for call in msg.tool_calls:
+            args = json.loads(call.function.arguments or "{}")
+            output = _dispatch(call.function.name, args, broker, executor)
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": output,
+                }
+            )
 
     return final_text
