@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from rhagent.broker import MockBroker
 from rhagent.config import StrategyConfig
@@ -86,3 +87,25 @@ def test_strategy_mode_pairs_dry_run_places_nothing(tmp_path):
     )
     assert broker.placed == []  # dry-run: nothing reaches the broker
     assert isinstance(summary, str) and summary
+
+
+def test_strategy_mode_pairs_wrong_universe_size_raises_systemexit(tmp_path):
+    broker = MockBroker(quotes={"NVDA": 100.0})
+    journal = Journal(tmp_path / "runs.jsonl")
+    ex = OrderExecutor(
+        broker=broker,
+        account=broker.get_account(),
+        limits=_limits(),
+        run_state=RunState(),
+        journal=journal,
+        dry_run=True,
+    )
+    cfg = _Cfg(StrategyConfig(name="pairs", params={}, universe=["NVDA"]))
+    cfg.limits = _limits()
+
+    def fake_fetch(symbols, start, end):
+        # The guard should fire before any fetch happens; data need not be valid.
+        return {}
+
+    with pytest.raises(SystemExit):
+        runner.run_strategy_mode(cfg, broker, ex, journal, fetch=fake_fetch)

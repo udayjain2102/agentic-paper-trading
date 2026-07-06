@@ -48,6 +48,12 @@ def run_strategy_mode(cfg, broker, executor, journal, *, fetch=None) -> str:
     from .data import get_bars
 
     sc = cfg.strategy
+
+    if sc.name == "pairs" and len(sc.universe) != 2:
+        raise SystemExit(
+            f"pairs strategy requires exactly 2 symbols in universe, got {sc.universe!r}"
+        )
+
     end = date.today()
     start = end - timedelta(days=200)
     bars = get_bars(sc.universe, start.isoformat(), end.isoformat(), fetch=fetch)
