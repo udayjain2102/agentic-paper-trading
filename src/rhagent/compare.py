@@ -86,7 +86,11 @@ def main() -> int:
     if winner == "pairs":
         a, b = best_pair(bars)
         print(f"Chosen pair: {a}/{b}. Long-only trades only the cheap leg.")
-        print("Note: pairs is not yet supported in live strategy mode.")
+        print("Add this to config.yaml:\n")
+        print("strategy:")
+        print("  name: pairs")
+        print("  params: {}")
+        print(f"  universe: [{a}, {b}]")
     else:
         print("Add this to config.yaml:\n")
         print("strategy:")

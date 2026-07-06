@@ -51,3 +51,38 @@ def test_strategy_mode_dry_run_places_nothing(tmp_path):
     )
     assert broker.placed == []  # dry-run: nothing reaches the broker
     assert "AAPL" in summary  # the buy was proposed and logged
+
+
+def test_strategy_mode_pairs_dry_run_places_nothing(tmp_path):
+    broker = MockBroker(quotes={"AAPL": 100.0, "MSFT": 100.0})
+    journal = Journal(tmp_path / "runs.jsonl")
+    ex = OrderExecutor(
+        broker=broker,
+        account=broker.get_account(),
+        limits=_limits(),
+        run_state=RunState(),
+        journal=journal,
+        dry_run=True,
+    )
+    cfg = _Cfg(
+        StrategyConfig(name="pairs", params={}, universe=["AAPL", "MSFT"])
+    )
+    cfg.limits = _limits()
+
+    def fake_fetch(symbols, start, end):
+        out = {}
+        for i, sym in enumerate(symbols):
+            base = 100 - (10 if i == 0 else 0)
+            out[sym] = [
+                {"date": f"2025-{(j // 28) + 1:02d}-{(j % 28) + 1:02d}",
+                 "open": 0, "high": 0, "low": 0,
+                 "close": base if j == 49 else 100, "volume": 0}
+                for j in range(50)
+            ]
+        return out
+
+    summary = runner.run_strategy_mode(
+        cfg, broker, ex, journal, fetch=fake_fetch
+    )
+    assert broker.placed == []  # dry-run: nothing reaches the broker
+    assert isinstance(summary, str) and summary
