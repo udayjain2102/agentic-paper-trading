@@ -43,6 +43,11 @@ cannot talk its way past a hard cap — the cap is enforced in code.
 | `src/rhagent/runner.py` | Orchestrates one cron tick. |
 | `src/rhagent/journal.py` | Append-only JSONL audit trail. |
 | `config.yaml` | Guardrail limits + model config. |
+| `src/rhagent/strategies/` | Rule-based strategies (mean-reversion, momentum, linreg, pairs). |
+| `src/rhagent/backtest.py` | Offline backtest engine (equity curve + metrics). |
+| `src/rhagent/data.py` | Historical bars via the RH MCP, cached to `data/*.csv`. |
+| `src/rhagent/compare.py` | Rank all strategies by total return, pick the winner. |
+| `src/rhagent/strategy_runner.py` | Turns a strategy's target positions into orders. |
 
 ## Setup
 
@@ -77,6 +82,24 @@ Schedule it (example: every 30 min during market hours, Mon–Fri):
 3. **Flip the switch.** Set `LIVE=true` in your environment. Only the literal
    string `true` enables live trading; anything else stays paper.
 
+## Backtesting & strategy mode
+
+Rank the four strategies over ~1yr of daily bars and pick the best by total return:
+
+```bash
+.venv/bin/python -m rhagent.compare
+```
+
+It caches price data under `data/` (gitignored). Paste the printed `strategy:`
+block into `config.yaml`, then run the winner through the normal guardrails:
+
+```bash
+STRATEGY_MODE=true .venv/bin/python -m rhagent.runner
+```
+
+Strategy mode is dry-run unless `LIVE=true`, and every order it emits passes
+through the same `OrderExecutor`/guardrails as the LLM path.
+
 ## Safety
 
 - **Dry-run by default.** `LIVE` must equal `true` to place real orders.
@@ -98,4 +121,4 @@ mocked, and an end-to-end dry-run smoke test asserts zero orders are placed.
 
 ## Out of scope (v1)
 
-Options, crypto, shorting, backtesting, real-time streaming, web UI.
+Options, crypto, shorting, real-time streaming, web UI.
