@@ -22,6 +22,13 @@ class AgentConfig:
 
 
 @dataclass(frozen=True)
+class StrategyConfig:
+    name: str
+    params: dict
+    universe: list
+
+
+@dataclass(frozen=True)
 class Config:
     limits: Limits
     agent: AgentConfig
@@ -30,6 +37,7 @@ class Config:
     mcp_token: str
     nvidia_api_key: str
     nvidia_base_url: str
+    strategy: "StrategyConfig | None" = None
 
 
 def is_live() -> bool:
@@ -41,6 +49,9 @@ def load(path: str | Path = "config.yaml") -> Config:
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     limits = Limits(**raw["limits"])
     agent = AgentConfig(**raw["agent"])
+    strategy = (
+        StrategyConfig(**raw["strategy"]) if raw.get("strategy") else None
+    )
     return Config(
         limits=limits,
         agent=agent,
@@ -51,4 +62,5 @@ def load(path: str | Path = "config.yaml") -> Config:
         nvidia_base_url=os.environ.get(
             "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"
         ),
+        strategy=strategy,
     )

@@ -25,3 +25,12 @@ agent:
   model: nvidia/llama-3.3-nemotron-super-49b-v1.5
   effort: high  # unused by the NVIDIA backend; kept for config compatibility
   max_tokens: 16000
+
+# Winning strategy, chosen by `python -m rhagent.compare` (backtest over ~1yr of
+# daily bars, ranked by total return). This block is only used when the runner is
+# invoked with STRATEGY_MODE=true; the default (no env var) keeps the LLM agent.
+# Backtest 2026-07-06: pairs (NVDA/SPY) had the highest total return (~33%).
+strategy:
+  name: pairs
+  params: {}
+  universe: [NVDA, SPY]

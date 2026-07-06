@@ -6,5 +6,9 @@ python-dotenv>=1.0
 # MCP client for the Robinhood read tools (streamable HTTP transport).
 mcp>=1.2
 
+# Backtesting: strategies + engine work on price DataFrames.
+pandas>=2.0
+numpy>=1.26
+
 # Dev
 pytest>=8.0
