@@ -22,9 +22,33 @@ def test_warmup_is_flat():
     assert (pos == 0).all()
 
 
+def _noisy_mean_reverting_prices(n=120, seed=0):
+    # Mean-reverting series (negative autocorrelation in returns) so that the
+    # rolling OLS prediction sign genuinely flips over time, unlike a smooth
+    # compounding uptrend where the sign stays positive regardless of how the
+    # betas are corrupted. This is what gives the no-lookahead prefix check
+    # its teeth: a future-leaking fit would shift the fitted betas and change
+    # some of the earlier predicted signs.
+    rng = np.random.default_rng(seed)
+    prev_ret = 0.0
+    close = [100.0]
+    for _ in range(n):
+        r = rng.normal(0, 0.01) - 0.5 * prev_ret
+        close.append(close[-1] * (1 + r))
+        prev_ret = r
+    return close[1:]
+
+
 def test_no_lookahead_appending_future_bars_does_not_change_past():
-    prices = [100 * (1.01 ** i) for i in range(80)]
+    prices = _noisy_mean_reverting_prices(n=120, seed=0)
     s = LinReg(min_train=40)
     short = s.positions(_bars(prices))
-    longer = s.positions(_bars(prices + [200, 150, 300]))
+    longer = s.positions(_bars(prices + [95.0, 130.0, 80.0]))
+
+    # Sanity: the fixture must actually produce varying signals, otherwise
+    # the prefix-equality assertion below would be trivially satisfied even
+    # by an implementation that leaks the future (e.g. fits OLS once on the
+    # entire series) as long as predicted signs never change.
+    assert short.nunique() > 1
+
     assert list(short.values) == list(longer.iloc[: len(short)].values)
