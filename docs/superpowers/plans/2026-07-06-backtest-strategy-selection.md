@@ -923,25 +923,31 @@ def mcp_fetch(symbols, start, end) -> dict[str, list[dict]]:
 def _normalize(data: dict, symbols) -> dict[str, list[dict]]:
     """Map the RH historicals payload to per-symbol normalized row lists.
 
-    NOTE: upstream field names are placeholders — confirm against the live server
-    and adjust here only. Expected upstream: a list of per-symbol result objects,
-    each with a list of bars carrying a begin timestamp and OHLCV prices.
+    Confirmed live shape (2026-07-06):
+        {"data": {"results": [
+            {"symbol": "AAPL", "interval": "day", "bars": [
+                {"begins_at": "2026-06-22T00:00:00Z",
+                 "open_price": "297.31", "close_price": "297.01",
+                 "high_price": "302.42", "low_price": "296.76",
+                 "volume": 44879914, "session": "reg"}, ...]}]},
+         "guide": "..."}
+    Prices are strings; results are nested under the top-level "data" key.
     """
     out: dict[str, list[dict]] = {s: [] for s in symbols}
-    results = data.get("results") or data.get("data") or []
-    for entry in results:
+    payload = data.get("data", data)  # tolerate either wrapped or bare
+    for entry in payload.get("results", []) or []:
         sym = entry.get("symbol")
         if sym not in out:
             continue
-        for bar in entry.get("historicals", []) or entry.get("bars", []):
+        for bar in entry.get("bars", []) or []:
             out[sym].append(
                 {
-                    "date": (bar.get("begins_at") or bar.get("date"))[:10],
-                    "open": float(bar.get("open_price", bar.get("open", 0)) or 0),
-                    "high": float(bar.get("high_price", bar.get("high", 0)) or 0),
-                    "low": float(bar.get("low_price", bar.get("low", 0)) or 0),
-                    "close": float(bar.get("close_price", bar.get("close", 0)) or 0),
-                    "volume": float(bar.get("volume", 0) or 0),
+                    "date": bar["begins_at"][:10],
+                    "open": float(bar["open_price"]),
+                    "high": float(bar["high_price"]),
+                    "low": float(bar["low_price"]),
+                    "close": float(bar["close_price"]),
+                    "volume": float(bar["volume"]),
                 }
             )
     return out
