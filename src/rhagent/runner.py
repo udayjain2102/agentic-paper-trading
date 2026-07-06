@@ -41,6 +41,33 @@ def _make_broker(cfg: Config):
     return broker, lambda: None
 
 
+def run_strategy_mode(cfg, broker, executor, journal, *, fetch=None) -> str:
+    """Trade the configured winning strategy through the executor/guardrails."""
+    from datetime import date, timedelta
+
+    from .data import get_bars
+    from .strategies import build
+    from .strategy_runner import target_orders
+
+    sc = cfg.strategy
+    strategy = build(sc.name, sc.params)
+    end = date.today()
+    start = end - timedelta(days=200)
+    bars = get_bars(sc.universe, start.isoformat(), end.isoformat(), fetch=fetch)
+
+    held = set(broker.get_account().positions)
+    per_trade = getattr(cfg, "limits", None)
+    notional = per_trade.per_trade_max_usd if per_trade else 250
+    orders = target_orders(strategy, bars, held, notional)
+
+    lines = [f"[strategy:{sc.name}] {len(orders)} order(s) proposed"]
+    for symbol, side, amount in orders:
+        result = executor.execute(symbol, side, amount)
+        lines.append(f"{symbol} {side} {amount} -> {result.as_tool_text()}")
+    journal.record("strategy_run", name=sc.name, n_orders=len(orders))
+    return "\n".join(lines)
+
+
 def run() -> int:
     cfg = load()
     journal = Journal()
@@ -65,6 +92,17 @@ def run() -> int:
             journal=journal,
             dry_run=cfg.dry_run,
         )
+
+        if os.environ.get("STRATEGY_MODE", "").strip().lower() == "true":
+            if cfg.strategy is None:
+                raise SystemExit(
+                    "STRATEGY_MODE=true but no `strategy:` block in config.yaml. "
+                    "Run `python -m rhagent.compare` to pick one."
+                )
+            summary = run_strategy_mode(cfg, broker, executor, journal)
+            journal.record("run_end", mode=mode, summary=summary)
+            print(f"[{mode}] Run complete.\n{summary}")
+            return 0
 
         if os.environ.get("MOCK_AGENT", "").strip().lower() == "true":
             # No API key needed: a scripted decision still flows through the

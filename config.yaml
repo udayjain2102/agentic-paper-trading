@@ -25,3 +25,11 @@ agent:
   model: nvidia/llama-3.3-nemotron-super-49b-v1.5
   effort: high  # unused by the NVIDIA backend; kept for config compatibility
   max_tokens: 16000
+
+# Winning strategy, filled in by `python -m rhagent.compare`. When present and
+# STRATEGY_MODE=true, the runner trades this strategy through the same guardrails
+# as the LLM path. Leave commented to keep the default LLM-agent behavior.
+# strategy:
+#   name: momentum
+#   params: {}
+#   universe: [AAPL, MSFT, NVDA, SPY]
