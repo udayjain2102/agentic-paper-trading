@@ -29,6 +29,9 @@ def rows_to_df(rows: list[dict]) -> pd.DataFrame:
 def _read_csv(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path, parse_dates=["date"]).set_index("date").sort_index()
     df.index.name = "date"
+    for col in _COLUMNS:
+        if col in df.columns:
+            df[col] = df[col].astype(float)
     return df
 
 

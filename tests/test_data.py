@@ -32,3 +32,28 @@ def test_get_bars_fetches_then_caches(tmp_path):
     out2 = get_bars(["AAPL"], "2025-01-01", "2025-02-01", fetch=fake_fetch, cache_dir=tmp_path)
     assert out2["AAPL"]["close"].iloc[-1] == 191.0
     assert calls == [["AAPL"]]  # only the first call fetched
+
+
+def test_get_bars_cache_read_preserves_float_dtype(tmp_path):
+    """OHLCV columns read back from a cached CSV must be float, mirroring the
+    dtype contract enforced by rows_to_df on the write path.
+
+    Pre-seed a cache CSV with integer-looking values (no decimal points) — the
+    kind of file that pandas' dtype inference alone would read back as int64,
+    silently violating the module's float-OHLCV contract. This bypasses
+    rows_to_df's float cast on write, isolating the read-path guarantee.
+    """
+    csv_path = tmp_path / "AAPL.csv"
+    csv_path.write_text(
+        "date,open,high,low,close,volume\n"
+        "2025-01-02,190,191,189,190,1000000\n"
+        "2025-01-03,191,193,190,192,2000000\n"
+    )
+
+    def fake_fetch(symbols, start, end):
+        raise AssertionError("fetch should not be called; cache file already exists")
+
+    out = get_bars(["AAPL"], "2025-01-01", "2025-02-01", fetch=fake_fetch, cache_dir=tmp_path)
+    df = out["AAPL"]
+    for col in ["open", "high", "low", "close", "volume"]:
+        assert str(df[col].dtype) == "float64", f"{col} dtype drifted: {df[col].dtype}"
