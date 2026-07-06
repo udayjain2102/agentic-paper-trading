@@ -25,3 +25,15 @@ def test_no_order_when_already_in_desired_state():
     bars = {"AAPL": _bars([100 + i for i in range(50)])}  # long, already held
     orders = target_orders(Momentum(lookback=40), bars, held={"AAPL"}, notional_usd=250)
     assert orders == []
+
+
+def test_sell_liquidates_actual_held_value_not_fixed_notional():
+    bars = {"AAPL": _bars([100 - i for i in range(50)])}  # downtrend -> flat
+    orders = target_orders(
+        Momentum(lookback=40),
+        bars,
+        held={"AAPL"},
+        notional_usd=250,
+        held_values={"AAPL": 180.0},
+    )
+    assert orders == [("AAPL", "sell", 180.0)]

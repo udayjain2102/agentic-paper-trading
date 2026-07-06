@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import FrozenSet, Optional, Tuple
+from typing import FrozenSet, Mapping, Optional, Tuple
 
 # A plain US equity ticker: 1-5 uppercase letters. Rejects crypto pairs
 # ("BTC-USD"), option symbols, and anything with digits or punctuation.
@@ -39,6 +39,11 @@ class Account:
     total_position_value_usd: float
     positions: FrozenSet[str]
     realized_pnl_today_usd: float
+    # Optional symbol -> current position value, for callers (e.g. strategy
+    # mode) that need to liquidate the actual held amount rather than a fixed
+    # notional. Additive field with a safe default so existing construction
+    # sites are unaffected.
+    position_values: Mapping[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

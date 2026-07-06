@@ -55,10 +55,12 @@ def run_strategy_mode(cfg, broker, executor, journal, *, fetch=None) -> str:
     start = end - timedelta(days=200)
     bars = get_bars(sc.universe, start.isoformat(), end.isoformat(), fetch=fetch)
 
-    held = set(broker.get_account().positions)
+    account = broker.get_account()
+    held = set(account.positions)
+    held_values = dict(account.position_values)
     per_trade = getattr(cfg, "limits", None)
     notional = per_trade.per_trade_max_usd if per_trade else 250
-    orders = target_orders(strategy, bars, held, notional)
+    orders = target_orders(strategy, bars, held, notional, held_values=held_values)
 
     lines = [f"[strategy:{sc.name}] {len(orders)} order(s) proposed"]
     for symbol, side, amount in orders:

@@ -62,6 +62,7 @@ class MockBroker:
             total_position_value_usd=self._deployed,
             positions=frozenset(self._positions),
             realized_pnl_today_usd=self._realized_pnl,
+            position_values=dict(self._positions),
         )
 
     def get_quote(self, symbol: str) -> float:
@@ -104,11 +105,16 @@ class McpBroker:
     def get_account(self) -> Account:
         data = self._call("get_account")
         positions = data.get("positions", {})
+        if isinstance(positions, dict):
+            position_values = {k: float(v) for k, v in positions.items()}
+        else:
+            position_values = {}
         return Account(
             buying_power_usd=float(data["buying_power_usd"]),
             total_position_value_usd=float(data["total_position_value_usd"]),
             positions=frozenset(positions),
             realized_pnl_today_usd=float(data.get("realized_pnl_today_usd", 0)),
+            position_values=position_values,
         )
 
     def get_quote(self, symbol: str) -> float:
