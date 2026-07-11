@@ -113,6 +113,12 @@ class PaperTrader:
 
         symbols = sorted(frames)
         index = frames[symbols[0]].index
+        for s in symbols[1:]:
+            if not frames[s].index.equals(index):
+                raise ValueError(
+                    f"bar indices differ across symbols ({symbols[0]} vs {s}); "
+                    "align/intersect the cached ranges before running"
+                )
         pos: dict[str, float] = {s: 0.0 for s in symbols}
         open_trades: dict[str, dict] = {}
         trades: list[dict] = []
@@ -156,6 +162,10 @@ class PaperTrader:
                     ret = prev * (
                         float(bar["close"]) / float(bars["close"].iloc[i - 1]) - 1.0
                     )
+                # Unlike backtest.net_returns (which drops the final row and its
+                # cost), this loop charges turnover on every bar including the
+                # last, so total_return can differ slightly when the position
+                # changes on the final bar.
                 turnover = abs(target - prev)
                 net_today.append(ret - turnover * self.cost_bps / 1e4)
 

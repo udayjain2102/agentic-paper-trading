@@ -136,6 +136,13 @@ def test_empty_symbols_raises():
         PaperTrader(engine=ScriptedEngine({}), source=FakeSource({})).run()
 
 
+def test_diverging_symbol_indices_raise():
+    frames = {"A": _bars([100.0, 101.0, 102.0, 103.0]), "B": _bars([50.0, 51.0, 52.0])}
+    script = {"A": [0, 1, 1, 0], "B": [0, 1, 0]}
+    with pytest.raises(ValueError, match="indices differ"):
+        PaperTrader(engine=ScriptedEngine(script), source=FakeSource(frames)).run()
+
+
 def test_determinism_same_inputs_same_ledger(tmp_path):
     script = {"A": [0, 1, 1, 0, -1, -1]}
     closes = {"A": [100.0, 101.0, 99.0, 102.0, 103.0, 101.0]}
