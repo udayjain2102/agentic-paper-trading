@@ -10,16 +10,18 @@ fast ranking path.
 
 from __future__ import annotations
 
+import argparse
 import json
 import secrets
-from datetime import datetime, timezone
+import sys
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Protocol
 
 import pandas as pd
 
 from .data import get_bars
-from .engine import DecisionEngine
+from .engine import DecisionEngine, StrategyEngine
 
 
 class MarketSource(Protocol):
@@ -210,3 +212,74 @@ class PaperTrader:
             run_dir / "returns.csv", index=False
         )
         return run_dir
+
+
+def _print_report(run_dir: Path) -> None:
+    from .evaluate import aggregate, failure_buckets, load_run
+
+    meta, trades, net = load_run(run_dir)
+    print(f"run_id: {meta['run_id']}")
+    print(f"engine: {meta['engine']}  symbols: {','.join(meta['symbols'])}")
+
+    a = aggregate(trades, net)
+    print("\naggregate stats")
+    for k, v in a.items():
+        print(f"  {k:<18}{v:>12.4f}" if isinstance(v, float) else f"  {k:<18}{v:>12}")
+
+    b = failure_buckets(trades)
+    print("\nfailure buckets (by loss share)")
+    if len(b) == 0:
+        print("  no trades")
+    else:
+        print(b.to_string(index=False, float_format=lambda x: f"{x:.2%}"))
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+
+    if argv[:1] == ["compare"]:
+        p = argparse.ArgumentParser(prog="rhagent.papertrade compare")
+        p.add_argument("--out-dir", default="journal/papertrade")
+        args = p.parse_args(argv[1:])
+        from .evaluate import compare_runs
+
+        df = compare_runs(args.out_dir)
+        if len(df) == 0:
+            print(f"no runs found under {args.out_dir}")
+        else:
+            print(df.to_string(index=False))
+        return 0
+
+    from .strategies import REGISTRY, build
+
+    p = argparse.ArgumentParser(prog="rhagent.papertrade")
+    p.add_argument("--engine", required=True, choices=sorted(REGISTRY))
+    p.add_argument("--symbols", required=True, help="comma-separated, e.g. NVDA,SPY")
+    p.add_argument("--days", type=int, default=400)
+    p.add_argument("--cost-bps", type=float, default=1.0)
+    p.add_argument("--out-dir", default="journal/papertrade")
+    p.add_argument("--cache-dir", default="data")
+    args = p.parse_args(argv)
+
+    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    if not symbols:
+        p.error("no symbols given")
+
+    end = date.today()
+    start = end - timedelta(days=args.days)
+    source = HistoricalSource(
+        symbols, start.isoformat(), end.isoformat(), cache_dir=args.cache_dir
+    )
+    engine = StrategyEngine(build(args.engine, {}))
+
+    trader = PaperTrader(
+        engine=engine, source=source, cost_bps=args.cost_bps,
+        out_dir=args.out_dir,
+    )
+    run_dir = trader.run()
+    _print_report(run_dir)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
