@@ -85,17 +85,32 @@ it.
 
 ### 2. Paper-trade engine — `papertrade.py`
 
-Event loop, not vectorized.
+Event loop, not vectorized. Two extension seams keep the loop world-model-ready
+(see "Future: world-model extensions"): the loop consumes bars through a
+**MarketSource** and prices orders through a **FillModel**, never directly.
 
-- Inputs: a `DecisionEngine`, a `dict[symbol -> bars DataFrame]`, `cost_bps`,
+```python
+class MarketSource(Protocol):
+    def bars(self) -> dict[str, pd.DataFrame]: ...   # symbol -> full bar frame
+
+class FillModel(Protocol):
+    def fill(self, symbol: str, delta: float, bar: pd.Series) -> float: ...  # fill price
+```
+
+First build ships exactly one implementation of each: `HistoricalSource`
+(cached real bars via `get_bars`) and `CloseFill` (fills at `close[t]`,
+turnover charged `cost_bps`). Synthetic-path generators and impact models are
+later drop-ins behind the same protocols.
+
+- Inputs: a `DecisionEngine`, a `MarketSource`, a `FillModel`, `cost_bps`,
   and a per-symbol notional (equal-weight, fixed capital per symbol).
 - For each day t (chronological), for each symbol: call `decide` with
   `history[:t+1]`; diff `target` against the currently held position; the
-  difference is an order, "filled" at `close[t]`.
-- Fill convention: **fill at the close of day t**. P&L on a position accrues from
-  its entry close to its exit close. This is consistent and lookahead-free
-  (day t's close is known at end of day t). Turnover is charged `cost_bps` per
-  unit traded, matching `backtest.py`'s cost model.
+  difference is an order, priced by the `FillModel`.
+- Default fill convention: **fill at the close of day t**. P&L on a position
+  accrues from its entry close to its exit close. This is consistent and
+  lookahead-free (day t's close is known at end of day t). Turnover is charged
+  `cost_bps` per unit traded, matching `backtest.py`'s cost model.
 - Position lifecycle → trades: opening from flat starts a trade; reducing/closing
   to flat finishes it; a flip (e.g. +1 → -1) finishes the current trade and opens
   a new one at the same bar. Each finished trade is emitted as one record.
@@ -194,7 +209,26 @@ Write tests first for each unit:
 ## Increments
 
 1. `engine.py` (Decision + DecisionEngine + StrategyEngine) + tests.
-2. `papertrade.py` event loop + trade extraction + ledger writer + tests.
+2. `papertrade.py` event loop (MarketSource/FillModel seams, HistoricalSource,
+   CloseFill) + trade extraction + ledger writer + tests.
 3. `evaluate.py` four outputs + tests.
 4. CLI wiring (`__main__` in `papertrade.py`) + smoke test.
 5. (later, separate spec) `AgentEngine` to run the Claude agent through the loop.
+
+## Future: world-model extensions (separate specs, in this order)
+
+Each plugs into a seam above; none requires rewriting the harness.
+
+1. **Synthetic price paths** — a `MarketSource` that generates simulated bar
+   frames (start with block-bootstrap of real returns; upgrade to
+   GARCH/regime models later). Enables Monte Carlo robustness testing over
+   thousands of scenarios instead of one real history. Must be validated
+   against real-data statistics before its evaluations are trusted.
+2. **Market impact** — a `FillModel` where the agent's own orders move the fill
+   price (slippage/impact), for honest evaluation at size.
+3. **Counterfactual replay** — re-run the deterministic loop from a saved
+   state, overriding one decision, to branch the timeline ("what if we had
+   held at trade #7"). Relies on the determinism guarantee above.
+4. **Agent mental model** — a running belief state maintained inside
+   `AgentEngine`; ships with the agent-integration work, orthogonal to the
+   other three.
