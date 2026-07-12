@@ -22,7 +22,7 @@ class LinReg(Strategy):
         self.min_train = min_train
         self.allow_short = allow_short
 
-    def positions(self, bars: pd.DataFrame) -> pd.Series:
+    def _predictions(self, bars: pd.DataFrame) -> pd.Series:
         close = bars["close"].astype(float)
         ret = close.pct_change()
         feats = pd.DataFrame(
@@ -36,7 +36,7 @@ class LinReg(Strategy):
         target = ret.shift(-1)  # next-day return, realized at the following day
 
         cols = ["bias", "ret_lag1", "ret_lag2", "ma_ratio"]
-        pos = pd.Series(0, index=close.index, dtype=int)
+        pred = pd.Series(np.nan, index=close.index, dtype=float)
         n = len(close)
         for i in range(n):
             # Rows usable for training at decision day i: target realized, i.e.
@@ -50,6 +50,13 @@ class LinReg(Strategy):
             X = train[cols].to_numpy()
             y = train["y"].to_numpy()
             beta, *_ = np.linalg.lstsq(X, y, rcond=None)
-            pred = float(x_now.to_numpy() @ beta)
-            pos.iloc[i] = int(np.sign(pred))
+            pred.iloc[i] = float(x_now.to_numpy() @ beta)
+        return pred
+
+    def positions(self, bars: pd.DataFrame) -> pd.Series:
+        pred = self._predictions(bars)
+        pos = np.sign(pred).fillna(0).astype(int)
         return clamp_short(pos, self.allow_short)
+
+    def signal(self, bars: pd.DataFrame) -> pd.Series:
+        return self._predictions(bars)

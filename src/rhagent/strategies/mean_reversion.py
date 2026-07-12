@@ -45,3 +45,10 @@ class MeanReversion(Strategy):
                 holding = 0
             pos[t] = holding
         return clamp_short(pos, self.allow_short)
+
+    def signal(self, bars: pd.DataFrame) -> pd.Series:
+        close = bars["close"].astype(float)
+        mean = close.rolling(self.lookback).mean()
+        std = close.rolling(self.lookback).std()
+        z = (close - mean) / std
+        return -z  # cheap dips (z << 0) score high
