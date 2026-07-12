@@ -2,10 +2,15 @@
 
 Pure functions over panels ([dates x symbols] DataFrames). rank_ic_one is the
 Spearman rank correlation between a day's signal cross-section and its forward
-returns; because it ranks, it is inherently invariant to a common additive shift
-in returns (already market-relative — no separate demeaning is needed). ICIR is
-the consistency of the daily IC series, and the decay curve reports how IC fades
-across forward horizons.
+returns; because it ranks, it is invariant to a common additive shift applied to
+every name's return that day (it removes the equal-weighted common cross-sectional
+mean — no separate demeaning step is needed for that). This is NOT the same as
+being market-neutral: rank-IC does not remove differential beta exposure, so a
+signal that merely proxies market beta (e.g. loads more on high-beta names) can
+still earn a positive rank-IC. Real beta-neutralization (residualizing against
+factor/market beta) is deferred to a later sub-project. ICIR is the consistency
+of the daily IC series, and the decay curve reports how IC fades across forward
+horizons.
 """
 
 from __future__ import annotations

@@ -72,9 +72,23 @@ def main(argv: list[str] | None = None) -> int:
     decay = ic_decay(sig_is, close_is, min_names=args.min_names)
     hl = half_life(decay)
 
+    approx_indep_obs = len(ic) // args.horizon if args.horizon > 0 else len(ic)
+
     print(f"strategy: {args.strategy}   universe: {len(bars_by_symbol)} names")
-    print(f"in-sample days: {len(is_days)}   IC observations: {len(ic)}")
-    print(f"\nICIR (h={args.horizon}): {score:+.3f}  [{_band(score)}]")
+    print(
+        f"in-sample days: {len(is_days)}   IC observations: {len(ic)}"
+        f"   approx. non-overlapping observations: {approx_indep_obs}"
+    )
+    print(
+        "caveat: for horizon h>1 the daily IC observations use overlapping "
+        "forward windows, so consecutive ICs are autocorrelated; the effective "
+        "independent sample is roughly (in-sample days / horizon), and the "
+        "ICIR band below overstates statistical evidence."
+    )
+    if len(ic) == 0:
+        print(f"\nICIR (h={args.horizon}): insufficient data (no day had >= {args.min_names} valid names)")
+    else:
+        print(f"\nICIR (h={args.horizon}): {score:+.3f}  [{_band(score)}]")
     print(f"mean IC (h={args.horizon}): {ic.mean() if len(ic) else float('nan'):+.4f}")
     print("\nIC decay (mean IC by horizon):")
     for h, v in decay.items():

@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from rhagent.factor.split import in_sample_mask, oos_cutoff
 
@@ -37,3 +38,11 @@ def test_in_sample_mask_horizon_one():
     mask = in_sample_mask(idx, cut, horizon=1)
     # index 7: 7+1=8 == cutoff -> excluded; index 6: 6+1=7 < cutoff -> included
     assert mask.iloc[6] == True and mask.iloc[7] == False
+
+
+def test_in_sample_mask_rejects_unsorted_index():
+    idx = _idx(10)
+    unsorted = idx[::-1]
+    cut = idx[8]
+    with pytest.raises(ValueError):
+        in_sample_mask(unsorted, cut, horizon=1)

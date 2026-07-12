@@ -23,6 +23,8 @@ def oos_cutoff(dates, oos_frac: float = 0.25) -> pd.Timestamp:
 
 def in_sample_mask(index, cutoff, horizon: int) -> pd.Series:
     index = pd.DatetimeIndex(index)
+    if not index.is_monotonic_increasing:
+        raise ValueError("in_sample_mask requires a chronologically sorted index")
     n = len(index)
     ok = np.zeros(n, dtype=bool)
     for i in range(n):

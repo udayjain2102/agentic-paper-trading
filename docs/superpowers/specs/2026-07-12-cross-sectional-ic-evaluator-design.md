@@ -204,9 +204,14 @@ impossible internal states.
   after the OOS holdout and horizon trim. Enough for a rough ICIR, but with wide
   error bars. The CLI reports it as an estimate; strong claims wait for more
   history (sub-project 3's correction is what guards against over-reading it).
-- **Market neutralization is essential, not optional.** Without demeaning the
-  cross-section, IC is dominated by common market moves and a market-beta signal
-  looks skillful. The neutralization is baked into the locked IC definition.
+- **Rank-IC removes the common shift, not beta exposure.** Because rank-IC ranks
+  the cross-section, it is already invariant to a common additive shift in that
+  day's returns (equivalent to removing the equal-weighted common mean) — no
+  separate demeaning step changes it. That is a narrower guarantee than "market
+  neutral": it does NOT remove differential beta exposure, so a signal that
+  merely proxies market beta (loads more on high-beta names) can still earn a
+  positive rank-IC. Real beta-residualization is deferred to a later
+  sub-project.
 - **Universe is fixed today.** Using a current large-cap list over a ~1-year
   window has negligible survivorship bias; if the window is later extended to
   many years, point-in-time constituents become necessary — noted for the
