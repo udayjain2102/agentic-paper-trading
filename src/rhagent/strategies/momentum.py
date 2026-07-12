@@ -24,3 +24,7 @@ class Momentum(Strategy):
         pos = pd.Series(np.sign(trailing), index=close.index)
         pos = pos.fillna(0).astype(int)
         return clamp_short(pos, self.allow_short)
+
+    def signal(self, bars: pd.DataFrame) -> pd.Series:
+        close = bars["close"].astype(float)
+        return close.pct_change(self.lookback)

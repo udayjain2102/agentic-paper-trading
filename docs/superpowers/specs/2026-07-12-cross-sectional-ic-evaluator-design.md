@@ -29,9 +29,9 @@ away from the start.
   calendar, and compute forward returns.
 - Lock an out-of-sample slice (most recent ~25% by date) that this sub-project
   never reads — reserved for the sub-project-3 gate.
-- Compute, on in-sample data only: cross-sectional rank-IC per day,
-  market-neutralized; ICIR; and the IC decay curve + half-life over horizons
-  {1, 5, 10, 20, 50}.
+- Compute, on in-sample data only: cross-sectional rank-IC per day (invariant to
+  the common cross-sectional shift, but not beta-neutral — see the IC section);
+  ICIR; and the IC decay curve + half-life over horizons {1, 5, 10, 20, 50}.
 - A CLI that prints a strategy's in-sample ICIR (with interpretation bands) and
   decay curve.
 
@@ -124,10 +124,13 @@ Locked definitions (the tests encode these):
 - **Rank-IC one period.** For day t and horizon h: take names present in both
   the signal row `S[t, :]` and the forward-return row `R[t, :]`. Require at
   least `min_names` (default 10) such names, else IC_t is NaN (excluded).
-  **Market-neutralize** the forward returns by subtracting the cross-sectional
-  mean across names that day. Rank both vectors (`pandas.rank`) and take the
-  Pearson correlation of the ranks — this is Spearman rank-IC, computed without
-  scipy.
+  Rank both vectors (`pandas.rank`) and take the Pearson correlation of the ranks
+  — this is Spearman rank-IC, computed without scipy. Rank-IC is inherently
+  invariant to a common additive shift in the cross-section (it removes the
+  equal-weighted common mean), so no explicit demeaning step is needed. Note this
+  is **not** beta-neutralization: a signal that proxies market beta can still earn
+  a positive rank-IC. Residualizing returns against a market factor is deferred to
+  a later sub-project.
 - **IC series.** `ic_series(signal_panel, close_panel, h, min_names) -> pd.Series`
   of IC_t over all valid days (NaN days dropped).
 - **ICIR.** `mean(IC) / std(IC)` over the series (population std; 0.0 if std is
@@ -204,9 +207,14 @@ impossible internal states.
   after the OOS holdout and horizon trim. Enough for a rough ICIR, but with wide
   error bars. The CLI reports it as an estimate; strong claims wait for more
   history (sub-project 3's correction is what guards against over-reading it).
-- **Market neutralization is essential, not optional.** Without demeaning the
-  cross-section, IC is dominated by common market moves and a market-beta signal
-  looks skillful. The neutralization is baked into the locked IC definition.
+- **Rank-IC removes the common shift, not beta exposure.** Because rank-IC ranks
+  the cross-section, it is already invariant to a common additive shift in that
+  day's returns (equivalent to removing the equal-weighted common mean) — no
+  separate demeaning step changes it. That is a narrower guarantee than "market
+  neutral": it does NOT remove differential beta exposure, so a signal that
+  merely proxies market beta (loads more on high-beta names) can still earn a
+  positive rank-IC. Real beta-residualization is deferred to a later
+  sub-project.
 - **Universe is fixed today.** Using a current large-cap list over a ~1-year
   window has negligible survivorship bias; if the window is later extended to
   many years, point-in-time constituents become necessary — noted for the

@@ -23,3 +23,9 @@ class Strategy:
 
     def positions(self, bars: pd.DataFrame) -> pd.Series:
         raise NotImplementedError
+
+    def signal(self, bars: pd.DataFrame) -> pd.Series:
+        """Continuous score aligned to bars.index; higher = more bullish on the
+        forward return. No lookahead: the value at day t uses only bars up to t.
+        Subclasses that support IC evaluation override this."""
+        raise NotImplementedError
