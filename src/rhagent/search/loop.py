@@ -68,3 +68,81 @@ def apply_gates(scores: list[ConfigScore], grids, gates: Gates):
             rejected.append((s.params, fail))
     survivors.sort(key=lambda s: s.icir, reverse=True)
     return survivors, rejected
+
+
+@dataclass(frozen=True)
+class RoundLog:
+    round: int
+    n_scored: int
+    survivors: list
+    rejected: list
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    strategy: str
+    survivors: list
+    rounds: list
+    n_tested: int
+    best: object
+
+
+def run_search(
+    strategy,
+    bars_by_symbol,
+    close_is,
+    *,
+    horizon=5,
+    min_names=10,
+    max_rounds=4,
+    top_k=8,
+    max_configs=128,
+    gates=None,
+    scorer=None,
+):
+    gates = gates or Gates()
+    if scorer is None:
+        def scorer(params):
+            return score_config(
+                strategy, params, bars_by_symbol, close_is,
+                horizon=horizon, min_names=min_names,
+            )
+
+    grids = coarse_grids(strategy)
+    seen: set = set()
+    rounds: list = []
+    all_survivors: list = []
+    current: list = []
+    prev_best = None
+
+    for r in range(max_rounds):
+        if r > 0:
+            grids = refine_grids(grids, [s.params for s in current])
+        configs = [c for c in configs_from_grids(grids) if config_key(c) not in seen]
+        configs = configs[:max_configs]
+        if not configs:
+            break
+        scores = []
+        for c in configs:
+            seen.add(config_key(c))
+            scores.append(scorer(c))
+        survivors, rejected = apply_gates(scores, grids, gates)
+        survivors = survivors[:top_k]
+        rounds.append(RoundLog(r, len(scores), survivors, rejected))
+        all_survivors.extend(survivors)
+        if not survivors:
+            break
+        round_best = survivors[0]
+        if prev_best is not None and r > 0 and round_best.icir <= prev_best.icir:
+            break
+        prev_best = round_best
+        current = survivors
+
+    best_by_key: dict = {}
+    for s in all_survivors:
+        k = config_key(s.params)
+        if k not in best_by_key or s.icir > best_by_key[k].icir:
+            best_by_key[k] = s
+    ranked = sorted(best_by_key.values(), key=lambda s: s.icir, reverse=True)
+    best = ranked[0] if ranked else None
+    return SearchResult(strategy, ranked, rounds, len(seen), best)
