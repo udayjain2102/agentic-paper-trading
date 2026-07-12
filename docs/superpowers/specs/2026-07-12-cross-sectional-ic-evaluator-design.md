@@ -29,9 +29,9 @@ away from the start.
   calendar, and compute forward returns.
 - Lock an out-of-sample slice (most recent ~25% by date) that this sub-project
   never reads — reserved for the sub-project-3 gate.
-- Compute, on in-sample data only: cross-sectional rank-IC per day,
-  market-neutralized; ICIR; and the IC decay curve + half-life over horizons
-  {1, 5, 10, 20, 50}.
+- Compute, on in-sample data only: cross-sectional rank-IC per day (invariant to
+  the common cross-sectional shift, but not beta-neutral — see the IC section);
+  ICIR; and the IC decay curve + half-life over horizons {1, 5, 10, 20, 50}.
 - A CLI that prints a strategy's in-sample ICIR (with interpretation bands) and
   decay curve.
 
@@ -124,10 +124,13 @@ Locked definitions (the tests encode these):
 - **Rank-IC one period.** For day t and horizon h: take names present in both
   the signal row `S[t, :]` and the forward-return row `R[t, :]`. Require at
   least `min_names` (default 10) such names, else IC_t is NaN (excluded).
-  **Market-neutralize** the forward returns by subtracting the cross-sectional
-  mean across names that day. Rank both vectors (`pandas.rank`) and take the
-  Pearson correlation of the ranks — this is Spearman rank-IC, computed without
-  scipy.
+  Rank both vectors (`pandas.rank`) and take the Pearson correlation of the ranks
+  — this is Spearman rank-IC, computed without scipy. Rank-IC is inherently
+  invariant to a common additive shift in the cross-section (it removes the
+  equal-weighted common mean), so no explicit demeaning step is needed. Note this
+  is **not** beta-neutralization: a signal that proxies market beta can still earn
+  a positive rank-IC. Residualizing returns against a market factor is deferred to
+  a later sub-project.
 - **IC series.** `ic_series(signal_panel, close_panel, h, min_names) -> pd.Series`
   of IC_t over all valid days (NaN days dropped).
 - **ICIR.** `mean(IC) / std(IC)` over the series (population std; 0.0 if std is
