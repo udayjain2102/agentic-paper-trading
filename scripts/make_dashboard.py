@@ -141,16 +141,28 @@ def _equity_svg(net: pd.Series, width: int = 900, height: int = 300) -> str:
 
 # ── HTML fragments ──────────────────────────────────────────────────────────
 
-def _scorecard(a: dict) -> str:
-    def tile(label: str, value: str, cls: str = "") -> str:
+def _scorecard(a: dict, trades: pd.DataFrame, notional: float) -> str:
+    def tile(label: str, value: str, cls: str = "", sub: str = "") -> str:
+        subhtml = f"<div class='tile-s'>{sub}</div>" if sub else ""
         return (
             f"<div class='tile'><div class='tile-v {cls}'>{value}</div>"
-            f"<div class='tile-l'>{label}</div></div>"
+            f"<div class='tile-l'>{label}</div>{subhtml}</div>"
         )
+
+    pnl = trades["pnl_abs"].astype(float) if len(trades) else pd.Series(dtype=float)
+    winnings = float(pnl[pnl > 0].sum())
+    loss = float(-pnl[pnl < 0].sum())
+    net_pl = winnings - loss
+    balance = notional + net_pl
+    bal_cls = "up" if balance >= notional else "down"
 
     ret_cls = "up" if a["total_return"] >= 0 else "down"
     pf_cls = "up" if a["profit_factor"] >= 1 else "down"
     return "<div class='tiles'>" + "".join([
+        tile("current balance", _money(balance), bal_cls,
+             sub=f"start {_money(notional)} · net {'+' if net_pl >= 0 else ''}{_money(net_pl)}"),
+        tile("total winnings", _money(winnings), "up"),
+        tile("total loss", _money(-loss), "down"),
         tile("total return", _pct(a["total_return"]), ret_cls),
         tile("trades", str(a["n_trades"])),
         tile("win rate", _pct(a["win_rate"])),
@@ -273,6 +285,7 @@ padding:3px 12px;font-size:12px}
 .tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
 .tile-v{font-size:22px;font-weight:700;letter-spacing:-.01em}
 .tile-l{color:var(--muted);font-size:12px;margin-top:2px;text-transform:uppercase;letter-spacing:.04em}
+.tile-s{color:var(--muted);font-size:11px;margin-top:6px;font-variant-numeric:tabular-nums}
 .up{color:var(--up)}.down{color:var(--down)}
 .tblscroll{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
 table.grid{border-collapse:collapse;width:100%;font-size:13px}
@@ -342,7 +355,7 @@ def render(run_dir: Path, base_dir: Path) -> str:
   <div class="meta">{chips}</div>
 
   <h2>Scorecard</h2>
-  {_scorecard(a)}
+  {_scorecard(a, trades, meta["notional"])}
 
   <h2>Equity curve</h2>
   {_equity_svg(net)}
