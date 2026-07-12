@@ -53,3 +53,18 @@ def test_rejected_records_failing_gate():
                      gates=Gates(use_robustness=False), scorer=_fake_scorer({40}))
     gates_hit = {gate for _, gate in res.rounds[0].rejected}
     assert "icir_floor" in gates_hit
+
+
+def test_refinement_survivors_with_robustness_on():
+    # Every config scores well. With robustness ON, a refined-round midpoint must
+    # be able to survive by looking up its neighbors, which were scored in a prior
+    # round (the coarse survivor values). Before the cumulative-map fix, those
+    # neighbors were absent from the round's score set and every midpoint failed
+    # robustness, silently disabling refinement for single-parameter strategies.
+    def scorer(params):
+        return ConfigScore("momentum", dict(params), 0.5, 10, (1, 1, 1), 100)
+    res = run_search("momentum", None, None, max_rounds=2, gates=Gates(), scorer=scorer)
+    assert len(res.rounds) == 2
+    assert len(res.rounds[1].survivors) > 0          # refined midpoints survived
+    coarse = {20, 40, 60, 90, 120}
+    assert any(s.params["lookback"] not in coarse for s in res.survivors)  # explored new values

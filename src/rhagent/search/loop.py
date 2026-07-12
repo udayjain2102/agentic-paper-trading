@@ -57,8 +57,10 @@ def first_failing_gate(score: ConfigScore, scored_by_key: dict, grids, gates: Ga
     return None
 
 
-def apply_gates(scores: list[ConfigScore], grids, gates: Gates):
-    by_key = {config_key(s.params): s for s in scores}
+def apply_gates(scores: list[ConfigScore], grids, gates: Gates, scored_by_key=None):
+    by_key = dict(scored_by_key) if scored_by_key is not None else {}
+    for s in scores:
+        by_key[config_key(s.params)] = s
     survivors, rejected = [], []
     for s in scores:
         fail = first_failing_gate(s, by_key, grids, gates)
@@ -110,6 +112,7 @@ def run_search(
 
     grids = coarse_grids(strategy)
     seen: set = set()
+    scored_all: dict = {}
     rounds: list = []
     all_survivors: list = []
     current: list = []
@@ -125,8 +128,10 @@ def run_search(
         scores = []
         for c in configs:
             seen.add(config_key(c))
-            scores.append(scorer(c))
-        survivors, rejected = apply_gates(scores, grids, gates)
+            sc = scorer(c)
+            scores.append(sc)
+            scored_all[config_key(c)] = sc
+        survivors, rejected = apply_gates(scores, grids, gates, scored_by_key=scored_all)
         survivors = survivors[:top_k]
         rounds.append(RoundLog(r, len(scores), survivors, rejected))
         all_survivors.extend(survivors)

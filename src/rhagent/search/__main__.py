@@ -66,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
                   f"signs={s.subperiod_ic_signs}")
         for params, gate in rl.rejected[:5]:
             print(f"  reject   {params}  ({gate})")
-    print(f"\ntop survivors (ranked by ICIR):")
+    print("\ntop survivors (ranked by ICIR):")
     if not result.survivors:
         print("  none passed all gates")
     for s in result.survivors[:10]:
