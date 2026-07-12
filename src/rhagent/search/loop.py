@@ -87,6 +87,7 @@ class SearchResult:
     rounds: list
     n_tested: int
     best: object
+    all_scores: list
 
 
 def run_search(
@@ -150,4 +151,5 @@ def run_search(
             best_by_key[k] = s
     ranked = sorted(best_by_key.values(), key=lambda s: s.icir, reverse=True)
     best = ranked[0] if ranked else None
-    return SearchResult(strategy, ranked, rounds, len(seen), best)
+    return SearchResult(strategy, ranked, rounds, len(seen), best,
+                        list(scored_all.values()))

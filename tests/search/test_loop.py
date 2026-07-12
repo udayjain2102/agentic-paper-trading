@@ -68,3 +68,12 @@ def test_refinement_survivors_with_robustness_on():
     assert len(res.rounds[1].survivors) > 0          # refined midpoints survived
     coarse = {20, 40, 60, 90, 120}
     assert any(s.params["lookback"] not in coarse for s in res.survivors)  # explored new values
+
+
+def test_all_scores_covers_every_tested_config():
+    res = run_search("momentum", None, None, max_rounds=2,
+                     gates=Gates(use_robustness=False), scorer=_fake_scorer({40, 60}))
+    assert len(res.all_scores) == res.n_tested
+    # all_scores holds ConfigScore objects for the distinct configs scored
+    keys = {tuple(sorted(s.params.items())) for s in res.all_scores}
+    assert len(keys) == res.n_tested
