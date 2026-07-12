@@ -8,8 +8,10 @@ wrapping the Claude loop plugs into the same protocol later.
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Callable, Protocol
 
 import pandas as pd
 
@@ -45,3 +47,86 @@ class StrategyEngine:
         close = float(history["close"].iloc[-1])
         reason = f"{self.name}: target={target:+.0f} close={close:.2f}"
         return Decision(target=target, reason=reason)
+
+
+class AgentEngine:
+    """Let an LLM pick today's position. Same DecisionEngine protocol as
+    StrategyEngine: one JSON verdict per bar from a compact, lookahead-free
+    prompt. `complete(prompt) -> raw_text` is the model seam (injected in
+    tests); when None it lazily builds an NVIDIA OpenAI client on first use."""
+
+    def __init__(
+        self,
+        complete: Callable[[str], str] | None = None,
+        *,
+        model: str = "",
+        lessons: str = "",
+        name: str = "agent",
+        allow_short: bool = True,
+    ) -> None:
+        self.complete = complete
+        self.model = model
+        self.lessons = lessons
+        self.name = name
+        self.allow_short = allow_short
+
+    def _default_complete(self) -> Callable[[str], str]:
+        """Lazy NVIDIA OpenAI client — built once, on first decide()."""
+        from openai import OpenAI
+
+        from .config import load
+
+        cfg = load()
+        client = OpenAI(
+            api_key=cfg.nvidia_api_key, base_url=cfg.nvidia_base_url
+        )
+        model = self.model or cfg.agent.model
+
+        def complete(prompt: str) -> str:
+            resp = client.chat.completions.create(
+                model=model,
+                max_tokens=cfg.agent.max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return resp.choices[0].message.content or ""
+
+        return complete
+
+    def _prompt(self, symbol: str, history: pd.DataFrame, current_pos: float) -> str:
+        close = history["close"].astype(float)
+        last = float(close.iloc[-1])
+        mom5 = float(close.iloc[-1] / close.iloc[-6] - 1.0) if len(close) >= 6 else 0.0
+        rets = close.pct_change().dropna()
+        vol20 = float(rets.tail(20).std()) if len(rets) >= 2 else 0.0
+        if pd.isna(vol20):
+            vol20 = 0.0
+        lessons = f"\nPast-loss lessons to weigh:\n{self.lessons}\n" if self.lessons else ""
+        return (
+            f"You are a trading agent deciding today's position in {symbol}.\n"
+            f"last_close={last:.2f} momentum_5d={mom5:+.4f} "
+            f"vol_20d={vol20:.4f} current_pos={current_pos:+.0f}\n"
+            f"{lessons}"
+            'Reply with STRICT JSON only: {"target": -1 | 0 | 1, '
+            '"reason": "<=15 words"} where target is the desired position '
+            "(-1 short, 0 flat, 1 long)."
+        )
+
+    def decide(
+        self, symbol: str, history: pd.DataFrame, current_pos: float
+    ) -> Decision:
+        if self.complete is None:
+            self.complete = self._default_complete()
+        prompt = self._prompt(symbol, history, current_pos)
+        try:
+            raw = self.complete(prompt)
+            obj = json.loads(re.search(r"\{.*\}", raw, re.DOTALL).group(0))
+            target = float(int(obj["target"]))
+            if target not in (-1.0, 0.0, 1.0):
+                raise ValueError("target out of range")
+            if not self.allow_short and target == -1.0:
+                target = 0.0
+            reason = str(obj.get("reason", ""))
+        except Exception:
+            target = float(current_pos)
+            reason = "parse-fail: held"
+        return Decision(target=target, reason=f"agent: {reason}")

@@ -21,7 +21,7 @@ from typing import Protocol
 import pandas as pd
 
 from .data import get_bars
-from .engine import DecisionEngine, StrategyEngine
+from .engine import AgentEngine, DecisionEngine, StrategyEngine
 
 
 class MarketSource(Protocol):
@@ -263,12 +263,14 @@ def main(argv: list[str] | None = None) -> int:
     from .strategies import REGISTRY, build
 
     p = argparse.ArgumentParser(prog="rhagent.papertrade")
-    p.add_argument("--engine", required=True, choices=sorted(REGISTRY))
+    p.add_argument("--engine", required=True, choices=[*sorted(REGISTRY), "agent"])
     p.add_argument("--symbols", required=True, help="comma-separated, e.g. NVDA,SPY")
     p.add_argument("--days", type=int, default=400)
     p.add_argument("--cost-bps", type=float, default=1.0)
     p.add_argument("--out-dir", default="journal/papertrade")
     p.add_argument("--cache-dir", default="data")
+    p.add_argument("--no-lessons", action="store_true",
+                   help="agent engine only: skip feeding prior-run loss lessons")
     args = p.parse_args(argv)
 
     symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
@@ -280,7 +282,13 @@ def main(argv: list[str] | None = None) -> int:
     source = HistoricalSource(
         symbols, start.isoformat(), end.isoformat(), cache_dir=args.cache_dir
     )
-    engine = StrategyEngine(build(args.engine, {}))
+    if args.engine == "agent":
+        from .learn import lessons_from_runs
+
+        lessons = "" if args.no_lessons else lessons_from_runs(args.out_dir)
+        engine = AgentEngine(lessons=lessons)
+    else:
+        engine = StrategyEngine(build(args.engine, {}))
 
     trader = PaperTrader(
         engine=engine, source=source, cost_bps=args.cost_bps,
