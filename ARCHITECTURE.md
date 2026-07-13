@@ -52,6 +52,14 @@ Every strategy implements one contract (`strategies/base.py`):
   including day *t*.
 - `signal(bars) -> Series` — a *continuous* score where higher = more bullish on
   the forward return. This is what the factor/IC math evaluates.
+- `target(bars) -> float` — just *today's* position (the last value). The base
+  default is `positions(bars).iloc[-1]`, but a strategy whose last value is
+  independent of the earlier ones overrides it with a cheaper single-step
+  computation. `linreg` does: instead of refitting an OLS for every past day only
+  to keep the last, it fits **one** OLS for the current bar — bit-identical
+  output, ~76× faster in the bar-by-bar loop, verified by equivalence checks.
+  `StrategyEngine.decide` (§4C) calls `target`, so the paper-trade loop pays the
+  single-step cost, not the full-series cost, every bar.
 
 | Strategy | Signal | Position rule |
 |----------|--------|---------------|
@@ -65,8 +73,13 @@ Every strategy implements one contract (`strategies/base.py`):
 return, trained only on rows whose target is already realized (strictly before
 *t*), then predicts day *t*. Expanding window, no lookahead.
 
-`clamp_short` maps any `-1` to `0` unless shorting is explicitly enabled — the
-system is long-only by default (shorting is out of scope for v1).
+`clamp_short` maps any `-1` to `0` unless shorting is explicitly enabled. **The
+system is long-only: shorting is disabled everywhere by default** (every strategy
+*and* `AgentEngine` default `allow_short=False`, and the paper-trade CLI exposes
+no short toggle). The `allow_short` parameter still exists in the strategy
+classes, so the capability can be re-enabled deliberately in code/config, but no
+normal run shorts. A run can sweep the whole cached universe at once with
+`--symbols all`.
 
 ---
 
@@ -278,7 +291,50 @@ The payoff is `evaluate.py`:
   holding length, symbol, side) and ranked by **loss share**. This is the
   feedback signal: it tells you the edge dies in, say, high-vol down-gaps, which
   points at the next parameter or filter to change.
-- **`compare` command** — rank every paper-trade run side by side.
+- **`compare` command** — rank every paper-trade run side by side. The same
+  numbers render as a self-contained HTML dashboard (`scripts/make_dashboard.py`):
+  an all-runs index (per run: trades, won/lost counts, net P&L, total return,
+  Sharpe, max DD) where clicking a run id opens *only* that run's full detail
+  (scorecard, equity curve, ledger, failure buckets) — native CSS `:target`, no
+  JavaScript.
+
+### Loop D — Learning from losses: decision overlays (`overlay.py`, `evaluate_robust.py`)
+
+Loops A–C *judge* strategies; Loop D lets one **adapt to its own realized
+losses** without retraining. A single seam sits between the strategy's raw target
+and the position actually taken — `StrategyEngine.decide` produces a target and a
+per-bar `conviction` (the continuous `signal()` value), and an `Overlay.adjust`
+gets the last say:
+
+```
+final_target = overlay.adjust(symbol, history, decision, closed_trades)
+```
+
+`closed_trades` is the ledger of trades that closed **strictly before** today's
+bar — the seam snapshots it once per bar, before any of that bar's own closes, so
+the same **no-lookahead invariant** holds as everywhere else. Return `0` to veto,
+a fraction to down-size, or the raw target to pass through. The baseline is an
+`IdentityOverlay` (a `--overlay none` run is byte-identical to no overlay at all).
+Three overlays exist as interchangeable, comparable variants:
+
+- **ConvictionGate** — vetoes entries whose `|conviction|` is below a rolling
+  percentile of that symbol's own past convictions (trade-level noise filter).
+- **BucketFilter** — vetoes/down-sizes entries whose setup bucket (the same
+  vol/gap/side buckets as the failure analysis) has been the worst loser among
+  closed trades so far. Size is snapped to coarse levels to avoid per-bar churn.
+- **WinProbGate / ParamTune** — planned (a numpy-logit win-probability gate; a
+  walk-forward parameter re-fit). The seam is built for them.
+
+Because these barely-profitable strategies live in the noise, the bake-off is
+judged by a **robust evaluator** (`evaluate_robust.py`), not a single Sharpe:
+per-fold Sharpe across rolling windows, a **bootstrap 95% CI** on the per-bar net
+returns, and a **deflated Sharpe** that penalizes for the number of variants
+tried (§2c, same math, applied to realized paper-trade returns instead of ICIR).
+A variant "beats baseline" only if its CI lower bound clears the *same
+engine+universe* baseline's Sharpe. This renders as a bake-off panel on the
+dashboard. Empirically so far: the conviction gate lifts point Sharpe ~5×
+(0.11 → 0.56) but its CI still spans zero — **nothing clears the noise band**,
+which is the honest, expected outcome at this data scale.
 
 ---
 
@@ -358,6 +414,8 @@ fooling yourself. Collected in one place:
 | **Hysteresis** (entry ≠ exit) | `mean_reversion.py` | avoids churning in/out around a single threshold — trade-level noise |
 | **Turnover cost** (`cost_bps`) | `backtest.py`, `papertrade.py` | charges every position flip, so a "signal" that only looks good gross gets penalized for thrashing |
 | **Failure buckets** | `evaluate.py` | separates *where* losses concentrate (a regime) from random scatter, so you fix a cause instead of overfitting to individual losers |
+| **ConvictionGate** (overlay) | `overlay.py` | drops entries whose signal is below a rolling percentile of its own history — trades only the high-conviction subset, so coin-flip entries stop diluting the edge |
+| **Robust bake-off evaluator** | `evaluate_robust.py` | judges a paper-trade variant by fold-Sharpe + bootstrap 95% CI + deflated Sharpe, not one number — a variant only "wins" if its CI lower bound clears baseline, so a lucky window can't crown it |
 
 The throughline: at every layer the system assumes an apparent edge is noise
 until it clears a bar, and it makes the bar *higher* the more you searched.
