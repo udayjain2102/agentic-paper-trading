@@ -184,6 +184,7 @@ def _trades_table(trades: pd.DataFrame) -> str:
         ("exit_ts", "exit"), ("exit_price", "out"),
         ("holding_bars", "bars"), ("pnl_pct", "pnl %"),
         ("pnl_abs", "pnl $"), ("outcome", ""), ("entry_reason", "reason"),
+        ("exit_reason", "exit reason"),
     ]
     head = "".join(f"<th>{escape(h)}</th>" for _, h in cols)
     rows = []
@@ -203,6 +204,7 @@ def _trades_table(trades: pd.DataFrame) -> str:
             f"<td class='num {oc}'>{_money(t['pnl_abs'])}</td>",
             f"<td><span class='pill {oc}'>{escape(oc)}</span></td>",
             f"<td class='reason'>{escape(str(t['entry_reason']))}</td>",
+            f"<td class='reason'>{escape(str(t['exit_reason']))}</td>",
         ]
         rows.append(f"<tr class='row-{oc}'>{''.join(cells)}</tr>")
     return f"<table class='grid'><thead><tr>{head}</tr></thead><tbody>{''.join(rows)}</tbody></table>"

@@ -9,7 +9,6 @@ wrapping the Claude loop plugs into the same protocol later.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
 
 import pandas as pd
 
@@ -20,14 +19,6 @@ from .strategies.base import Strategy
 class Decision:
     target: float  # desired position in {-1, 0, +1}
     reason: str    # human-readable why
-
-
-class DecisionEngine(Protocol):
-    name: str
-
-    def decide(
-        self, symbol: str, history: pd.DataFrame, current_pos: float
-    ) -> Decision: ...
 
 
 class StrategyEngine:

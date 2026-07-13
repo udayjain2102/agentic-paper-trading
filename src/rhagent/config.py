@@ -17,7 +17,6 @@ load_dotenv()  # pick up .env (gitignored) so keys don't have to be exported
 @dataclass(frozen=True)
 class AgentConfig:
     model: str
-    effort: str
     max_tokens: int
 
 

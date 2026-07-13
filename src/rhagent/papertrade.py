@@ -21,7 +21,7 @@ from typing import Protocol
 import pandas as pd
 
 from .data import get_bars
-from .engine import DecisionEngine, StrategyEngine
+from .engine import StrategyEngine
 
 
 class MarketSource(Protocol):
@@ -87,7 +87,7 @@ class PaperTrader:
 
     def __init__(
         self,
-        engine: DecisionEngine,
+        engine: StrategyEngine,
         source: MarketSource,
         fill: FillModel | None = None,
         cost_bps: float = 1.0,
@@ -155,6 +155,13 @@ class PaperTrader:
 
                 d = self.engine.decide(sym, history, prev)
                 target = d.target
+                # Don't open a fresh position on the final bar: there is no
+                # future bar to hold it into, so end_of_data would immediately
+                # force-close it for a 0-bar phantom round-trip. Guard here,
+                # before turnover cost, so the equity curve doesn't pay for a
+                # trade that never opens. Existing positions still close.
+                if target != 0.0 and prev == 0.0 and i == len(index) - 1:
+                    target = prev
 
                 # accrue yesterday's position over today's move
                 ret = 0.0
