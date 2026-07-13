@@ -95,6 +95,27 @@ class ConvictionGate:
         return result
 
 
+def apply_conviction(positions: pd.Series, signal: pd.Series,
+                     pctile: float = 0.60, window: int = 120) -> pd.Series:
+    """Vectorized twin of ConvictionGate for the forward path.
+
+    Zeroes out any position bar whose ``|signal|`` does not strictly exceed the
+    trailing-``window`` ``pctile`` percentile of prior ``|signal|`` values. This
+    reproduces the bar-by-bar gate exactly (same rule, prior-bar-only threshold),
+    but on a whole position/signal series at once — the shape forward.py needs.
+    Cold-start bars (fewer than ``window`` prior non-NaN signals) and NaN-signal
+    bars pass through unchanged, matching the gate's early-return behavior.
+    """
+    a = signal.abs()
+    valid = a.dropna()
+    # threshold from the prior `window` non-NaN values only (shift(1) excludes today)
+    thr = valid.shift(1).rolling(window).quantile(pctile).reindex(a.index)
+    keep = a > thr                         # strict, matches gate's `abs(c) > thresh`
+    keep = keep.where(thr.notna(), other=True)   # cold start -> keep
+    keep = keep.where(a.notna(), other=True)     # NaN signal -> pass through
+    return positions.where(keep, other=0.0)
+
+
 def _snap_size(worst_share: float, min_size: float) -> float:
     """Coarse-size the down-size fraction to 0.25 steps so a bucket's loss
     share drifting by a few points doesn't open/close a trade every bar."""

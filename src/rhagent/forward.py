@@ -79,7 +79,21 @@ def _positions(cfg, engine: str, bars: dict[str, pd.DataFrame],
     from .strategies import build
 
     strat = build(engine, cfg.strategy.params)
-    return {s: strat.positions(bars[s]) for s in cfg.strategy.universe}
+    pos = {s: strat.positions(bars[s]) for s in cfg.strategy.universe}
+    # Apply the configured decision overlay. Only the conviction gate is wired
+    # into the forward path (it is a pure function of the signal, so it has an
+    # exact vectorized twin); other overlays need the bar-by-bar papertrade loop.
+    overlay = getattr(cfg.strategy, "overlay", "none")
+    if overlay == "conviction":
+        from .overlay import apply_conviction
+
+        pos = {s: apply_conviction(pos[s], strat.signal(bars[s])) for s in pos}
+    elif overlay not in ("none", ""):
+        raise SystemExit(
+            f"overlay {overlay!r} is not wired into the forward path "
+            "(only 'conviction' is; use papertrade.py for the others)"
+        )
+    return pos
 
 
 def _net_series(cfg, engine: str, bars: dict[str, pd.DataFrame], cost_bps: float,
