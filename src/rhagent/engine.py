@@ -67,7 +67,7 @@ class AgentEngine:
         model: str = "",
         lessons: str = "",
         name: str = "agent",
-        allow_short: bool = True,
+        allow_short: bool = False,
         max_tokens: int = 256,
     ) -> None:
         self.complete = complete

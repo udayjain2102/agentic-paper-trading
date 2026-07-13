@@ -271,8 +271,6 @@ def main(argv: list[str] | None = None) -> int:
                    help="comma-separated (NVDA,SPY) or 'all' for every cached symbol")
     p.add_argument("--days", type=int, default=400)
     p.add_argument("--cost-bps", type=float, default=1.0)
-    p.add_argument("--allow-short", action="store_true",
-                   help="strategy engines only: also take short positions on down-signals")
     p.add_argument("--out-dir", default="journal/papertrade")
     p.add_argument("--cache-dir", default="data")
     p.add_argument("--no-lessons", action="store_true",
@@ -299,7 +297,7 @@ def main(argv: list[str] | None = None) -> int:
         lessons = "" if args.no_lessons else lessons_from_runs(args.out_dir)
         engine = AgentEngine(lessons=lessons)
     else:
-        engine = StrategyEngine(build(args.engine, {"allow_short": args.allow_short}))
+        engine = StrategyEngine(build(args.engine, {}))  # long-only (shorting disabled)
 
     overlay = build_overlay(args.overlay)
     trader = PaperTrader(
