@@ -22,6 +22,7 @@ from .strategies.base import Strategy
 class Decision:
     target: float  # desired position in {-1, 0, +1}
     reason: str    # human-readable why
+    conviction: float | None = None  # per-bar signal strength, if the strategy has one
 
 
 class DecisionEngine(Protocol):
@@ -45,8 +46,12 @@ class StrategyEngine:
     ) -> Decision:
         target = float(self.strat.target(history))
         close = float(history["close"].iloc[-1])
+        try:
+            conviction = float(self.strat.signal(history).iloc[-1])
+        except (NotImplementedError, KeyError, IndexError):
+            conviction = None
         reason = f"{self.name}: target={target:+.0f} close={close:.2f}"
-        return Decision(target=target, reason=reason)
+        return Decision(target=target, reason=reason, conviction=conviction)
 
 
 class AgentEngine:
