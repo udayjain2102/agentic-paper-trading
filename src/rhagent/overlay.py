@@ -22,6 +22,34 @@ from .evaluate import failure_buckets
 from .features import entry_features, flatten_trades
 
 
+def _predict_logit(beta: np.ndarray, X: np.ndarray) -> np.ndarray:
+    z = np.clip(X @ beta, -30.0, 30.0)
+    return 1.0 / (1.0 + np.exp(-z))
+
+
+def _fit_logit(X: np.ndarray, y: np.ndarray, iters: int = 25, l2: float = 1.0) -> np.ndarray:
+    """Ridge-regularized logistic regression via IRLS. X includes a bias column.
+    l2 on the diagonal keeps the Hessian invertible under separable/degenerate
+    data (and when y is all one class)."""
+    n, k = X.shape
+    beta = np.zeros(k)
+    ridge = l2 * np.eye(k)
+    for _ in range(iters):
+        p = _predict_logit(beta, X)
+        w = np.clip(p * (1.0 - p), 1e-6, None)      # IRLS weights, floored
+        # Hessian = X^T W X + ridge ; gradient = X^T (y - p) - l2*beta
+        H = X.T @ (w[:, None] * X) + ridge
+        g = X.T @ (y - p) - l2 * beta
+        try:
+            step = np.linalg.solve(H, g)
+        except np.linalg.LinAlgError:
+            break
+        beta = beta + step
+        if np.max(np.abs(step)) < 1e-8:
+            break
+    return beta
+
+
 class Overlay(Protocol):
     name: str
     def adjust(
