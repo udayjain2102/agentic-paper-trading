@@ -67,6 +67,12 @@ class ConvictionGate:
         return result
 
 
+def _snap_size(worst_share: float, min_size: float) -> float:
+    """Coarse-size the down-size fraction to 0.25 steps so a bucket's loss
+    share drifting by a few points doesn't open/close a trade every bar."""
+    return max(min_size, round((1.0 - worst_share) / 0.25) * 0.25)
+
+
 class BucketFilter:
     """Veto/down-size entries whose setup bucket has been the worst loser in
     closed trades so far. Deterministic and inspectable."""
@@ -117,8 +123,10 @@ class BucketFilter:
                     and r["win_rate"] <= self.veto_wr:
                 return 0.0  # veto: this bucket is bleeding
             worst_share = max(worst_share, float(r["loss_share"]))
-        # soft down-size proportional to the worst bucket's loss share
-        size = max(self.min_size, 1.0 - worst_share)
+        # soft down-size proportional to the worst bucket's loss share, snapped
+        # to coarse 0.25 levels so it only moves on a real regime change
+        # instead of churning a new trade almost every bar.
+        size = _snap_size(worst_share, self.min_size)
         return target * size
 
 

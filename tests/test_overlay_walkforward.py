@@ -30,3 +30,23 @@ def test_overlay_never_sees_future_or_same_day_close(tmp_path):
                          source=_Src(), out_dir=str(tmp_path), overlay=spy)
     trader.run()
     assert spy.violations == [], f"overlay saw non-past closes: {spy.violations[:5]}"
+
+
+def test_overlay_never_sees_same_bar_close_across_symbols(tmp_path):
+    idx = pd.date_range("2025-01-01", periods=120, freq="D")
+    symbols = ["AAA", "BBB", "CCC"]
+
+    def _mk(phase):
+        close = pd.Series(100 + np.sin((np.arange(120) + phase) / 3.0) * 5, index=idx)
+        return pd.DataFrame({"open": close, "close": close}, index=idx)
+
+    frames = {sym: _mk(i * 3) for i, sym in enumerate(symbols)}
+
+    class _Src:
+        def bars(self): return frames
+
+    spy = _SpyOverlay()
+    trader = PaperTrader(engine=StrategyEngine(build("mean_reversion", {})),
+                         source=_Src(), out_dir=str(tmp_path), overlay=spy)
+    trader.run()
+    assert spy.violations == [], f"overlay saw non-past closes: {spy.violations[:5]}"

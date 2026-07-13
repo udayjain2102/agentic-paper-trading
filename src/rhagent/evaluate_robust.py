@@ -86,15 +86,37 @@ def deflated_sharpe(observed_sr: float, all_srs: list[float], net: pd.Series) ->
     skew = float((z ** 3).mean())
     kurt = float((z ** 4).mean())  # non-excess
     M = max(len(all_srs), 1)
-    var_sr = float(np.var(all_srs)) if M > 1 else 1.0
-    gamma = 0.5772156649  # Euler-Mascheroni
-    e_max = (1 - gamma) * _phi_inv(1 - 1.0 / M) + gamma * _phi_inv(1 - 1.0 / (M * math.e))
-    sr_benchmark = math.sqrt(var_sr) * e_max
+    if M <= 1:
+        # A single run has no multiple-testing inflation to correct for
+        # (1 - 1/M = 0 sends the benchmark to -inf); fall back to plain PSR
+        # vs a zero-Sharpe benchmark instead of reporting maximal significance.
+        sr_benchmark = 0.0
+    else:
+        var_sr = float(np.var(all_srs))
+        gamma = 0.5772156649  # Euler-Mascheroni
+        e_max = (1 - gamma) * _phi_inv(1 - 1.0 / M) + gamma * _phi_inv(1 - 1.0 / (M * math.e))
+        sr_benchmark = math.sqrt(var_sr) * e_max
     # daily-scale Sharpe (deflate uses per-observation SR, not annualized)
     sr_daily = observed_sr / math.sqrt(_ANN)
     denom = math.sqrt(max(1.0 - skew * sr_daily + (kurt - 1.0) / 4.0 * sr_daily ** 2, 1e-9))
     num = (sr_daily - sr_benchmark / math.sqrt(_ANN)) * math.sqrt(T - 1)
     return float(_phi(num / denom))
+
+
+def _group_key(row: dict) -> tuple:
+    return (row["engine"], tuple(sorted(row["symbols"])))
+
+
+def _baseline_by_group(rows: list[dict]) -> dict[tuple, float]:
+    """Per-(engine, symbols) baseline: the best overlay=='none' point_sharpe in
+    that group. Groups without a 'none' run have no baseline entry."""
+    baselines: dict[tuple, float] = {}
+    for r in rows:
+        if r["overlay"] != "none":
+            continue
+        key = _group_key(r)
+        baselines[key] = max(baselines.get(key, -math.inf), r["point_sharpe"])
+    return baselines
 
 
 def robust_table(base_dir: str | Path) -> pd.DataFrame:
@@ -105,23 +127,24 @@ def robust_table(base_dir: str | Path) -> pd.DataFrame:
         res = result_from_returns(net)
         runs.append({
             "run_id": meta["run_id"], "engine": meta.get("engine", ""),
+            "symbols": meta.get("symbols", []),
             "overlay": meta.get("overlay", "none"),
             "point_sharpe": res.sharpe, "net": net,
         })
     if not runs:
         return pd.DataFrame()
     all_srs = [r["point_sharpe"] for r in runs]
-    baseline_sr = max((r["point_sharpe"] for r in runs if r["overlay"] == "none"),
-                      default=max(all_srs))
+    baselines = _baseline_by_group(runs)
     rows = []
     for r in runs:
         fm, fs = fold_sharpe(r["net"])
         lo, hi = bootstrap_sharpe_ci(r["net"])
         d = deflated_sharpe(r["point_sharpe"], all_srs, r["net"])
+        baseline_sr = baselines.get(_group_key(r))
         rows.append({
             "run_id": r["run_id"], "engine": r["engine"], "overlay": r["overlay"],
             "point_sharpe": r["point_sharpe"], "fold_mean": fm, "fold_std": fs,
             "ci_lo": lo, "ci_hi": hi, "deflated": d,
-            "beats_baseline": bool(lo > baseline_sr),
+            "beats_baseline": bool(baseline_sr is not None and lo > baseline_sr),
         })
     return pd.DataFrame(rows).sort_values("deflated", ascending=False).reset_index(drop=True)

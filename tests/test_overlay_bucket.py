@@ -1,5 +1,5 @@
 import numpy as np, pandas as pd
-from rhagent.overlay import BucketFilter
+from rhagent.overlay import BucketFilter, _snap_size
 from rhagent.engine import Decision
 
 def _closed(side, feat_vol20, feat_gap, pnl, n):
@@ -37,3 +37,12 @@ def test_cold_start_passes():
     bf = BucketFilter(min_n=20)
     d = Decision(target=1.0, reason="x", conviction=None)
     assert bf.adjust("NVDA", _hist(), d, pd.DataFrame()) == 1.0
+
+def test_snap_size_no_churn_for_nearby_shares():
+    # nearby loss shares land on the same 0.25 level -> no size change, no churn
+    assert _snap_size(0.05, 0.3) == _snap_size(0.10, 0.3)
+    # a real regime change (far apart) lands on a different level
+    assert _snap_size(0.10, 0.3) != _snap_size(0.40, 0.3)
+
+def test_snap_size_floored_at_min_size():
+    assert _snap_size(0.95, 0.3) == 0.3

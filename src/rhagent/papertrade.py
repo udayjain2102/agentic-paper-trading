@@ -138,6 +138,10 @@ class PaperTrader:
 
         for i, ts in enumerate(index):
             net_today = []
+            # Snapshot once per bar, before any symbol in this bar can close a
+            # trade: every overlay call this bar sees only prior-bar closes,
+            # never a same-bar close from an earlier symbol in sorted order.
+            closed_snapshot = pd.DataFrame(trades)
             for sym in symbols:
                 bars = frames[sym]
                 history = bars.iloc[: i + 1]
@@ -145,7 +149,7 @@ class PaperTrader:
                 prev = pos[sym]
 
                 d = self.engine.decide(sym, history, prev)
-                target = self.overlay.adjust(sym, history, d, pd.DataFrame(trades))
+                target = self.overlay.adjust(sym, history, d, closed_snapshot)
                 # Don't open a fresh position on the final bar: there is no
                 # future bar to hold it into, so end_of_data would immediately
                 # force-close it for a 0-bar phantom round-trip. Guard here,
