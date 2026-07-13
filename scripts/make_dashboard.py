@@ -235,21 +235,26 @@ def _buckets_table(b: pd.DataFrame) -> str:
     )
 
 
-def _compare_table(df: pd.DataFrame, current: str) -> str:
+def _compare_table(df: pd.DataFrame, current: str, link: bool = False) -> str:
     if len(df) == 0:
         return "<p class='muted'>no runs</p>"
     best_id = df.loc[df["total_return"].idxmax(), "run_id"] if len(df) else None
     rows = []
     for _, r in df.iterrows():
-        cls = "cur" if r["run_id"] == current else ""
+        rid = str(r["run_id"])
+        cls = "cur" if rid == current else ""
         ret_cls = "up" if r["total_return"] >= 0 else "down"
         badges = ""
-        if r["run_id"] == best_id:
+        if rid == best_id:
             badges += "<span class='tag best'>best</span>"
-        if r["run_id"] == current:
+        if rid == current:
             badges += "<span class='tag cur'>viewing</span>"
+        idcell = (
+            f"<a class='mono' href='#run-{escape(rid)}'>{escape(rid)}</a>"
+            if link else f"{escape(rid)}"
+        )
         rows.append(
-            f"<tr class='{cls}'><td class='mono'>{escape(str(r['run_id']))}{badges}</td>"
+            f"<tr class='{cls}'><td class='mono'>{idcell}{badges}</td>"
             f"<td>{escape(str(r['engine']))}</td>"
             f"<td class='num'>{int(r['n_trades'])}</td>"
             f"<td class='num'>{_pct(r['win_rate'])}</td>"
@@ -277,6 +282,12 @@ font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial
 h1{font-size:22px;margin:0 0 4px}
 h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
 margin:36px 0 12px;font-weight:600}
+h3{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+margin:22px 0 10px;font-weight:600}
+.runcard{border-top:2px solid var(--line);margin-top:44px;padding-top:4px;scroll-margin-top:16px}
+h2.runhead{font-size:19px;text-transform:none;letter-spacing:-.01em;color:var(--fg);margin:20px 0 10px}
+a.mono{color:var(--accent);text-decoration:none}
+a.mono:hover{text-decoration:underline}
 .sub{color:var(--muted);margin:0 0 8px}
 .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .chip{background:var(--panel2);border:1px solid var(--line);border-radius:999px;
@@ -331,11 +342,12 @@ footer{margin-top:48px;color:var(--muted);font-size:12px;text-align:center}
 """
 
 
-def render(run_dir: Path, base_dir: Path) -> str:
+def _run_section(run_dir: Path, anchored: bool = False) -> str:
+    """One run's full detail: header, scorecard, equity, ledger, buckets."""
     meta, trades, net = load_run(run_dir)
     a = aggregate(trades, net)
     buckets = failure_buckets(trades)
-    comparison = compare_runs(base_dir)
+    rid = meta["run_id"]
 
     chips = "".join(
         f"<span class='chip'>{escape(k)} <b>{escape(str(v))}</b></span>"
@@ -347,50 +359,93 @@ def render(run_dir: Path, base_dir: Path) -> str:
             ("notional", _money(meta["notional"])),
         ]
     )
-
-    return f"""<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Paper-trade dashboard — {escape(meta['run_id'])}</title>
-<style>{_CSS}</style></head><body><div class="wrap">
-  <h1>Paper-Trade Dashboard</h1>
-  <p class="sub mono">{escape(meta['run_id'])}</p>
+    aid = f" id='run-{escape(rid)}'" if anchored else ""
+    return f"""
+  <section class="runcard"{aid}>
+  <h2 class="runhead">{escape(str(meta['engine']))} · <span class="mono">{escape(rid)}</span></h2>
   <div class="meta">{chips}</div>
 
-  <h2>Scorecard</h2>
+  <h3>Scorecard</h3>
   {_scorecard(a, trades, meta["notional"])}
 
-  <h2>Equity curve</h2>
+  <h3>Equity curve</h3>
   {_equity_svg(net)}
 
-  <h2>Trade ledger · {len(trades)} trades</h2>
+  <h3>Trade ledger · {len(trades)} trades</h3>
   <div class="tblscroll">{_trades_table(trades)}</div>
 
-  <h2>Failure buckets · where losses concentrate</h2>
+  <h3>Failure buckets · where losses concentrate</h3>
   <div class="tblscroll">{_buckets_table(buckets)}</div>
+  </section>"""
 
-  <h2>Run comparison · {len(comparison)} runs</h2>
-  <div class="tblscroll">{_compare_table(comparison, meta['run_id'])}</div>
 
-  <footer>Generated from {escape(str(run_dir))} · rhagent paper-trade harness</footer>
+def _page(title: str, body: str, footer: str) -> str:
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{escape(title)}</title>
+<style>{_CSS}</style></head><body><div class="wrap">
+  <h1>Paper-Trade Dashboard</h1>
+  {body}
+  <footer>{footer}</footer>
 </div></body></html>"""
+
+
+def render(run_dir: Path, base_dir: Path) -> str:
+    meta = load_run(run_dir)[0]
+    comparison = compare_runs(base_dir)
+    body = (
+        _run_section(run_dir)
+        + f"\n  <h2>Run comparison · {len(comparison)} runs</h2>"
+        + f"\n  <div class='tblscroll'>{_compare_table(comparison, meta['run_id'])}</div>"
+    )
+    return _page(
+        f"Paper-trade dashboard — {meta['run_id']}", body,
+        f"Generated from {escape(str(run_dir))} · rhagent paper-trade harness",
+    )
+
+
+def render_all(base_dir: Path) -> str:
+    """Index of every run (newest first) plus each run's full detail below."""
+    runs = sorted(
+        (p.parent for p in base_dir.glob("*/run.json")), reverse=True
+    )
+    if not runs:
+        raise SystemExit(f"no runs found under {base_dir} — run rhagent.papertrade first")
+    comparison = compare_runs(base_dir)
+    index = (
+        f"<h2>All runs · {len(runs)} total</h2>"
+        f"<p class='sub'>Click a run id to jump to its full detail below.</p>"
+        f"<div class='tblscroll'>{_compare_table(comparison, '', link=True)}</div>"
+    )
+    sections = "".join(_run_section(rd, anchored=True) for rd in runs)
+    return _page(
+        f"Paper-trade dashboard — {len(runs)} runs", index + sections,
+        f"Generated from {escape(str(base_dir))} · rhagent paper-trade harness",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="make_dashboard")
-    p.add_argument("--run", help="run_id to render (default: latest)")
+    p.add_argument("--run", help="render only this run_id in detail (default: all runs)")
     p.add_argument("--base-dir", default="journal/papertrade")
     p.add_argument("--out", help="output HTML path (default: <base-dir>/dashboard.html)")
     p.add_argument("--open", action="store_true", help="open the dashboard in a browser")
     args = p.parse_args(argv)
 
     base_dir = Path(args.base_dir)
-    run_dir = base_dir / args.run if args.run else _latest_run(base_dir)
-    if not (run_dir / "run.json").exists():
-        raise SystemExit(f"no run.json in {run_dir}")
+    if args.run:
+        run_dir = base_dir / args.run
+        if not (run_dir / "run.json").exists():
+            raise SystemExit(f"no run.json in {run_dir}")
+        html = render(run_dir, base_dir)
+        label = run_dir.name
+    else:
+        html = render_all(base_dir)
+        label = "all runs"
 
     out = Path(args.out) if args.out else base_dir / "dashboard.html"
-    out.write_text(render(run_dir, base_dir), encoding="utf-8")
-    print(f"wrote {out}  (run {run_dir.name})")
+    out.write_text(html, encoding="utf-8")
+    print(f"wrote {out}  ({label})")
     if args.open:
         webbrowser.open(out.resolve().as_uri())
     return 0
