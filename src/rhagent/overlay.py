@@ -18,6 +18,8 @@ import numpy as np
 import pandas as pd
 
 from .engine import Decision
+from .evaluate import failure_buckets
+from .features import entry_features
 
 
 class Overlay(Protocol):
@@ -65,9 +67,65 @@ class ConvictionGate:
         return result
 
 
+class BucketFilter:
+    """Veto/down-size entries whose setup bucket has been the worst loser in
+    closed trades so far. Deterministic and inspectable."""
+
+    name = "bucket"
+
+    def __init__(self, veto_share=0.25, veto_wr=0.40, min_n=20, min_size=0.3) -> None:
+        self.veto_share = veto_share
+        self.veto_wr = veto_wr
+        self.min_n = min_n
+        self.min_size = min_size
+
+    def _candidate_labels(self, history, side, closed) -> dict:
+        """The candidate's bucket in each dimension (vol/gap/side)."""
+        f = entry_features(history)
+        # vol tercile boundaries from the population of closed trades
+        vol_lab = "all"
+        vols = closed["feat_vol20"].astype(float)
+        if vols.nunique() >= 3:
+            lo, hi = np.percentile(vols, [33.333, 66.667])
+            v = f["vol20"]
+            vol_lab = "low" if v <= lo else ("high" if v > hi else "med")
+        gap = f["gap"]
+        gap_lab = "flat"
+        if gap < -0.005:
+            gap_lab = "down"
+        elif gap > 0.005:
+            gap_lab = "up"
+        return {"vol": vol_lab, "gap": gap_lab, "side": side}
+
+    def adjust(self, symbol, history, decision, closed_trades) -> float:
+        target = decision.target
+        if target == 0.0 or len(closed_trades) < self.min_n:
+            return target
+        fb = failure_buckets(closed_trades)
+        if len(fb) == 0:
+            return target
+        side = "long" if target > 0 else "short"
+        labels = self._candidate_labels(history, side, closed_trades)
+        worst_share = 0.0
+        for dim, bucket in labels.items():
+            row = fb[(fb["dimension"] == dim) & (fb["bucket"] == str(bucket))]
+            if len(row) == 0:
+                continue
+            r = row.iloc[0]
+            if r["n_trades"] >= self.min_n and r["loss_share"] >= self.veto_share \
+                    and r["win_rate"] <= self.veto_wr:
+                return 0.0  # veto: this bucket is bleeding
+            worst_share = max(worst_share, float(r["loss_share"]))
+        # soft down-size proportional to the worst bucket's loss share
+        size = max(self.min_size, 1.0 - worst_share)
+        return target * size
+
+
 def build_overlay(name: str) -> Overlay:
     if name == "none":
         return IdentityOverlay()
     if name == "conviction":
         return ConvictionGate()
+    if name == "bucket":
+        return BucketFilter()
     raise KeyError(f"unknown overlay {name!r}")
