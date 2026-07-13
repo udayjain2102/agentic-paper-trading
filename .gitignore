@@ -12,3 +12,6 @@ journal/
 state/
 HALT
 data/
+
+# Claude Code git worktrees (separate checkouts, not repo content)
+.claude/worktrees/
