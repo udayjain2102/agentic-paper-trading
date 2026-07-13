@@ -25,11 +25,27 @@ agent:
   model: nvidia/llama-3.3-nemotron-super-49b-v1.5
   max_tokens: 16000
 
-# Winning strategy, chosen by `python -m rhagent.compare` (backtest over ~1yr of
-# daily bars, ranked by total return). This block is only used when the runner is
-# invoked with STRATEGY_MODE=true; the default (no env var) keeps the LLM agent.
-# Backtest 2026-07-06: pairs (NVDA/SPY) had the highest total return (~33%).
+# Winning strategy. Chosen by the long-only paper-trade bake-off (2026-07-13/14),
+# ranked by risk-adjusted return with the robust evaluator (fold Sharpe +
+# bootstrap CI + deflated Sharpe). Winner: mean-reversion, long-only, gated by the
+# ConvictionGate overlay (trade only high-conviction signals).
+#   overlay        point Sharpe   deflated
+#   none (raw)         1.16          0.54
+#   conviction         1.82          0.79   <- locked in
+#   bucket             1.13          0.52
+#   winprob            1.16          0.53
+# Caveat: conviction's 95% CI lower bound still sits ~0, so this is the best
+# candidate, not a statistically-proven edge — confirm with forward OOS data.
+# The `overlay` field applies in the paper-trade evaluation path (papertrade.py);
+# wiring it into the live/forward path (runner.py, forward.py) is a follow-up.
+# This block is only used when the runner is invoked with STRATEGY_MODE=true; the
+# default (no env var) keeps the LLM agent.
 strategy:
-  name: pairs
+  name: mean_reversion
   params: {}
-  universe: [NVDA, SPY]
+  overlay: conviction
+  universe: [AAPL, ABBV, ABT, ADBE, AMD, AMGN, AMZN, AVGO, AXP, BA, BAC, BLK, BMY,
+    C, CAT, CMCSA, COST, CRM, CSCO, CVX, DHR, DIS, GE, GILD, GOOGL, GS, HD, HON,
+    IBM, INTC, JNJ, JPM, KO, LIN, LLY, LOW, MA, MCD, MDT, META, MRK, MS, MSFT,
+    NFLX, NKE, NOW, NVDA, ORCL, PEP, PFE, PG, PM, QCOM, SBUX, SPY, T, TMO, TSLA,
+    TXN, UNH, UNP, V, VZ, WFC, WMT, XOM]

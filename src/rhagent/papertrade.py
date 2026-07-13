@@ -275,8 +275,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--cache-dir", default="data")
     p.add_argument("--no-lessons", action="store_true",
                    help="agent engine only: skip feeding prior-run loss lessons")
-    p.add_argument("--overlay", default="none", choices=["none", "conviction", "bucket", "winprob"],
-                   help="decision overlay applied to each target (learning variant)")
+    p.add_argument("--overlay", default="conviction",
+                   choices=["none", "conviction", "bucket", "winprob"],
+                   help="decision overlay applied to each target (default: the "
+                        "locked-in conviction gate; pass 'none' for the raw strategy)")
     args = p.parse_args(argv)
 
     if args.symbols.strip().lower() == "all":
