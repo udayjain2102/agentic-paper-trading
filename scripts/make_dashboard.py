@@ -288,6 +288,8 @@ margin:22px 0 10px;font-weight:600}
 h2.runhead{font-size:19px;text-transform:none;letter-spacing:-.01em;color:var(--fg);margin:20px 0 10px}
 a.mono{color:var(--accent);text-decoration:none}
 a.mono:hover{text-decoration:underline}
+.backlink{font-size:12px;font-weight:400;margin-left:14px;color:var(--accent);text-decoration:none}
+.backlink:hover{text-decoration:underline}
 .sub{color:var(--muted);margin:0 0 8px}
 .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .chip{background:var(--panel2);border:1px solid var(--line);border-radius:999px;
@@ -360,9 +362,10 @@ def _run_section(run_dir: Path, anchored: bool = False) -> str:
         ]
     )
     aid = f" id='run-{escape(rid)}'" if anchored else ""
+    back = "<a class='backlink' href='#allruns'>← all runs</a>" if anchored else ""
     return f"""
   <section class="runcard"{aid}>
-  <h2 class="runhead">{escape(str(meta['engine']))} · <span class="mono">{escape(rid)}</span></h2>
+  <h2 class="runhead">{escape(str(meta['engine']))} · <span class="mono">{escape(rid)}</span>{back}</h2>
   <div class="meta">{chips}</div>
 
   <h3>Scorecard</h3>
@@ -413,9 +416,14 @@ def render_all(base_dir: Path) -> str:
         raise SystemExit(f"no runs found under {base_dir} — run rhagent.papertrade first")
     comparison = compare_runs(base_dir)
     index = (
+        # Drill-down via native CSS :target — hide every run's detail until its
+        # id is clicked, so 1000+-row ledgers don't all render at once.
+        "<style>.runcard{display:none}.runcard:target{display:block}</style>"
+        "<div id='allruns'>"
         f"<h2>All runs · {len(runs)} total</h2>"
-        f"<p class='sub'>Click a run id to jump to its full detail below.</p>"
+        f"<p class='sub'>Click a run id to open its full detail (ledger, equity, buckets).</p>"
         f"<div class='tblscroll'>{_compare_table(comparison, '', link=True)}</div>"
+        "</div>"
     )
     sections = "".join(_run_section(rd, anchored=True) for rd in runs)
     return _page(
