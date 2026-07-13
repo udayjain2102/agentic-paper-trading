@@ -270,6 +270,32 @@ def _compare_table(df: pd.DataFrame, current: str, link: bool = False) -> str:
     )
 
 
+def _bakeoff_table(base_dir) -> str:
+    from rhagent.evaluate_robust import robust_table
+    df = robust_table(base_dir)
+    if len(df) == 0:
+        return "<p class='muted'>no runs</p>"
+    rows = []
+    for _, r in df.iterrows():
+        win = "beats" if r["beats_baseline"] else ""
+        cls = "up" if r["beats_baseline"] else ""
+        rows.append(
+            f"<tr><td class='mono'>{escape(str(r['run_id']))}</td>"
+            f"<td>{escape(str(r['engine']))}</td>"
+            f"<td>{escape(str(r['overlay']))}</td>"
+            f"<td class='num'>{r['point_sharpe']:.2f}</td>"
+            f"<td class='num'>{r['fold_mean']:.2f}±{r['fold_std']:.2f}</td>"
+            f"<td class='num'>[{r['ci_lo']:.2f}, {r['ci_hi']:.2f}]</td>"
+            f"<td class='num'>{r['deflated']:.2f}</td>"
+            f"<td class='num {cls}'>{win}</td></tr>"
+        )
+    return (
+        "<table class='grid'><thead><tr><th>run id</th><th>engine</th><th>overlay</th>"
+        "<th>point sharpe</th><th>fold mean±sd</th><th>95% CI</th><th>deflated</th>"
+        f"<th>vs baseline</th></tr></thead><tbody>{''.join(rows)}</tbody></table>"
+    )
+
+
 _CSS = """
 :root{--bg:#0f1216;--panel:#171b21;--panel2:#1c2128;--line:#2a313b;--fg:#e6edf3;
 --muted:#8b949e;--up:#3fb950;--down:#f85149;--accent:#58a6ff}
@@ -424,6 +450,12 @@ def render_all(base_dir: Path) -> str:
         f"<p class='sub'>Click a run id to open its full detail (ledger, equity, buckets).</p>"
         f"<div class='tblscroll'>{_compare_table(comparison, '', link=True)}</div>"
         "</div>"
+    )
+    index += (
+        "<h2>Bake-off · robust Sharpe (fold + bootstrap + deflated)</h2>"
+        "<p class='sub'>A variant beats baseline only if its 95% CI lower bound "
+        "clears the baseline Sharpe.</p>"
+        f"<div class='tblscroll'>{_bakeoff_table(base_dir)}</div>"
     )
     sections = "".join(_run_section(rd, anchored=True) for rd in runs)
     return _page(
