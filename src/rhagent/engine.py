@@ -86,9 +86,11 @@ class AgentEngine:
         from .config import load
 
         cfg = load()
+        # max_retries lets the SDK ride out transient 429s / timeouts with
+        # backoff rather than dropping the bar to a held "parse-fail" decision.
         client = OpenAI(
             api_key=cfg.nvidia_api_key, base_url=cfg.nvidia_base_url,
-            timeout=45, max_retries=1,
+            timeout=45, max_retries=8,
         )
         model = self.model or cfg.agent.model
 
