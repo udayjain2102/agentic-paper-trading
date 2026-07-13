@@ -1,0 +1,363 @@
+# Architecture
+
+How this system decides what to trade, the math it uses to judge a strategy,
+and the loop by which it improves — all behind hard, code-enforced safety rails.
+
+The project has **two decision brains** that share one safety funnel:
+
+1. **The LLM agent** — Claude/Nemotron reasons over the live account each cron
+   tick and proposes orders.
+2. **The quant strategy pipeline** — rule-based strategies that are searched,
+   statistically gated, and paper-traded offline, then run live in "strategy mode".
+
+Both emit the same thing — proposed `(symbol, side, notional)` orders — and both
+are forced through the identical `OrderExecutor → guardrails → broker` path. The
+model decides; **the code decides what's allowed.**
+
+---
+
+## 1. The model
+
+### 1a. The LLM decision agent (`agent.py`)
+
+A **manual agentic loop** (deliberately *not* an auto tool-runner) served by
+NVIDIA's OpenAI-compatible API (`nvidia/llama-3.3-nemotron-super-49b-v1.5`).
+
+Each run seeds the model with a system prompt and one instruction — *"Review the
+account and decide whether to trade right now"* — and exposes three tools:
+
+| Tool | What it does |
+|------|--------------|
+| `get_account` | buying power, deployed capital, positions, realized P&L today |
+| `get_quote` | latest price for a symbol |
+| `place_order` | propose `(symbol, side, notional_usd)` |
+
+The loop runs up to `max_turns` turns: call the model → if it emitted tool calls,
+dispatch each and feed results back → repeat until the model stops calling tools.
+The reason it is *manual* is the choke point: `place_order` is never sent to the
+broker. It is dispatched to `OrderExecutor`, which runs the guardrails first
+(§3). The model can reason however it likes, but a hard cap is enforced in code
+it cannot talk past.
+
+`run_scripted_session` is a no-API stand-in that walks the same dispatch path
+with a fixed plan (one order that clears the per-trade cap, one that's rejected)
+so the full pipeline can be exercised without an API key.
+
+### 1b. The rule-based strategies (`strategies/`)
+
+Every strategy implements one contract (`strategies/base.py`):
+
+- `positions(bars) -> Series` in `{-1, 0, +1}` — the target position, obeying the
+  **no-lookahead invariant**: the position at day *t* uses only data up to and
+  including day *t*.
+- `signal(bars) -> Series` — a *continuous* score where higher = more bullish on
+  the forward return. This is what the factor/IC math evaluates.
+
+| Strategy | Signal | Position rule |
+|----------|--------|---------------|
+| **mean_reversion** | `-z`, where `z = (close − rollmean)/rollstd` over `lookback` | long when `z < −entry`, exit to flat when `z ≥ −exit` (hysteresis avoids churn) |
+| **momentum** | `close.pct_change(lookback)` (trailing return) | `sign(trailing return)` |
+| **linreg** | rolling-OLS prediction of next-day return | long when prediction > 0 |
+| **pairs** | z-score of `log(A) − log(B)` spread | long the cheap leg / short the rich leg when `|z| > entry` |
+
+`linreg` is the only one that fits parameters: at each day *t* it runs
+`np.linalg.lstsq` on features `[1, ret_lag1, ret_lag2, ma_ratio]` against next-day
+return, trained only on rows whose target is already realized (strictly before
+*t*), then predicts day *t*. Expanding window, no lookahead.
+
+`clamp_short` maps any `-1` to `0` unless shorting is explicitly enabled — the
+system is long-only by default (shorting is out of scope for v1).
+
+---
+
+## 2. The math
+
+This is how the system judges whether a signal is *real* rather than lucky. The
+core metric is **cross-sectional Information Coefficient (IC)**, not raw P&L.
+
+### 2a. Information Coefficient (`factor/ic.py`)
+
+For a given forward horizon *h*, the forward return is
+`forward_returns = close.shift(-h)/close − 1`.
+
+**Rank-IC on one day** is the Spearman rank correlation between that day's signal
+cross-section and its forward returns:
+
+```
+rank_ic(t) = corr( rank(signal_t across names), rank(fwd_return_t across names) )
+```
+
+Ranking makes it invariant to a common additive shift applied to every name that
+day — it removes the equal-weighted cross-sectional mean, so no separate demeaning
+step is needed. **Caveat (documented in the code):** rank-IC is *not* market-
+neutral. It does not remove differential beta, so a signal that merely proxies
+market beta can still earn a positive rank-IC. True beta-neutralization is
+deferred.
+
+Two summary statistics fall out of the daily IC series `ic(t)`:
+
+- **ICIR** (Information Coefficient Information Ratio) — the *consistency* of the
+  edge: `ICIR = mean(ic) / std(ic)`. This, not total return, is the primary
+  ranking and gating metric.
+- **IC decay / half-life** — mean IC computed at horizons `(1, 5, 10, 20, 50)`.
+  The **half-life** is the first horizon where `|IC|` falls to half its 1-day
+  value. A fast-decaying signal is fragile; a slow one is tradeable.
+
+### 2b. Backtest metrics (`backtest.py`)
+
+The vectorized engine turns a positions series into net returns and a scorecard.
+The position held on day *t* earns the *t → t+1* return; the final day (no
+forward return) is dropped. Turnover (`|Δposition|`) is charged `cost_bps`
+basis points.
+
+```
+net(t)   = position(t) · fwd_return(t) − turnover(t)·cost_bps/1e4
+equity   = cumprod(1 + net)
+sharpe   = mean(net)/std(net) · √252          (annualized)
+max_dd   = min(equity/cummax(equity) − 1)
+hit_rate = fraction of nonzero-position days that are profitable
+```
+
+Strategy ranking in `compare.py` uses **total_return**; the rest are context.
+
+### 2c. Multiple-testing correction (`gate/stats.py`)
+
+The danger: search enough configs and one *will* look great by luck. Two
+corrections, both implemented pure (no scipy — just `math.erfc` for the normal
+CDF and Acklam's rational approximation for its inverse):
+
+- **Bonferroni** — turn ICIR into a t-stat `t = |ICIR|·√n_eff`, get its two-sided
+  p-value, and require it to beat `α / n_tested`. The more configs tried, the
+  higher the bar every survivor must clear.
+- **Deflated Sharpe Ratio** (Bailey & López de Prado) — asks: given that *N*
+  configs were tried, and given the *variance of the ICIRs across those trials*,
+  how probable is it that an ICIR this high is real rather than the luckiest
+  draw? It corrects for both the number of trials and the non-normality
+  (skew/kurtosis) of the return stream, returning a probability that must exceed
+  `dsr_threshold` (0.95).
+
+The DSR's expected-maximum-under-null term is
+`sr0 = √var_trials · [(1−γ)·Φ⁻¹(1 − 1/N) + γ·Φ⁻¹(1 − 1/(N·e))]`, where γ is the
+Euler–Mascheroni constant — the expected maximum of *N* draws from the null.
+
+### 2d. The locked split (`factor/split.py`)
+
+The out-of-sample (OOS) slice is fixed up front (default last 25% of dates) and
+**must never be read during signal development or search** — it is reserved for
+the final gate. `in_sample_mask` additionally trims the boundary so no in-sample
+day's *h*-day forward-return window peeks across the cutoff.
+
+---
+
+## 3. How it decides (the safety funnel)
+
+Every order — LLM or strategy — passes through the same gauntlet. `guardrails.py`
+is pure, does no I/O, holds no state, and is exhaustively tested on every
+rejection path.
+
+```
+                proposed order (symbol, side, notional)
+                              │
+                              ▼
+            ┌─────────  OrderExecutor.execute  ─────────┐
+            │  check_halted (top of run):               │
+            │    • HALT file present?      → abort run   │
+            │    • daily realized loss ≤ −limit? → abort │
+            ├───────────────────────────────────────────┤
+            │  validate_order (per order):               │
+            │    1. valid side + US-equity ticker        │
+            │       (1–5 uppercase letters; rejects      │
+            │        crypto/options/anything else)       │
+            │    2. notional > 0                          │
+            │    3. notional ≤ per_trade_max_usd          │
+            │    4. orders_placed < max_orders_per_run    │
+            │    buys only:                               │
+            │    5. notional ≤ buying_power               │
+            │    6. deployed + notional ≤ total_dep_cap   │
+            │    7. new-symbol count < max_new_positions  │
+            └───────────────────────────────────────────┘
+                              │
+                 ok? ─── no ──► REJECTED (logged, not placed)
+                  │
+                 yes
+                  ▼
+        DRY-RUN: log intent, place nothing   │   LIVE: broker places, record fill
+                  │                                     │
+                  └──────────► journal/runs.jsonl ◄─────┘  (append-only audit)
+```
+
+Design choices worth noting:
+
+- **Dry-run by default.** `LIVE` must equal the literal string `true`; anything
+  else stays paper.
+- **Sells skip the exposure checks** (5–7) — selling reduces risk.
+- `validate_order` is a *pure function* — it doesn't mutate the run counters. The
+  executor bumps `orders_placed`/`new_positions` only after an order is actually
+  accepted and acted on.
+- Limits live in `config.yaml` (per-trade $250, total-deployed $2000, 2 new
+  positions/run, 5 orders/run, $200 daily-loss kill switch) — all conservative
+  defaults.
+
+One cron tick (`runner.py`): load config → `check_halted` → build executor →
+route to LLM agent *or* strategy mode (`STRATEGY_MODE=true`) → journal.
+
+---
+
+## 4. How it improves
+
+Improvement happens **offline, on the quant side**, in three nested loops that
+get progressively stricter about "is this edge real?". Nothing here can touch
+live trading until it survives all of them and is manually pasted into
+`config.yaml`.
+
+### Loop A — Coarse-to-fine parameter search (`search/`) — *the iteration loop*
+
+Strictly in-sample. This is the literal iteration loop: `run_search` runs up to
+`max_rounds` rounds, and **each round rewrites its own search grid based on the
+previous round's survivors**:
+
+```
+round 0:  score the coarse Cartesian product → apply gates → keep top-k
+round r:  refine_grids(around survivors) → score the NEW configs
+          → apply gates → keep top-k
+stop when: a round produces no survivors, OR the best ICIR stops improving
+```
+
+Each strategy has a small parameter grid (`search/space.py`). The loop scores the
+product by ICIR, then **refines the grid around the survivors** (`refine_grids`
+inserts midpoints between surviving values) so each successive round concentrates
+its samples where the edge appears — coarse first, then progressively finer. The
+`prev_best.icir` check is the convergence test that ends the iteration.
+
+Four **survival gates** (`search/loop.py`), all on by default:
+
+1. **ICIR floor** — `icir ≥ 0.3`.
+2. **Half-life floor** — the edge must persist `≥ 5` days.
+3. **Sign stability** — mean IC must be positive in *every* in-sample sub-period
+   (an edge that flips sign mid-history is noise).
+4. **Parameter robustness** — a config's grid *neighbors* must also clear the
+   ICIR floor. A lone lucky setting surrounded by junk cannot survive.
+
+The loop reports `n_tested` — the count of distinct configs scored — which feeds
+the multiple-testing correction downstream.
+
+### Loop B — The out-of-sample gate (`gate/`)
+
+The one place the locked OOS slice is read. For each in-sample survivor:
+
+1. Recompute ICIR and half-life on the **OOS** slice.
+2. **ICIR-retention** — OOS ICIR must be positive and ≥ 50% of the in-sample
+   ICIR (edge held up out of sample).
+3. **Decay holds** — OOS half-life ≥ floor.
+4. **Bonferroni** pass (§2c), penalized by `n_tested`.
+5. **Deflated Sharpe** pass, using the ICIR variance across *all* scored configs.
+
+Only a config that clears **all five** is `viable`. The gate prints a verdict
+table with a `reason` for each rejection. (Real-data verdict so far: viable = 0,
+but real — the honest outcome of a strict gate on limited data.)
+
+### Loop C — Event-driven paper-trade & failure analysis (`papertrade.py`, `evaluate.py`)
+
+Where a surviving strategy meets bar-by-bar reality and its *failures* get
+diagnosed. `PaperTrader` steps a `DecisionEngine` through history one bar at a
+time (never peeking ahead), turning each position change into a discrete,
+ID-stamped trade written to an append-only ledger (`journal/papertrade/{run_id}/`).
+
+Two seams keep it extensible without touching the loop: bars come from a
+`MarketSource`, fills from a `FillModel`. **These two seams are the world-model
+hook** (§5).
+
+The payoff is `evaluate.py`:
+
+- **Aggregate scorecard** — win rate, avg win/loss, profit factor, total return,
+  Sharpe, max drawdown, avg holding period. Return metrics reuse
+  `backtest.result_from_returns`, so paper-trade and vectorized numbers agree.
+- **Failure buckets** — *where do the losses concentrate?* At entry, each trade
+  records cheap lookahead-free features (20-day vol, overnight gap, 5-day trend).
+  Losses are then attributed across dimensions (vol regime, gap direction,
+  holding length, symbol, side) and ranked by **loss share**. This is the
+  feedback signal: it tells you the edge dies in, say, high-vol down-gaps, which
+  points at the next parameter or filter to change.
+- **`compare` command** — rank every paper-trade run side by side.
+
+---
+
+## The improvement flow, end to end
+
+```
+   search (in-sample)          gate (locked OOS)         paper-trade + failure buckets
+  ┌──────────────────┐       ┌──────────────────┐       ┌───────────────────────────┐
+  │ ICIR ranking     │       │ ICIR retention   │       │ per-trade ledger          │
+  │ 4 survival gates │  ───► │ Bonferroni       │  ───► │ aggregate scorecard       │
+  │ coarse→fine grid │       │ Deflated Sharpe  │       │ losses by regime bucket   │
+  └──────────────────┘       └──────────────────┘       └───────────────────────────┘
+          │                          │                             │
+    survivors + n_tested      viable configs              "where the edge dies"
+                                                                  │
+                                                                  ▼
+                                              manual: paste winner into config.yaml,
+                                              run live via STRATEGY_MODE=true —
+                                              through the SAME guardrails as the LLM.
+```
+
+The system does **not** auto-promote a strategy to live trading. Every gate can
+say "nothing is viable," and the honest answer is usually exactly that.
+Promotion is a human pasting a config block and flipping `LIVE=true` — every
+guardrail in §3 still stands between that config and a real order.
+
+---
+
+## 5. The world model
+
+**Status: the current code ships the *seams*, not the world model itself.** The
+world model is a planned set of extensions, each of which plugs into a seam that
+already exists — so none requires rewriting the harness.
+
+The hook is the paper-trade loop's two Protocols (`papertrade.py`): the loop
+consumes bars through a `MarketSource` and prices orders through a `FillModel`,
+and knows nothing else about where either comes from. Today those are
+`HistoricalSource` (real cached bars) and `CloseFill` (perfect fill at the
+close). Swapping them turns real-history replay into a full world model. The
+roadmap (from the design spec, in order):
+
+1. **Synthetic price paths** — a `MarketSource` that *generates* bar frames
+   instead of reading history: start with block-bootstrap of real returns,
+   upgrade to GARCH/regime models. Enables Monte-Carlo robustness over thousands
+   of scenarios rather than one real path. Must be validated against real-data
+   statistics before its evaluations are trusted.
+2. **Market impact** — a `FillModel` where the agent's own orders move the fill
+   price (slippage/impact), for honest evaluation at size.
+3. **Counterfactual replay** — re-run the deterministic loop from a saved state,
+   overriding one decision, to branch the timeline ("what if we'd held at trade
+   #7"). Relies on the loop's determinism guarantee.
+4. **Agent mental model** — a running belief state maintained inside a future
+   `AgentEngine`, shipping with the LLM-through-the-loop integration.
+
+The loop was built event-driven (not vectorized like `backtest.py`) specifically
+so these can attach. `backtest.py` stays the fast ranking path; the paper-trade
+loop is the slow, honest, world-model-ready path.
+
+---
+
+## 6. Noise reduction
+
+Separating a real edge from noise is the *purpose* of the whole quant side, so
+the mechanisms are spread across the layers on purpose — defense in depth against
+fooling yourself. Collected in one place:
+
+| Mechanism | Where | What noise it removes |
+|-----------|-------|-----------------------|
+| **Rank-IC** (Spearman, not Pearson) | `factor/ic.py` | rank-based → immune to outlier days and monotone rescaling; ranking removes the common cross-sectional mean each day |
+| **ICIR over raw IC** | `factor/ic.py` | `mean/std` scores *consistency*, not a lucky-day spike; the `< 0.3 = "likely noise"` band names it outright (`factor/__main__.py`) |
+| **Overlapping-window caveat** | `factor/__main__.py` | flags that horizon-h ICs are autocorrelated, so the effective independent sample is ~`days/h` and the ICIR band *overstates* evidence — honest denominator |
+| **Sign-stability gate** | `search/loop.py` | rejects edges that flip sign between in-sample sub-periods (real edge is persistent; noise wanders) |
+| **Robustness gate** | `search/loop.py` | a config's grid neighbors must also pass — kills lone lucky settings surrounded by junk |
+| **Half-life floor** | `search`, `gate` | rejects fast-decaying signals that are mostly microstructure noise |
+| **OOS ICIR-retention** | `gate/oos.py` | edge must survive on data it was never fit to, at ≥50% strength |
+| **Bonferroni + Deflated Sharpe** | `gate/stats.py` | the core statistical noise filter: penalize every survivor by *how many configs were tried*, so search can't manufacture significance |
+| **Hysteresis** (entry ≠ exit) | `mean_reversion.py` | avoids churning in/out around a single threshold — trade-level noise |
+| **Turnover cost** (`cost_bps`) | `backtest.py`, `papertrade.py` | charges every position flip, so a "signal" that only looks good gross gets penalized for thrashing |
+| **Failure buckets** | `evaluate.py` | separates *where* losses concentrate (a regime) from random scatter, so you fix a cause instead of overfitting to individual losers |
+
+The throughline: at every layer the system assumes an apparent edge is noise
+until it clears a bar, and it makes the bar *higher* the more you searched.

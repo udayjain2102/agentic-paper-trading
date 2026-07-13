@@ -23,7 +23,6 @@ limits:
 # Served by NVIDIA's OpenAI-compatible API (integrate.api.nvidia.com).
 agent:
   model: nvidia/llama-3.3-nemotron-super-49b-v1.5
-  effort: high  # unused by the NVIDIA backend; kept for config compatibility
   max_tokens: 16000
 
 # Winning strategy, chosen by `python -m rhagent.compare` (backtest over ~1yr of

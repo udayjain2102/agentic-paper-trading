@@ -89,7 +89,6 @@ def test_full_dry_run_places_nothing(tmp_path):
         executor=executor,
         agent_cfg=AgentConfig(
             model="nvidia/llama-3.3-nemotron-super-49b-v1.5",
-            effort="high",
             max_tokens=16000,
         ),
     )
