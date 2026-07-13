@@ -63,30 +63,44 @@ class AgentEngine:
         lessons: str = "",
         name: str = "agent",
         allow_short: bool = True,
+        max_tokens: int = 256,
     ) -> None:
         self.complete = complete
         self.model = model
         self.lessons = lessons
         self.name = name
         self.allow_short = allow_short
+        self.max_tokens = max_tokens
 
     def _default_complete(self) -> Callable[[str], str]:
-        """Lazy NVIDIA OpenAI client — built once, on first decide()."""
+        """Lazy NVIDIA OpenAI client — built once, on first decide().
+
+        One bar-decision is a two-field JSON, not an essay. nemotron-super is a
+        hybrid reasoning model that dumps a long chain-of-thought by default
+        (60-120s/call at cfg.agent.max_tokens=16000); the "detailed thinking
+        off" system directive plus a small token cap keeps each call ~2s while
+        still returning a reasoned verdict.
+        """
         from openai import OpenAI
 
         from .config import load
 
         cfg = load()
         client = OpenAI(
-            api_key=cfg.nvidia_api_key, base_url=cfg.nvidia_base_url
+            api_key=cfg.nvidia_api_key, base_url=cfg.nvidia_base_url,
+            timeout=45, max_retries=1,
         )
         model = self.model or cfg.agent.model
 
         def complete(prompt: str) -> str:
             resp = client.chat.completions.create(
                 model=model,
-                max_tokens=cfg.agent.max_tokens,
-                messages=[{"role": "user", "content": prompt}],
+                max_tokens=self.max_tokens,
+                temperature=0,
+                messages=[
+                    {"role": "system", "content": "detailed thinking off"},
+                    {"role": "user", "content": prompt},
+                ],
             )
             return resp.choices[0].message.content or ""
 
@@ -95,7 +109,10 @@ class AgentEngine:
     def _prompt(self, symbol: str, history: pd.DataFrame, current_pos: float) -> str:
         close = history["close"].astype(float)
         last = float(close.iloc[-1])
-        mom5 = float(close.iloc[-1] / close.iloc[-6] - 1.0) if len(close) >= 6 else 0.0
+        # momentum over up to 5 prior bars; fall back to the whole window when
+        # history is shorter (a 6-bar minimum would zero out short runs).
+        k = min(5, len(close) - 1)
+        mom5 = float(close.iloc[-1] / close.iloc[-1 - k] - 1.0) if k >= 1 else 0.0
         rets = close.pct_change().dropna()
         vol20 = float(rets.tail(20).std()) if len(rets) >= 2 else 0.0
         if pd.isna(vol20):
