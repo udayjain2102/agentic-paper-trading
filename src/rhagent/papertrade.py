@@ -23,6 +23,7 @@ import pandas as pd
 from .data import get_bars
 from .engine import AgentEngine, DecisionEngine, StrategyEngine
 from .features import entry_features  # noqa: F401  (re-exported for callers/tests)
+from .overlay import IdentityOverlay, Overlay, build_overlay
 
 
 class MarketSource(Protocol):
@@ -82,6 +83,7 @@ class PaperTrader:
         notional: float = 10_000.0,
         out_dir: str | Path = "journal/papertrade",
         run_id: str | None = None,
+        overlay: Overlay | None = None,
     ) -> None:
         self.engine = engine
         self.source = source
@@ -90,6 +92,7 @@ class PaperTrader:
         self.notional = notional
         self.out_dir = Path(out_dir)
         self.run_id = run_id or new_run_id()
+        self.overlay = overlay or IdentityOverlay()
 
     def run(self) -> Path:
         frames = self.source.bars()
@@ -142,7 +145,7 @@ class PaperTrader:
                 prev = pos[sym]
 
                 d = self.engine.decide(sym, history, prev)
-                target = d.target
+                target = self.overlay.adjust(sym, history, d, pd.DataFrame(trades))
                 # Don't open a fresh position on the final bar: there is no
                 # future bar to hold it into, so end_of_data would immediately
                 # force-close it for a 0-bar phantom round-trip. Guard here,
@@ -205,6 +208,7 @@ class PaperTrader:
             "end": str(index[-1]),
             "cost_bps": self.cost_bps,
             "notional": self.notional,
+            "overlay": self.overlay.name,
             "created_ts": datetime.now(timezone.utc).isoformat(),
         }
         (run_dir / "run.json").write_text(json.dumps(meta, indent=2, sort_keys=True))
@@ -269,6 +273,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--cache-dir", default="data")
     p.add_argument("--no-lessons", action="store_true",
                    help="agent engine only: skip feeding prior-run loss lessons")
+    p.add_argument("--overlay", default="none", choices=["none"],
+                   help="decision overlay applied to each target (learning variant)")
     args = p.parse_args(argv)
 
     if args.symbols.strip().lower() == "all":
@@ -291,9 +297,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         engine = StrategyEngine(build(args.engine, {"allow_short": args.allow_short}))
 
+    overlay = build_overlay(args.overlay)
     trader = PaperTrader(
         engine=engine, source=source, cost_bps=args.cost_bps,
-        out_dir=args.out_dir,
+        out_dir=args.out_dir, overlay=overlay,
     )
     run_dir = trader.run()
     _print_report(run_dir)
