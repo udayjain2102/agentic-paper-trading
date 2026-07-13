@@ -24,3 +24,14 @@ def entry_features(history: pd.DataFrame) -> dict:
         trend5 = 0.0 if diff == 0 else (1.0 if diff > 0 else -1.0)
 
     return {"vol20": vol20, "gap": gap, "trend5": trend5}
+
+
+def flatten_trades(trades: pd.DataFrame) -> pd.DataFrame:
+    """Flatten a trades frame's nested `entry_features` dict column into
+    `feat_*` columns, matching evaluate.load_run exactly. No-op (returns as-is)
+    if empty, already flattened, or lacking an `entry_features` column."""
+    if len(trades) == 0 or "entry_features" not in trades.columns:
+        return trades
+    trades = trades.copy()
+    feats = pd.json_normalize(trades.pop("entry_features")).add_prefix("feat_")
+    return pd.concat([trades.reset_index(drop=True), feats.reset_index(drop=True)], axis=1)

@@ -19,7 +19,7 @@ import pandas as pd
 
 from .engine import Decision
 from .evaluate import failure_buckets
-from .features import entry_features
+from .features import entry_features, flatten_trades
 
 
 class Overlay(Protocol):
@@ -101,6 +101,7 @@ class BucketFilter:
         target = decision.target
         if target == 0.0 or len(closed_trades) < self.min_n:
             return target
+        closed_trades = flatten_trades(closed_trades)
         fb = failure_buckets(closed_trades)
         if len(fb) == 0:
             return target
