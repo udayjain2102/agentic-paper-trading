@@ -253,19 +253,25 @@ def _compare_table(df: pd.DataFrame, current: str, link: bool = False) -> str:
             f"<a class='mono' href='#run-{escape(rid)}'>{escape(rid)}</a>"
             if link else f"{escape(rid)}"
         )
+        pnl = float(r["net_pnl"])
+        pnl_cls = "up" if pnl >= 0 else "down"
         rows.append(
             f"<tr class='{cls}'><td class='mono'>{idcell}{badges}</td>"
             f"<td>{escape(str(r['engine']))}</td>"
             f"<td class='num'>{int(r['n_trades'])}</td>"
+            f"<td class='num up'>{int(r['won'])}</td>"
+            f"<td class='num down'>{int(r['lost'])}</td>"
             f"<td class='num'>{_pct(r['win_rate'])}</td>"
             f"<td class='num'>{_num(r['profit_factor'])}</td>"
+            f"<td class='num {pnl_cls}'>{'+' if pnl >= 0 else ''}{_money(pnl)}</td>"
             f"<td class='num {ret_cls}'>{_pct(r['total_return'])}</td>"
             f"<td class='num'>{_num(r['sharpe'])}</td>"
             f"<td class='num down'>{_pct(r['max_drawdown'])}</td></tr>"
         )
     return (
         "<table class='grid'><thead><tr><th>run id</th><th>engine</th><th>trades</th>"
-        "<th>win rate</th><th>profit factor</th><th>total return</th><th>sharpe</th>"
+        "<th>won</th><th>lost</th>"
+        "<th>win rate</th><th>profit factor</th><th>net p&amp;l</th><th>total return</th><th>sharpe</th>"
         f"<th>max dd</th></tr></thead><tbody>{''.join(rows)}</tbody></table>"
     )
 

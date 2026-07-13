@@ -120,12 +120,18 @@ def compare_runs(base_dir: str | Path) -> pd.DataFrame:
     for meta_path in sorted(base_dir.glob("*/run.json")):
         meta, trades, net = load_run(meta_path.parent)
         a = aggregate(trades, net)
+        won = int((trades["outcome"] == "win").sum()) if len(trades) else 0
+        lost = int((trades["outcome"] == "loss").sum()) if len(trades) else 0
+        net_pnl = float(trades["pnl_abs"].astype(float).sum()) if len(trades) else 0.0
         rows.append({
             "run_id": meta["run_id"],
             "engine": meta["engine"],
             "n_trades": a["n_trades"],
+            "won": won,
+            "lost": lost,
             "win_rate": a["win_rate"],
             "profit_factor": a["profit_factor"],
+            "net_pnl": net_pnl,
             "total_return": a["total_return"],
             "sharpe": a["sharpe"],
             "max_drawdown": a["max_drawdown"],
