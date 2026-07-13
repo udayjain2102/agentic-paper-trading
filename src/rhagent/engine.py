@@ -43,7 +43,7 @@ class StrategyEngine:
     def decide(
         self, symbol: str, history: pd.DataFrame, current_pos: float
     ) -> Decision:
-        target = float(self.strat.positions(history).iloc[-1])
+        target = float(self.strat.target(history))
         close = float(history["close"].iloc[-1])
         reason = f"{self.name}: target={target:+.0f} close={close:.2f}"
         return Decision(target=target, reason=reason)

@@ -24,6 +24,12 @@ class Strategy:
     def positions(self, bars: pd.DataFrame) -> pd.Series:
         raise NotImplementedError
 
+    def target(self, bars: pd.DataFrame) -> float:
+        """Today's target position (last row only). Default recomputes the whole
+        series; subclasses whose last value is independent of the earlier ones
+        can override with a cheaper single-step computation."""
+        return float(self.positions(bars).iloc[-1])
+
     def signal(self, bars: pd.DataFrame) -> pd.Series:
         """Continuous score aligned to bars.index; higher = more bullish on the
         forward return. No lookahead: the value at day t uses only bars up to t.

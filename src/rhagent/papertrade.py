@@ -40,7 +40,15 @@ class HistoricalSource:
         self.start, self.end, self.cache_dir = start, end, cache_dir
 
     def bars(self) -> dict[str, pd.DataFrame]:
-        return get_bars(self.symbols, self.start, self.end, cache_dir=self.cache_dir)
+        frames = get_bars(self.symbols, self.start, self.end, cache_dir=self.cache_dir)
+        # Multi-symbol runs need one shared bar index; cached ranges differ
+        # (later listings, gaps), so intersect to the common dates.
+        if len(frames) > 1:
+            common = None
+            for df in frames.values():
+                common = df.index if common is None else common.intersection(df.index)
+            frames = {s: df.loc[common] for s, df in frames.items()}
+        return frames
 
 
 class CloseFill:
@@ -271,16 +279,22 @@ def main(argv: list[str] | None = None) -> int:
 
     p = argparse.ArgumentParser(prog="rhagent.papertrade")
     p.add_argument("--engine", required=True, choices=[*sorted(REGISTRY), "agent"])
-    p.add_argument("--symbols", required=True, help="comma-separated, e.g. NVDA,SPY")
+    p.add_argument("--symbols", required=True,
+                   help="comma-separated (NVDA,SPY) or 'all' for every cached symbol")
     p.add_argument("--days", type=int, default=400)
     p.add_argument("--cost-bps", type=float, default=1.0)
+    p.add_argument("--allow-short", action="store_true",
+                   help="strategy engines only: also take short positions on down-signals")
     p.add_argument("--out-dir", default="journal/papertrade")
     p.add_argument("--cache-dir", default="data")
     p.add_argument("--no-lessons", action="store_true",
                    help="agent engine only: skip feeding prior-run loss lessons")
     args = p.parse_args(argv)
 
-    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    if args.symbols.strip().lower() == "all":
+        symbols = sorted(p.stem.upper() for p in Path(args.cache_dir).glob("*.csv"))
+    else:
+        symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     if not symbols:
         p.error("no symbols given")
 
@@ -295,7 +309,7 @@ def main(argv: list[str] | None = None) -> int:
         lessons = "" if args.no_lessons else lessons_from_runs(args.out_dir)
         engine = AgentEngine(lessons=lessons)
     else:
-        engine = StrategyEngine(build(args.engine, {}))
+        engine = StrategyEngine(build(args.engine, {"allow_short": args.allow_short}))
 
     trader = PaperTrader(
         engine=engine, source=source, cost_bps=args.cost_bps,
