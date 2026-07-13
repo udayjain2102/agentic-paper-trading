@@ -158,6 +158,58 @@ class BucketFilter:
         return target * size
 
 
+class WinProbGate:
+    """Veto entries whose predicted win-probability is below `thresh`. Fits a
+    ridge logistic model on closed trades' entry features (+ a smoothed
+    per-symbol win-rate encoding); walk-forward and refit on a cadence."""
+
+    name = "winprob"
+    _FEATS = ["feat_vol20", "feat_gap", "feat_trend5"]
+
+    def __init__(self, thresh=0.52, refit_every=20, min_train=50, l2=1.0) -> None:
+        self.thresh = thresh
+        self.refit_every = refit_every
+        self.min_train = min_train
+        self.l2 = l2
+        self._beta = None
+        self._sym_wr: dict[str, float] = {}
+        self._prior = 0.5
+        self._calls = 0
+
+    def _design(self, feats: pd.DataFrame, sym_wr: np.ndarray) -> np.ndarray:
+        base = feats[self._FEATS].to_numpy(dtype=float)
+        bias = np.ones((len(feats), 1))
+        return np.column_stack([bias, base, sym_wr.reshape(-1, 1)])
+
+    def _refit(self, closed: pd.DataFrame) -> None:
+        df = flatten_trades(closed)
+        y = (df["outcome"].to_numpy() == "win").astype(float)
+        self._prior = float(y.mean()) if len(y) else 0.5
+        # smoothed target-mean encoding per symbol
+        a = 5.0
+        self._sym_wr = {}
+        for sym, grp in df.groupby("symbol"):
+            w = (grp["outcome"] == "win").sum()
+            self._sym_wr[sym] = float((w + a * self._prior) / (len(grp) + a))
+        sym_wr = df["symbol"].map(lambda s: self._sym_wr.get(s, self._prior)).to_numpy(float)
+        X = self._design(df, sym_wr)
+        self._beta = _fit_logit(X, y, l2=self.l2)
+
+    def adjust(self, symbol, history, decision, closed_trades) -> float:
+        target = decision.target
+        if target == 0.0 or len(closed_trades) < self.min_train:
+            return target
+        if self._beta is None or self._calls % self.refit_every == 0:
+            self._refit(closed_trades)
+        self._calls += 1
+        f = entry_features(history)
+        row = pd.DataFrame([{ "feat_vol20": f["vol20"], "feat_gap": f["gap"],
+                              "feat_trend5": f["trend5"] }])
+        sym_wr = np.array([self._sym_wr.get(symbol, self._prior)])
+        p = float(_predict_logit(self._beta, self._design(row, sym_wr))[0])
+        return target if p >= self.thresh else 0.0
+
+
 def build_overlay(name: str) -> Overlay:
     if name == "none":
         return IdentityOverlay()
@@ -165,4 +217,6 @@ def build_overlay(name: str) -> Overlay:
         return ConvictionGate()
     if name == "bucket":
         return BucketFilter()
+    if name == "winprob":
+        return WinProbGate()
     raise KeyError(f"unknown overlay {name!r}")

@@ -10,7 +10,7 @@ this mismatch; this test drives the real integration seam.
 import numpy as np
 import pandas as pd
 
-from rhagent.overlay import BucketFilter
+from rhagent.overlay import BucketFilter, WinProbGate
 from rhagent.papertrade import PaperTrader
 from rhagent.engine import StrategyEngine
 from rhagent.strategies import build
@@ -47,3 +47,24 @@ def test_bucket_filter_survives_real_papertrade_loop(tmp_path):
     trades_path = run_dir / "trades.jsonl"
     n_trades = sum(1 for line in trades_path.read_text().splitlines() if line.strip())
     assert n_trades > 5, f"expected enough closed trades to exercise BucketFilter, got {n_trades}"
+
+
+def test_winprob_runs_through_papertrader(tmp_path):
+    idx = pd.date_range("2025-01-01", periods=150, freq="D")
+    frames = {}
+    for k, s in enumerate(["AAA", "BBB"]):
+        c = 100 + np.sin(np.arange(150) / 3.0 + k) * 6
+        frames[s] = pd.DataFrame({"open": c, "close": c}, index=idx)
+
+    class _Src:
+        def bars(self):
+            return frames
+
+    trader = PaperTrader(
+        engine=StrategyEngine(build("mean_reversion", {})),
+        source=_Src(),
+        out_dir=str(tmp_path),
+        overlay=WinProbGate(min_train=5, refit_every=5),
+    )
+    run_dir = trader.run()
+    assert (run_dir / "run.json").exists()

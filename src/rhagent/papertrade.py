@@ -275,7 +275,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--cache-dir", default="data")
     p.add_argument("--no-lessons", action="store_true",
                    help="agent engine only: skip feeding prior-run loss lessons")
-    p.add_argument("--overlay", default="none", choices=["none", "conviction", "bucket"],
+    p.add_argument("--overlay", default="none", choices=["none", "conviction", "bucket", "winprob"],
                    help="decision overlay applied to each target (learning variant)")
     args = p.parse_args(argv)
 
