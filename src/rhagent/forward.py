@@ -98,10 +98,22 @@ def _positions(cfg, engine: str, bars: dict[str, pd.DataFrame],
 
 def _net_series(cfg, engine: str, bars: dict[str, pd.DataFrame], cost_bps: float,
                 eval_dir: Path, agent=None) -> pd.Series:
-    """Realized daily net-return series for the chosen engine."""
+    """Fully-realized daily net-return series for the chosen engine.
+
+    net_returns records a day's return at its *entry* date, so a day is only
+    trustworthy once the next trading bar exists for every leg. Keep only days
+    with full coverage: ticking mid-update otherwise appends a thin partial-day
+    mean (e.g. 3 of 66 names realized), which misrepresents the basket.
+
+    ponytail: strict full coverage means one chronically-missing name (a symbol
+    the feed stops updating) freezes the whole record; upgrade by dropping dead
+    names from the universe or switching to a coverage threshold.
+    """
     pos = _positions(cfg, engine, bars, eval_dir, agent)
-    legs = [net_returns(bars[s], pos[s], cost_bps) for s in pos]
-    return pd.concat(legs, axis=1).mean(axis=1).dropna()
+    legs = {s: net_returns(bars[s], pos[s], cost_bps) for s in pos}
+    df = pd.concat(legs, axis=1)
+    full = df.notna().sum(axis=1) == len(df.columns)
+    return df[full].mean(axis=1)
 
 
 def tick(cfg, eval_dir: Path, cost_bps: float = 1.0, *, engine: str | None = None,
