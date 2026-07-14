@@ -1,0 +1,41 @@
+name: daily-paper-run
+
+# Laptop-independent daily forward paper-run. Refreshes the cache over the
+# Robinhood MCP and ticks the forward record, persisting both to the
+# `paper-state` branch. See docs/paper-cron-setup.md for one-time setup.
+
+on:
+  schedule:
+    # 11:17 UTC, Mon-Fri. GitHub cron is UTC-only (no local tz) and may lag a
+    # few minutes under load. This lands after the prior US session has settled
+    # and before the next open; adjust the hour to taste.
+    - cron: "17 11 * * 1-5"
+  workflow_dispatch: {}   # manual "Run workflow" button for testing
+
+permissions:
+  contents: write         # push updated state to paper-state via GITHUB_TOKEN
+
+concurrency:
+  group: paper-run        # never let two runs clobber each other's state push
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history so the script can fetch paper-state
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: refresh + tick + persist
+        env:
+          ROBINHOOD_MCP_URL: ${{ secrets.ROBINHOOD_MCP_URL }}
+          ROBINHOOD_MCP_TOKEN: ${{ secrets.ROBINHOOD_MCP_TOKEN }}
+        run: bash scripts/paper_cron.sh
