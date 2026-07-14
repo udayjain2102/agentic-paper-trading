@@ -6,12 +6,15 @@ payload (the dict the Robinhood MCP returns), merges the new bars into each
 `data/<SYM>.csv`, dedupes by date, and drops degenerate snapshot rows
 (volume==0, the "current price" placeholder the last populate left behind).
 
-Kept separate from data.py because the fetch runs through Claude's MCP session,
-not the headless `mcp_fetch` (which needs ROBINHOOD_MCP_TOKEN). Claude fetches,
-hands the payload here.
+Two ways in:
+  * Interactive: Claude fetches via its MCP session and pipes the raw payload
+    here on stdin (the Mon-Fri hands-on loop).
+  * Headless: ``--fetch`` pulls the whole config universe itself over the MCP
+    (ROBINHOOD_MCP_URL/TOKEN), for an unattended cron on an always-on box.
 
-Usage (payload piped as JSON on stdin):
-    ... | PYTHONPATH=src python -m rhagent.refresh --cache-dir data
+Usage:
+    ... | PYTHONPATH=src python -m rhagent.refresh --cache-dir data   # stdin
+    PYTHONPATH=src python -m rhagent.refresh --fetch --cache-dir data # headless
 """
 
 from __future__ import annotations
@@ -56,14 +59,76 @@ def update_cache(payload: dict, cache_dir: str | Path = "data") -> dict[str, int
     return out
 
 
+def _fetch_raw(session, symbols, start, end) -> dict:
+    """One MCP get_equity_historicals call -> its raw structured payload."""
+    import anyio
+
+    from .broker import _structured
+
+    result = anyio.from_thread.run(
+        session.call_tool,
+        "get_equity_historicals",
+        {
+            "symbols": list(symbols),
+            "start_time": f"{start}T00:00:00Z",
+            "end_time": f"{end}T00:00:00Z",
+            "interval": "day",
+            "adjustment_type": "split",
+        },
+    )
+    return _structured(result)
+
+
+def fetch_and_update(cache_dir="data", symbols=None, days=10, today=None,
+                     fetch_raw=None) -> dict[str, int]:
+    """Headless refresh: fetch recent bars for the universe over the MCP and
+    merge into the cache. Batches by 10 (the MCP per-call symbol cap). Returns
+    {symbol: n_rows}.
+
+    `fetch_raw(batch, start, end) -> raw payload` is injectable so the batching
+    and merge can be exercised without a live MCP (the network call is the only
+    part that can't run offline).
+    """
+    import contextlib
+    from datetime import date, timedelta
+
+    from .config import load
+
+    cfg = load()
+    symbols = list(symbols or cfg.strategy.universe)
+    today = today or date.today()
+    start = (today - timedelta(days=days)).isoformat()
+    end = today.isoformat()
+
+    if fetch_raw is None:
+        from .mcp_session import mcp_session
+        session_cm = mcp_session(cfg.mcp_url, cfg.mcp_token)
+    else:
+        session_cm = contextlib.nullcontext(None)
+
+    counts: dict[str, int] = {}
+    with session_cm as session:
+        get = fetch_raw or (lambda batch, s, e: _fetch_raw(session, batch, s, e))
+        for i in range(0, len(symbols), 10):
+            counts.update(update_cache(get(symbols[i:i + 10], start, end), cache_dir))
+    return counts
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="rhagent.refresh")
     p.add_argument("--cache-dir", default="data")
     p.add_argument("--payload", help="JSON file; omit to read stdin")
+    p.add_argument("--fetch", action="store_true",
+                   help="fetch the config universe headlessly over the MCP "
+                        "(needs ROBINHOOD_MCP_URL/TOKEN) instead of reading a payload")
+    p.add_argument("--days", type=int, default=10, help="--fetch lookback window")
     args = p.parse_args(sys.argv[1:] if argv is None else argv)
 
-    raw = Path(args.payload).read_text() if args.payload else sys.stdin.read()
-    counts = update_cache(json.loads(raw), args.cache_dir)
+    if args.fetch:
+        counts = fetch_and_update(args.cache_dir, days=args.days)
+    else:
+        raw = Path(args.payload).read_text() if args.payload else sys.stdin.read()
+        counts = update_cache(json.loads(raw), args.cache_dir)
     for sym, n in sorted(counts.items()):
         print(f"{sym}: {n} bars")
     return 0
