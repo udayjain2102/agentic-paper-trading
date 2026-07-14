@@ -25,6 +25,7 @@ class StrategyConfig:
     name: str
     params: dict
     universe: list
+    overlay: str = "none"  # decision overlay for the paper-trade eval path
 
 
 @dataclass(frozen=True)

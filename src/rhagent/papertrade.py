@@ -22,6 +22,8 @@ import pandas as pd
 
 from .data import get_bars
 from .engine import AgentEngine, DecisionEngine, StrategyEngine
+from .features import entry_features  # noqa: F401  (re-exported for callers/tests)
+from .overlay import IdentityOverlay, Overlay, build_overlay
 
 
 class MarketSource(Protocol):
@@ -40,7 +42,15 @@ class HistoricalSource:
         self.start, self.end, self.cache_dir = start, end, cache_dir
 
     def bars(self) -> dict[str, pd.DataFrame]:
-        return get_bars(self.symbols, self.start, self.end, cache_dir=self.cache_dir)
+        frames = get_bars(self.symbols, self.start, self.end, cache_dir=self.cache_dir)
+        # Multi-symbol runs need one shared bar index; cached ranges differ
+        # (later listings, gaps), so intersect to the common dates.
+        if len(frames) > 1:
+            common = None
+            for df in frames.values():
+                common = df.index if common is None else common.intersection(df.index)
+            frames = {s: df.loc[common] for s, df in frames.items()}
+        return frames
 
 
 class CloseFill:
@@ -54,27 +64,6 @@ def new_run_id(now: datetime | None = None, suffix: str | None = None) -> str:
     now = now or datetime.now(timezone.utc)
     suffix = suffix or secrets.token_hex(4)
     return f"{now.strftime('%Y-%m-%dT%H-%M-%SZ')}-{suffix}"
-
-
-def entry_features(history: pd.DataFrame) -> dict:
-    """Cheap lookahead-free scalars at entry, used for failure bucketing."""
-    close = history["close"].astype(float)
-    rets = close.pct_change().dropna()
-
-    vol20 = float(rets.tail(20).std()) if len(rets) >= 2 else 0.0
-    if pd.isna(vol20):
-        vol20 = 0.0
-
-    gap = 0.0
-    if len(close) >= 2 and "open" in history:
-        gap = float(history["open"].iloc[-1] / close.iloc[-2] - 1.0)
-
-    trend5 = 0.0
-    if len(close) >= 6:
-        diff = float(close.iloc[-1] - close.iloc[-6])
-        trend5 = 0.0 if diff == 0 else (1.0 if diff > 0 else -1.0)
-
-    return {"vol20": vol20, "gap": gap, "trend5": trend5}
 
 
 class PaperTrader:
@@ -94,6 +83,7 @@ class PaperTrader:
         notional: float = 10_000.0,
         out_dir: str | Path = "journal/papertrade",
         run_id: str | None = None,
+        overlay: Overlay | None = None,
     ) -> None:
         self.engine = engine
         self.source = source
@@ -102,6 +92,7 @@ class PaperTrader:
         self.notional = notional
         self.out_dir = Path(out_dir)
         self.run_id = run_id or new_run_id()
+        self.overlay = overlay or IdentityOverlay()
 
     def run(self) -> Path:
         frames = self.source.bars()
@@ -147,6 +138,10 @@ class PaperTrader:
 
         for i, ts in enumerate(index):
             net_today = []
+            # Snapshot once per bar, before any symbol in this bar can close a
+            # trade: every overlay call this bar sees only prior-bar closes,
+            # never a same-bar close from an earlier symbol in sorted order.
+            closed_snapshot = pd.DataFrame(trades)
             for sym in symbols:
                 bars = frames[sym]
                 history = bars.iloc[: i + 1]
@@ -154,7 +149,7 @@ class PaperTrader:
                 prev = pos[sym]
 
                 d = self.engine.decide(sym, history, prev)
-                target = d.target
+                target = self.overlay.adjust(sym, history, d, closed_snapshot)
                 # Don't open a fresh position on the final bar: there is no
                 # future bar to hold it into, so end_of_data would immediately
                 # force-close it for a 0-bar phantom round-trip. Guard here,
@@ -217,6 +212,7 @@ class PaperTrader:
             "end": str(index[-1]),
             "cost_bps": self.cost_bps,
             "notional": self.notional,
+            "overlay": self.overlay.name,
             "created_ts": datetime.now(timezone.utc).isoformat(),
         }
         (run_dir / "run.json").write_text(json.dumps(meta, indent=2, sort_keys=True))
@@ -271,16 +267,24 @@ def main(argv: list[str] | None = None) -> int:
 
     p = argparse.ArgumentParser(prog="rhagent.papertrade")
     p.add_argument("--engine", required=True, choices=[*sorted(REGISTRY), "agent"])
-    p.add_argument("--symbols", required=True, help="comma-separated, e.g. NVDA,SPY")
+    p.add_argument("--symbols", required=True,
+                   help="comma-separated (NVDA,SPY) or 'all' for every cached symbol")
     p.add_argument("--days", type=int, default=400)
     p.add_argument("--cost-bps", type=float, default=1.0)
     p.add_argument("--out-dir", default="journal/papertrade")
     p.add_argument("--cache-dir", default="data")
     p.add_argument("--no-lessons", action="store_true",
                    help="agent engine only: skip feeding prior-run loss lessons")
+    p.add_argument("--overlay", default="conviction",
+                   choices=["none", "conviction", "bucket", "winprob"],
+                   help="decision overlay applied to each target (default: the "
+                        "locked-in conviction gate; pass 'none' for the raw strategy)")
     args = p.parse_args(argv)
 
-    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    if args.symbols.strip().lower() == "all":
+        symbols = sorted(p.stem.upper() for p in Path(args.cache_dir).glob("*.csv"))
+    else:
+        symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     if not symbols:
         p.error("no symbols given")
 
@@ -295,11 +299,12 @@ def main(argv: list[str] | None = None) -> int:
         lessons = "" if args.no_lessons else lessons_from_runs(args.out_dir)
         engine = AgentEngine(lessons=lessons)
     else:
-        engine = StrategyEngine(build(args.engine, {}))
+        engine = StrategyEngine(build(args.engine, {}))  # long-only (shorting disabled)
 
+    overlay = build_overlay(args.overlay)
     trader = PaperTrader(
         engine=engine, source=source, cost_bps=args.cost_bps,
-        out_dir=args.out_dir,
+        out_dir=args.out_dir, overlay=overlay,
     )
     run_dir = trader.run()
     _print_report(run_dir)

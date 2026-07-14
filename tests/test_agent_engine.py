@@ -21,7 +21,9 @@ def test_targets_and_reason_carried():
     hist = _hist([10, 11, 12, 13, 14, 15, 16])
     for tgt in (-1, 0, 1):
         fake = lambda p, t=tgt: json.dumps({"target": t, "reason": f"go {t}"})
-        d = AgentEngine(complete=fake).decide("NVDA", hist, 0.0)
+        # allow_short=True so the -1 target carries through unclamped (default is
+        # now long-only); this test checks target/reason plumbing, not clamping.
+        d = AgentEngine(complete=fake, allow_short=True).decide("NVDA", hist, 0.0)
         assert isinstance(d, Decision)
         assert d.target == float(tgt)
         assert f"go {tgt}" in d.reason

@@ -22,7 +22,9 @@ class LinReg(Strategy):
         self.min_train = min_train
         self.allow_short = allow_short
 
-    def _predictions(self, bars: pd.DataFrame) -> pd.Series:
+    _COLS = ["bias", "ret_lag1", "ret_lag2", "ma_ratio"]
+
+    def _features(self, bars: pd.DataFrame):
         close = bars["close"].astype(float)
         ret = close.pct_change()
         feats = pd.DataFrame(
@@ -34,23 +36,36 @@ class LinReg(Strategy):
             }
         )
         target = ret.shift(-1)  # next-day return, realized at the following day
+        return close, feats, target
 
-        cols = ["bias", "ret_lag1", "ret_lag2", "ma_ratio"]
+    def _fit_predict(self, feats: pd.DataFrame, target: pd.Series, i: int) -> float:
+        """OLS on rows with realized targets (strictly before i); predict row i.
+        Returns NaN when there is too little training data or features are NaN."""
+        train = feats.iloc[:i].copy()
+        train["y"] = target.iloc[:i]
+        train = train.dropna()
+        x_now = feats.iloc[i][self._COLS]
+        if len(train) < self.min_train or x_now.isna().any():
+            return float("nan")
+        beta, *_ = np.linalg.lstsq(
+            train[self._COLS].to_numpy(), train["y"].to_numpy(), rcond=None
+        )
+        return float(x_now.to_numpy() @ beta)
+
+    def target(self, bars: pd.DataFrame) -> float:
+        """Single-step: fit and predict only the last row (O(n) not O(n^2))."""
+        close, feats, tgt = self._features(bars)
+        if len(close) == 0:
+            return 0.0
+        pred = self._fit_predict(feats, tgt, len(close) - 1)
+        pos = 0 if pd.isna(pred) else int(np.sign(pred))
+        return float(clamp_short(pd.Series([pos]), self.allow_short).iloc[0])
+
+    def _predictions(self, bars: pd.DataFrame) -> pd.Series:
+        close, feats, target = self._features(bars)
         pred = pd.Series(np.nan, index=close.index, dtype=float)
-        n = len(close)
-        for i in range(n):
-            # Rows usable for training at decision day i: target realized, i.e.
-            # index j with j <= i-1 and all feature/target values present.
-            train = feats.iloc[:i].copy()
-            train["y"] = target.iloc[:i]
-            train = train.dropna()
-            x_now = feats.iloc[i][cols]
-            if len(train) < self.min_train or x_now.isna().any():
-                continue
-            X = train[cols].to_numpy()
-            y = train["y"].to_numpy()
-            beta, *_ = np.linalg.lstsq(X, y, rcond=None)
-            pred.iloc[i] = float(x_now.to_numpy() @ beta)
+        for i in range(len(close)):
+            pred.iloc[i] = self._fit_predict(feats, target, i)
         return pred
 
     def positions(self, bars: pd.DataFrame) -> pd.Series:
