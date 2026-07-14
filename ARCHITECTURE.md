@@ -81,6 +81,55 @@ classes, so the capability can be re-enabled deliberately in code/config, but no
 normal run shorts. A run can sweep the whole cached universe at once with
 `--symbols all`.
 
+### 1c. The trade setup — the live preset
+
+The shipped configuration (`config.yaml`) is **`mean_reversion` with `params: {}`
+(all defaults), the `conviction` overlay, long-only, over the 65-name universe.**
+The empty `params` means every knob below is the strategy default in code, not a
+tuned value.
+
+**Entry / exit (`strategies/mean_reversion.py`).** A trade is driven entirely by the
+z-score `z = (close − 20-day mean) / 20-day std`:
+
+| Knob | Value | Meaning |
+|------|-------|---------|
+| `lookback` | 20 | rolling window for the z-score mean/std |
+| `entry` | 1.0 | **enter long** when `z < −1.0` — price ≥ 1σ below its own 20-day mean (a "statistically cheap" dip) |
+| `exit` | 0.0 | **exit to flat** when `z ≥ 0` — price has reverted back to the mean |
+| hysteresis | −1.0 enter / 0.0 exit | the gap between the two thresholds is a dead-band, so price wobbling around one level doesn't churn the position |
+| direction | long-only | short signals are clamped to flat (`clamp_short`); the position is `0` or `+1` |
+
+**There is no per-trade price stop-loss.** Exit is purely mean-reversion: a position
+is held until `z` climbs back to `0`. If price keeps falling (`z` goes *more*
+negative) the position is **held, not cut** — that is the strategy's thesis and also
+its tail risk. The only loss backstop is the portfolio-level kill switch below, and
+it exists only on the live-order path, not in the paper forward record.
+
+**Conviction gate (`overlay.py`, applied on the eval + forward path).** Of the raw
+long entries, only the higher-conviction ones are taken: an entry is vetoed unless
+`|signal|` (= `−z`) strictly exceeds the **60th percentile** (`pctile = 0.60`) of that
+symbol's own `|signal|` over the trailing **120 bars** (`window = 120`).
+
+**Costs / sizing (paper eval).** Turnover (`|Δposition|`) is charged `cost_bps = 1.0`
+(1 bp); paper P&L is scaled to a `notional` of \$10,000; the forward record equal-
+weights the per-name net returns across the universe.
+
+**Live-execution guardrails (`guardrails.py`, §3 — apply only when actually placing
+orders, `LIVE=true`; they do not touch the paper record).** These are the real
+"when to stop" limits:
+
+| Guardrail | Value | Effect |
+|-----------|-------|--------|
+| `per_trade_max_usd` | \$250 | max dollars committed to any single order |
+| `total_deployed_max_usd` | \$2,000 | new buys rejected if total deployed would exceed this |
+| `max_new_positions_per_run` | 2 | cap on newly-opened symbols per run |
+| `max_orders_per_run` | 5 | cap on orders per run |
+| `daily_loss_limit_usd` | \$200 | **kill switch** — if realized P&L for the day ≤ −\$200, the run halts and places nothing |
+| `HALT` file | present → halt | operator manual stop |
+
+These are deliberately conservative starter values (`config.yaml` says "tighten
+before going live").
+
 ---
 
 ## 2. The math
