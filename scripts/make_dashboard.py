@@ -1,15 +1,14 @@
-"""Render a paper-trade run into a single self-contained HTML dashboard.
+"""Render the trading system into a single self-contained HTML dashboard.
 
-Everything about one run in one page: the config header, an aggregate
-scorecard, the equity curve, the full per-trade ledger (every trade traceable
-by its trade_id), the failure buckets (where losses concentrate), and the
-run-to-run comparison across all recorded runs.
+Everything happening in one page: forward records, the latest paper-trade
+scorecard, all research runs, the robust bake-off, the equity curve, and the
+latest run's ledger/failure buckets.
 
-    python scripts/make_dashboard.py                 # latest run
+    python scripts/make_dashboard.py                 # unified dashboard
     python scripts/make_dashboard.py --run <run_id>  # a specific run
     python scripts/make_dashboard.py --open          # also open in a browser
 
-Reads only the ledger that PaperTrader wrote under journal/papertrade/; it
+Reads the ledgers written under journal/papertrade/ and journal/forward/; it
 reuses rhagent.evaluate so the numbers match the CLI report exactly.
 """
 
@@ -48,11 +47,25 @@ def _pct(x: float) -> str:
 
 
 def _money(x: float) -> str:
-    return f"${x:,.2f}"
+    return f"-${abs(x):,.2f}" if x < 0 else f"${x:,.2f}"
 
 
 def _num(x: float) -> str:
     return "∞" if x == float("inf") else f"{x:.2f}"
+
+
+def _return_pnl(total_return: float, notional: float) -> float:
+    return float(notional) * float(total_return)
+
+
+def _run_dirs(base_dir: Path) -> list[Path]:
+    return sorted(p.parent for p in base_dir.glob("*/run.json"))
+
+
+def _safe_compare(base_dir: Path) -> pd.DataFrame:
+    if not base_dir.exists():
+        return pd.DataFrame()
+    return compare_runs(base_dir)
 
 
 # ── SVG equity curve ────────────────────────────────────────────────────────
@@ -152,7 +165,7 @@ def _scorecard(a: dict, trades: pd.DataFrame, notional: float) -> str:
     pnl = trades["pnl_abs"].astype(float) if len(trades) else pd.Series(dtype=float)
     winnings = float(pnl[pnl > 0].sum())
     loss = float(-pnl[pnl < 0].sum())
-    net_pl = winnings - loss
+    net_pl = _return_pnl(a["total_return"], notional)
     balance = notional + net_pl
     bal_cls = "up" if balance >= notional else "down"
 
@@ -161,8 +174,8 @@ def _scorecard(a: dict, trades: pd.DataFrame, notional: float) -> str:
     return "<div class='tiles'>" + "".join([
         tile("current balance", _money(balance), bal_cls,
              sub=f"start {_money(notional)} · net {'+' if net_pl >= 0 else ''}{_money(net_pl)}"),
-        tile("total winnings", _money(winnings), "up"),
-        tile("total loss", _money(-loss), "down"),
+        tile("gross trade wins", _money(winnings), "up"),
+        tile("gross trade losses", _money(-loss), "down"),
         tile("total return", _pct(a["total_return"]), ret_cls),
         tile("trades", str(a["n_trades"])),
         tile("win rate", _pct(a["win_rate"])),
@@ -271,8 +284,69 @@ def _compare_table(df: pd.DataFrame, current: str, link: bool = False) -> str:
     return (
         "<table class='grid'><thead><tr><th>run id</th><th>engine</th><th>trades</th>"
         "<th>won</th><th>lost</th>"
-        "<th>win rate</th><th>profit factor</th><th>net p&amp;l</th><th>total return</th><th>sharpe</th>"
+        "<th>win rate</th><th>profit factor</th><th>return p&amp;l</th><th>total return</th><th>sharpe</th>"
         f"<th>max dd</th></tr></thead><tbody>{''.join(rows)}</tbody></table>"
+    )
+
+
+def _forward_table(forward_dir: Path) -> str:
+    df = _safe_compare(forward_dir)
+    if len(df) == 0:
+        return "<p class='muted'>no forward records yet</p>"
+    rows = []
+    for run_dir in _run_dirs(forward_dir):
+        meta, _, net = load_run(run_dir)
+        a = aggregate(pd.DataFrame(), net)
+        ret_cls = "up" if a["total_return"] >= 0 else "down"
+        pnl = _return_pnl(a["total_return"], float(meta.get("notional", 10_000.0)))
+        pnl_cls = "up" if pnl >= 0 else "down"
+        rows.append(
+            f"<tr><td class='mono'>{escape(str(meta['run_id']))}</td>"
+            f"<td>{escape(str(meta['engine']))}</td>"
+            f"<td class='num'>{len(net)}</td>"
+            f"<td class='mono'>{escape(str(meta.get('start', ''))[:10])}</td>"
+            f"<td class='mono'>{escape(str(meta.get('end', ''))[:10])}</td>"
+            f"<td class='num {pnl_cls}'>{'+' if pnl >= 0 else ''}{_money(pnl)}</td>"
+            f"<td class='num {ret_cls}'>{_pct(a['total_return'])}</td>"
+            f"<td class='num'>{_num(a['sharpe'])}</td>"
+            f"<td class='num down'>{_pct(a['max_drawdown'])}</td></tr>"
+        )
+    return (
+        "<table class='grid'><thead><tr><th>record</th><th>engine</th><th>days</th>"
+        "<th>start</th><th>end</th><th>return p&amp;l</th><th>total return</th>"
+        f"<th>sharpe</th><th>max dd</th></tr></thead><tbody>{''.join(rows)}</tbody></table>"
+    )
+
+
+def _latest_summary(run_dir: Path, label: str) -> str:
+    meta, trades, net = load_run(run_dir)
+    a = aggregate(trades, net)
+    pnl = _return_pnl(a["total_return"], float(meta.get("notional", 10_000.0)))
+    pnl_cls = "up" if pnl >= 0 else "down"
+    return (
+        f"<div class='summary'><div><div class='eyebrow'>{escape(label)}</div>"
+        f"<strong>{escape(str(meta['engine']))}</strong> "
+        f"<span class='mono'>{escape(str(meta['run_id']))}</span></div>"
+        f"<div class='summary-metric {pnl_cls}'>{'+' if pnl >= 0 else ''}{_money(pnl)}</div>"
+        f"<div class='summary-mini'>{_pct(a['total_return'])} return · "
+        f"{_num(a['sharpe'])} Sharpe · {_pct(a['max_drawdown'])} max DD</div></div>"
+    )
+
+
+def _code_health(graph_dir: Path) -> str:
+    report = graph_dir / "GRAPH_REPORT.md"
+    graph = graph_dir / "graph.html"
+    if not report.exists() and not graph.exists():
+        return "<p class='muted'>no code graph generated yet</p>"
+    links = []
+    if graph.exists():
+        links.append(f"<a class='mono' href='{escape(graph.resolve().as_uri())}'>graph.html</a>")
+    if report.exists():
+        links.append(f"<a class='mono' href='{escape(report.resolve().as_uri())}'>GRAPH_REPORT.md</a>")
+    return (
+        "<div class='notice'><b>Code topology available.</b> "
+        "Use it for dependency spelunking, but keep this trading dashboard as the operational source of truth. "
+        + " · ".join(links) + "</div>"
     )
 
 
@@ -328,6 +402,14 @@ a.mono:hover{text-decoration:underline}
 padding:3px 12px;font-size:12px}
 .chip b{color:var(--fg)}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+.summary{display:grid;grid-template-columns:1fr auto;gap:4px 18px;align-items:center;
+background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:12px 0}
+.summary strong{font-size:17px}
+.summary-metric{font-size:22px;font-weight:700;grid-row:1 / span 2}
+.summary-mini{color:var(--muted);font-size:12px}
+.eyebrow{text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-size:11px;margin-bottom:2px}
+.notice{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;color:var(--muted)}
+.notice b{color:var(--fg)}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
 .tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
 .tile-v{font-size:22px;font-weight:700;letter-spacing:-.01em}
@@ -419,7 +501,7 @@ def _page(title: str, body: str, footer: str) -> str:
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{escape(title)}</title>
 <style>{_CSS}</style></head><body><div class="wrap">
-  <h1>Paper-Trade Dashboard</h1>
+  <h1>Trading Dashboard</h1>
   {body}
   <footer>{footer}</footer>
 </div></body></html>"""
@@ -440,33 +522,37 @@ def render(run_dir: Path, base_dir: Path) -> str:
 
 
 def render_all(base_dir: Path) -> str:
-    """Index of every run (newest first) plus each run's full detail below."""
-    runs = sorted(
-        (p.parent for p in base_dir.glob("*/run.json")), reverse=True
-    )
+    """Unified control room: forward records, research index, latest detail."""
+    runs = sorted(_run_dirs(base_dir), reverse=True)
     if not runs:
         raise SystemExit(f"no runs found under {base_dir} — run rhagent.papertrade first")
     comparison = compare_runs(base_dir)
+    latest = runs[0]
+    best = comparison.loc[comparison["total_return"].idxmax(), "run_id"]
+    best_dir = base_dir / str(best)
+    forward_dir = base_dir.parent / "forward"
+    graph_dir = base_dir.parents[0].parent / "graphify-out"
     index = (
-        # Drill-down via native CSS :target — hide every run's detail until its
-        # id is clicked, so 1000+-row ledgers don't all render at once.
-        "<style>.runcard{display:none}.runcard:target{display:block}</style>"
-        "<div id='allruns'>"
-        f"<h2>All runs · {len(runs)} total</h2>"
-        f"<p class='sub'>Click a run id to open its full detail (ledger, equity, buckets).</p>"
-        f"<div class='tblscroll'>{_compare_table(comparison, '', link=True)}</div>"
-        "</div>"
+        "<h2>Now · forward track record</h2>"
+        f"<div class='tblscroll'>{_forward_table(forward_dir)}</div>"
+        "<h2>Research pulse</h2>"
+        + _latest_summary(latest, "latest paper-trade run")
+        + (_latest_summary(best_dir, "best paper-trade run") if best_dir != latest else "")
+        + f"<h2>All paper-trade runs · {len(runs)} total</h2>"
+        + f"<div class='tblscroll'>{_compare_table(comparison, '', link=False)}</div>"
     )
     index += (
         "<h2>Bake-off · robust Sharpe (fold + bootstrap + deflated)</h2>"
         "<p class='sub'>A variant beats baseline only if its 95% CI lower bound "
         "clears the baseline Sharpe.</p>"
         f"<div class='tblscroll'>{_bakeoff_table(base_dir)}</div>"
+        "<h2>Code graph</h2>"
+        f"{_code_health(graph_dir)}"
+        "<h2>Latest run detail</h2>"
     )
-    sections = "".join(_run_section(rd, anchored=True) for rd in runs)
     return _page(
-        f"Paper-trade dashboard — {len(runs)} runs", index + sections,
-        f"Generated from {escape(str(base_dir))} · rhagent paper-trade harness",
+        f"Trading dashboard — {len(runs)} research runs", index + _run_section(latest),
+        f"Generated from {escape(str(base_dir.parent))} · rhagent trading harness",
     )
 
 
@@ -474,7 +560,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="make_dashboard")
     p.add_argument("--run", help="render only this run_id in detail (default: all runs)")
     p.add_argument("--base-dir", default="journal/papertrade")
-    p.add_argument("--out", help="output HTML path (default: <base-dir>/dashboard.html)")
+    p.add_argument("--out", help="output HTML path (default: journal/dashboard.html)")
     p.add_argument("--open", action="store_true", help="open the dashboard in a browser")
     args = p.parse_args(argv)
 
@@ -489,7 +575,7 @@ def main(argv: list[str] | None = None) -> int:
         html = render_all(base_dir)
         label = "all runs"
 
-    out = Path(args.out) if args.out else base_dir / "dashboard.html"
+    out = Path(args.out) if args.out else base_dir.parent / "dashboard.html"
     out.write_text(html, encoding="utf-8")
     print(f"wrote {out}  ({label})")
     if args.open:
