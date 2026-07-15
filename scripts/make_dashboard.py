@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import sys
 import webbrowser
+from datetime import date
 from html import escape
 from pathlib import Path
 
@@ -66,6 +67,34 @@ def _safe_compare(base_dir: Path) -> pd.DataFrame:
     if not base_dir.exists():
         return pd.DataFrame()
     return compare_runs(base_dir)
+
+
+def _days_old(value: str) -> int | None:
+    try:
+        end = pd.to_datetime(value).date()
+    except (TypeError, ValueError):
+        return None
+    return (date.today() - end).days
+
+
+def _status_class(days_old: int | None) -> str:
+    if days_old is None:
+        return "warn"
+    if days_old <= 3:
+        return "ok"
+    if days_old <= 10:
+        return "warn"
+    return "bad"
+
+
+def _status_label(days_old: int | None) -> str:
+    if days_old is None:
+        return "unknown"
+    if days_old == 0:
+        return "current"
+    if days_old == 1:
+        return "1 day old"
+    return f"{days_old} days old"
 
 
 # ── SVG equity curve ────────────────────────────────────────────────────────
@@ -297,12 +326,14 @@ def _forward_table(forward_dir: Path) -> str:
     for run_dir in _run_dirs(forward_dir):
         meta, _, net = load_run(run_dir)
         a = aggregate(pd.DataFrame(), net)
+        days_old = _days_old(str(meta.get("end", "")))
         ret_cls = "up" if a["total_return"] >= 0 else "down"
         pnl = _return_pnl(a["total_return"], float(meta.get("notional", 10_000.0)))
         pnl_cls = "up" if pnl >= 0 else "down"
         rows.append(
             f"<tr><td class='mono'>{escape(str(meta['run_id']))}</td>"
             f"<td>{escape(str(meta['engine']))}</td>"
+            f"<td><span class='status {_status_class(days_old)}'>{_status_label(days_old)}</span></td>"
             f"<td class='num'>{len(net)}</td>"
             f"<td class='mono'>{escape(str(meta.get('start', ''))[:10])}</td>"
             f"<td class='mono'>{escape(str(meta.get('end', ''))[:10])}</td>"
@@ -312,7 +343,7 @@ def _forward_table(forward_dir: Path) -> str:
             f"<td class='num down'>{_pct(a['max_drawdown'])}</td></tr>"
         )
     return (
-        "<table class='grid'><thead><tr><th>record</th><th>engine</th><th>days</th>"
+        "<table class='grid'><thead><tr><th>record</th><th>engine</th><th>freshness</th><th>days</th>"
         "<th>start</th><th>end</th><th>return p&amp;l</th><th>total return</th>"
         f"<th>sharpe</th><th>max dd</th></tr></thead><tbody>{''.join(rows)}</tbody></table>"
     )
@@ -348,6 +379,35 @@ def _code_health(graph_dir: Path) -> str:
         "Use it for dependency spelunking, but keep this trading dashboard as the operational source of truth. "
         + " · ".join(links) + "</div>"
     )
+
+
+def _overview_cards(base_dir: Path, forward_dir: Path, comparison: pd.DataFrame) -> str:
+    forward_runs = _run_dirs(forward_dir)
+    latest_forward_end = ""
+    for run_dir in forward_runs:
+        meta, _, _ = load_run(run_dir)
+        end = str(meta.get("end", ""))
+        if end > latest_forward_end:
+            latest_forward_end = end
+    days_old = _days_old(latest_forward_end)
+    best = comparison.loc[comparison["total_return"].idxmax()] if len(comparison) else None
+    best_text = "no research runs"
+    best_cls = ""
+    if best is not None:
+        best_text = f"{best['engine']} {_pct(float(best['total_return']))}"
+        best_cls = "up" if float(best["total_return"]) >= 0 else "down"
+    cards = [
+        ("Forward records", str(len(forward_runs)), "", "live paper tracks"),
+        ("Latest forward", _status_label(days_old), _status_class(days_old), str(latest_forward_end)[:10] or "none"),
+        ("Research runs", str(len(_run_dirs(base_dir))), "", "paper-trade archive"),
+        ("Best return", best_text, best_cls, "research only"),
+    ]
+    return "<div class='overview'>" + "".join(
+        f"<div class='overview-card'><div class='tile-l'>{escape(label)}</div>"
+        f"<div class='overview-v {cls}'>{escape(value)}</div>"
+        f"<div class='tile-s'>{escape(sub)}</div></div>"
+        for label, value, cls, sub in cards
+    ) + "</div>"
 
 
 def _bakeoff_table(base_dir) -> str:
@@ -410,6 +470,14 @@ background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:1
 .eyebrow{text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-size:11px;margin-bottom:2px}
 .notice{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;color:var(--muted)}
 .notice b{color:var(--fg)}
+.overview{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:18px 0 6px}
+.overview-card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.overview-v{font-size:20px;font-weight:700;margin-top:4px}
+.status{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700;text-transform:uppercase}
+.status.ok{background:color-mix(in srgb,var(--up) 18%,transparent);color:var(--up)}
+.status.warn{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
+.status.bad{background:color-mix(in srgb,var(--down) 18%,transparent);color:var(--down)}
+.ok{color:var(--up)}.warn{color:var(--accent)}.bad{color:var(--down)}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
 .tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
 .tile-v{font-size:22px;font-weight:700;letter-spacing:-.01em}
@@ -533,7 +601,8 @@ def render_all(base_dir: Path) -> str:
     forward_dir = base_dir.parent / "forward"
     graph_dir = base_dir.parents[0].parent / "graphify-out"
     index = (
-        "<h2>Now · forward track record</h2>"
+        _overview_cards(base_dir, forward_dir, comparison)
+        + "<h2>Now · forward track record</h2>"
         f"<div class='tblscroll'>{_forward_table(forward_dir)}</div>"
         "<h2>Research pulse</h2>"
         + _latest_summary(latest, "latest paper-trade run")
@@ -577,10 +646,28 @@ def main(argv: list[str] | None = None) -> int:
 
     out = Path(args.out) if args.out else base_dir.parent / "dashboard.html"
     out.write_text(html, encoding="utf-8")
+    if not args.run and args.out is None:
+        _write_redirect_stubs(out)
     print(f"wrote {out}  ({label})")
     if args.open:
         webbrowser.open(out.resolve().as_uri())
     return 0
+
+
+def _write_redirect_stubs(target: Path) -> None:
+    """Keep legacy dashboard paths from becoming competing sources of truth."""
+    for legacy in [target.parent / "papertrade" / "dashboard.html",
+                   target.parent / "forward" / "dashboard.html"]:
+        rel = legacy.parent.relative_to(target.parent)
+        href = ("../" * len(rel.parts)) + target.name
+        legacy.write_text(
+            "<!doctype html><html><head><meta charset='utf-8'>"
+            f"<meta http-equiv='refresh' content='0; url={escape(href)}'>"
+            "<title>Trading Dashboard</title></head><body>"
+            f"<p>Moved to <a href='{escape(href)}'>the unified trading dashboard</a>.</p>"
+            "</body></html>",
+            encoding="utf-8",
+        )
 
 
 if __name__ == "__main__":
