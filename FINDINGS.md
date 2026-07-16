@@ -2,8 +2,8 @@
 
 **Date:** 2026-07-16
 **The original goal, in your words:** build agentic trading, teach it step by step
-what works and what doesn't through paper trading, and have it paper-trade live
-markets on its own.
+what works and what doesn't through paper trading, have it paper-trade live
+markets on its own — and eventually earn enough trust to be given real money.
 
 Everything below is judged against that sentence and nothing else.
 
@@ -62,6 +62,12 @@ So the single most goal-critical artifact — the genuine out-of-sample forward
 track record, the thing every doc says the promotion decision waits on — is
 not growing. Every day it stays broken is out-of-sample evidence you never
 get back.
+
+This matters double because of the end goal: **trust for real money is
+earned by exactly one artifact — an unbroken, honest, live forward record.**
+Backtests can't earn it (they're history you already peeked at), and neither
+can more features. A 6–12 month green forward track is the only currency that
+buys the `LIVE=true` flip, and the clock on it isn't running.
 
 ## Finding 3 — Your original grading metrics didn't disappear; they got buried
 
@@ -148,6 +154,28 @@ None of these are new systems. All three plug into code that already exists.
 6. **Freeze feature intake** until 1–5 are done. Every new overlay, panel, or
    gate so far has moved the project *away* from the sentence at the top of
    this file.
+
+## The road to real money (so the endpoint is written down)
+
+Trust is a ladder, and each rung is evidence, not code:
+
+1. **Forward record growing daily, unattended** (fix in step 1 above) — the
+   system runs itself and the numbers are honest.
+2. **The record clears its own bar** — the forward Sharpe/drawdown confirms
+   what the bake-off claimed, over months, not days. Define the bar *now*,
+   before the data exists (e.g. "3+ months, positive net of costs, max DD
+   within the backtest's, CI lower bound above zero") so future-you can't
+   move the goalposts.
+3. **The agent beats or matches the rule baseline** on the same forward
+   cadence (step 5 above) — otherwise the honest conclusion is to fund the
+   rule, not the agent.
+4. **Small real money behind the existing guardrails** — the caps in
+   `config.yaml` ($250/trade, $2k deployed, $200/day kill switch) were built
+   for exactly this moment; tighten them, flip `LIVE=true`, and treat the
+   first live month as one more evaluation gate, not a finish line.
+
+Nothing on this ladder is a new feature. It is all waiting on the pipeline
+fixed in step 1 and on time passing.
 
 ## What NOT to build next (things the current trajectory suggests)
 
