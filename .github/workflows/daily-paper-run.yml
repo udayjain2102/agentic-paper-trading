@@ -3,14 +3,21 @@ name: daily-paper-run
 # Laptop-independent daily forward paper-run. Refreshes the cache over the
 # Robinhood MCP and ticks the forward record, persisting both to the
 # `paper-state` branch. See docs/paper-cron-setup.md for one-time setup.
+#
+# DISABLED: this can never authenticate. Robinhood's agent MCP is OAuth-only —
+# there's no static, long-lived token to put in ROBINHOOD_MCP_TOKEN, and the
+# OAuth handshake only completes inside an interactive Claude Code session.
+# The forward record currently grows via that interactive session instead;
+# see docs/paper-cron-setup.md. Re-enable the `schedule:` trigger below only
+# if Robinhood's agent product adds a non-interactive token mechanism.
 
 on:
-  schedule:
-    # 11:17 UTC, Mon-Fri. GitHub cron is UTC-only (no local tz) and may lag a
-    # few minutes under load. This lands after the prior US session has settled
-    # and before the next open; adjust the hour to taste.
-    - cron: "17 11 * * 1-5"
-  workflow_dispatch: {}   # manual "Run workflow" button for testing
+  # schedule:
+  #   # 11:17 UTC, Mon-Fri. GitHub cron is UTC-only (no local tz) and may lag a
+  #   # few minutes under load. This lands after the prior US session has
+  #   # settled and before the next open; adjust the hour to taste.
+  #   - cron: "17 11 * * 1-5"
+  workflow_dispatch: {}   # manual "Run workflow" button — will still fail without a token
 
 permissions:
   contents: write         # push updated state to paper-state via GITHUB_TOKEN

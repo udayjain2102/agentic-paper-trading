@@ -63,3 +63,18 @@ def test_open_position_force_closes_with_end_of_data_reason():
     assert t["holding_bars"] == 3
     assert t["exit_reason"] == "end_of_data"
     assert t["entry_reason"] == "always long"
+
+
+def test_lessons_text_is_stamped_into_run_json():
+    class AlwaysLong:
+        name = "always_long"
+
+        def decide(self, sym, history, prev):
+            return _Decision(1.0, "always long")
+
+    out = Path(tempfile.mkdtemp())
+    run_dir = PaperTrader(
+        engine=AlwaysLong(), source=_Src(), out_dir=out, lessons="losses concentrate in X"
+    ).run()
+    meta = json.loads((run_dir / "run.json").read_text())
+    assert meta["lessons"] == "losses concentrate in X"

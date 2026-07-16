@@ -122,7 +122,8 @@ def compare_runs(base_dir: str | Path) -> pd.DataFrame:
         a = aggregate(trades, net)
         won = int((trades["outcome"] == "win").sum()) if len(trades) else 0
         lost = int((trades["outcome"] == "loss").sum()) if len(trades) else 0
-        net_pnl = float(trades["pnl_abs"].astype(float).sum()) if len(trades) else 0.0
+        notional = float(meta.get("notional", 10_000.0))
+        net_pnl = notional * float(a["total_return"])
         rows.append({
             "run_id": meta["run_id"],
             "engine": meta["engine"],
