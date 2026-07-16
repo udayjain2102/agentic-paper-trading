@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -49,6 +50,8 @@ def test_default_dashboard_writes_only_one_dashboard_html(tmp_path):
     assert "Research pulse" in html
     assert "href='#run-2026-07-12T00-00-00Z-aaaaaaaa'" in html
     assert "<details class=\"rundetail\" id=\"run-2026-07-12T00-00-00Z-aaaaaaaa\"" in html
+    assert "Runbook" in html
+    assert not re.search(r"\d\.\d{3,}×", html)  # equity labels stay at 2 decimals
 
     for legacy_dashboard in [
         tmp_path / "journal" / "papertrade" / "dashboard.html",
