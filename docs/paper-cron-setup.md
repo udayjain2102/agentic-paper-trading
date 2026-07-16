@@ -7,16 +7,14 @@ branch that the workflow reads and writes each run.
 
 Workflow: `.github/workflows/daily-paper-run.yml` → `scripts/paper_cron.sh`.
 
+Data comes from Yahoo's chart API — keyless, so **no secrets are required**. The
+Robinhood MCP is used instead only if `ROBINHOOD_MCP_URL`/`ROBINHOOD_MCP_TOKEN`
+are ever set (its OAuth only completes inside an interactive Claude session, so
+in practice CI always uses Yahoo).
+
 ## One-time setup
 
-### 1. Add the two repo secrets
-
-GitHub → repo **Settings → Secrets and variables → Actions → New repository secret**:
-
-- `ROBINHOOD_MCP_URL` — the hosted MCP endpoint (public https).
-- `ROBINHOOD_MCP_TOKEN` — the long-lived bearer token.
-
-### 2. Seed `paper-state` with your current cache + record
+### 1. Seed `paper-state` with your current cache + record
 
 CI must start from the cache you already have — mean-reversion needs the full
 lookback history, and this preserves the existing forward anchor. Do **not** let
@@ -36,7 +34,7 @@ cp -r data journal /tmp/seed/
 git worktree remove -f /tmp/seed
 ```
 
-### 3. Enable and smoke-test
+### 2. Enable and smoke-test
 
 - **Actions** tab → enable workflows if prompted.
 - Open **daily-paper-run** → **Run workflow** (the `workflow_dispatch` button) to
@@ -51,8 +49,9 @@ git worktree remove -f /tmp/seed
   late under load.
 - **`appended 0 days` is normal** until the whole 65-name basket has settled the
   next trading day (the realized-day guard). Not an error.
-- **Token expiry.** If runs start failing with an auth error, the MCP token
-  rotated — update the `ROBINHOOD_MCP_TOKEN` secret.
+- **Dead names.** A symbol Yahoo stops serving is skipped with a warning; the
+  full-coverage guard in `forward.py` then freezes the record until the name is
+  dropped from the universe.
 - **Reading the record.** The latest cache + record always sit on the
   `paper-state` branch; `git fetch && git show origin/paper-state:journal/...` or
   regenerate the dashboard from a checkout of it.

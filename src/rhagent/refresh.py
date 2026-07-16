@@ -9,8 +9,11 @@ payload (the dict the Robinhood MCP returns), merges the new bars into each
 Two ways in:
   * Interactive: Claude fetches via its MCP session and pipes the raw payload
     here on stdin (the Mon-Fri hands-on loop).
-  * Headless: ``--fetch`` pulls the whole config universe itself over the MCP
-    (ROBINHOOD_MCP_URL/TOKEN), for an unattended cron on an always-on box.
+  * Headless: ``--fetch`` pulls the whole config universe itself, for an
+    unattended cron on an always-on box. Source is the MCP when
+    ROBINHOOD_MCP_URL/TOKEN are set, otherwise Yahoo (keyless) — the MCP
+    only ever authenticates inside an interactive Claude session, so Yahoo is
+    what makes a truly unattended run possible.
 
 Usage:
     ... | PYTHONPATH=src python -m rhagent.refresh --cache-dir data   # stdin
@@ -59,6 +62,47 @@ def update_cache(payload: dict, cache_dir: str | Path = "data") -> dict[str, int
     return out
 
 
+def _fetch_yahoo(symbols, start, end, urlopen=None) -> dict:
+    """Keyless daily bars from Yahoo's v8 chart API, in the MCP payload shape.
+
+    Split-adjusted OHLCV (same adjustment the MCP path requests). One request
+    per symbol; a symbol Yahoo can't serve is skipped with a warning. `urlopen`
+    is injectable so the payload mapping can be tested offline.
+    """
+    import urllib.request
+    from datetime import datetime, timezone
+
+    def _default_urlopen(url):
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        return urllib.request.urlopen(req, timeout=30).read()
+
+    urlopen = urlopen or _default_urlopen
+    p1 = int(datetime.fromisoformat(start).replace(tzinfo=timezone.utc).timestamp())
+    p2 = int(datetime.fromisoformat(end).replace(tzinfo=timezone.utc).timestamp()) + 86400
+    results = []
+    for sym in symbols:
+        url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
+               f"?period1={p1}&period2={p2}&interval=1d&events=split")
+        try:
+            res = json.loads(urlopen(url))["chart"]["result"][0]
+            ts = res["timestamp"]
+            q = res["indicators"]["quote"][0]
+        except Exception as e:  # feed is a trust boundary: skip, don't crash the tick
+            print(f"yahoo: no data for {sym} ({e}), skipped", file=sys.stderr)
+            continue
+        bars = []
+        for i, t in enumerate(ts):
+            if q["close"][i] is None:  # yahoo pads holidays/halts with nulls
+                continue
+            day = datetime.fromtimestamp(t, tz=timezone.utc).date().isoformat()
+            bars.append({"begins_at": f"{day}T00:00:00Z",
+                         "open_price": q["open"][i], "high_price": q["high"][i],
+                         "low_price": q["low"][i], "close_price": q["close"][i],
+                         "volume": q["volume"][i] or 0})
+        results.append({"symbol": sym, "bars": bars})
+    return {"data": {"results": results}}
+
+
 def _fetch_raw(session, symbols, start, end) -> dict:
     """One MCP get_equity_historicals call -> its raw structured payload."""
     import anyio
@@ -80,10 +124,13 @@ def _fetch_raw(session, symbols, start, end) -> dict:
 
 
 def fetch_and_update(cache_dir="data", symbols=None, days=10, today=None,
-                     fetch_raw=None) -> dict[str, int]:
-    """Headless refresh: fetch recent bars for the universe over the MCP and
-    merge into the cache. Batches by 10 (the MCP per-call symbol cap). Returns
-    {symbol: n_rows}.
+                     fetch_raw=None, source="auto") -> dict[str, int]:
+    """Headless refresh: fetch recent bars for the universe and merge into the
+    cache. Batches by 10 (the MCP per-call symbol cap). Returns {symbol: n_rows}.
+
+    `source`: "mcp" (needs ROBINHOOD_MCP_URL/TOKEN), "yahoo" (keyless), or
+    "auto" — mcp when a token is configured, yahoo otherwise. This is what lets
+    the daily tick run on a box with no interactive Claude session.
 
     `fetch_raw(batch, start, end) -> raw payload` is injectable so the batching
     and merge can be exercised without a live MCP (the network call is the only
@@ -100,6 +147,10 @@ def fetch_and_update(cache_dir="data", symbols=None, days=10, today=None,
     start = (today - timedelta(days=days)).isoformat()
     end = today.isoformat()
 
+    if fetch_raw is None and source == "auto":
+        source = "mcp" if cfg.mcp_token else "yahoo"
+    if fetch_raw is None and source == "yahoo":
+        fetch_raw = _fetch_yahoo
     if fetch_raw is None:
         from .mcp_session import mcp_session
         session_cm = mcp_session(cfg.mcp_url, cfg.mcp_token)
@@ -122,10 +173,12 @@ def main(argv: list[str] | None = None) -> int:
                    help="fetch the config universe headlessly over the MCP "
                         "(needs ROBINHOOD_MCP_URL/TOKEN) instead of reading a payload")
     p.add_argument("--days", type=int, default=10, help="--fetch lookback window")
+    p.add_argument("--source", choices=["auto", "mcp", "yahoo"], default="auto",
+                   help="--fetch data source (auto: mcp if a token is set, else yahoo)")
     args = p.parse_args(sys.argv[1:] if argv is None else argv)
 
     if args.fetch:
-        counts = fetch_and_update(args.cache_dir, days=args.days)
+        counts = fetch_and_update(args.cache_dir, days=args.days, source=args.source)
     else:
         raw = Path(args.payload).read_text() if args.payload else sys.stdin.read()
         counts = update_cache(json.loads(raw), args.cache_dir)

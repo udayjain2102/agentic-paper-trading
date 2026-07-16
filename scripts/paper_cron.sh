@@ -5,8 +5,9 @@
 # branch: this script restores them, refreshes over the MCP, ticks, and pushes
 # the updated state back.
 #
-# Requires env: ROBINHOOD_MCP_URL, ROBINHOOD_MCP_TOKEN, and a git remote it can
-# push to (in CI, the default GITHUB_TOKEN with contents:write). Run from repo root.
+# Requires only a git remote it can push to (in CI, the default GITHUB_TOKEN
+# with contents:write). Data comes from Yahoo chart API (keyless) unless
+# ROBINHOOD_MCP_URL/TOKEN are set, in which case the MCP is used. Run from repo root.
 #
 # paper-state must be seeded once from a checkout that already has the full cache
 # + record -- see docs/paper-cron-setup.md. A cold start would give the strategy
@@ -27,7 +28,7 @@ else
   exit 1
 fi
 
-echo "== refresh cache over MCP (last ${REFRESH_DAYS} days) =="
+echo "== refresh cache (last ${REFRESH_DAYS} days) =="
 python -m rhagent.refresh --fetch --cache-dir data --days "${REFRESH_DAYS}"
 
 echo "== tick forward record =="
