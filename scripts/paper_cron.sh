@@ -34,6 +34,9 @@ python -m rhagent.refresh --fetch --cache-dir data --days "${REFRESH_DAYS}"
 echo "== tick forward record =="
 python -m rhagent.forward
 
+echo "== tick forward record (agent) =="
+python -m rhagent.forward --engine agent --eval-id agent
+
 echo "== persist cache + record to ${STATE_BRANCH} =="
 tmp="$(mktemp -d)"
 cleanup() { git worktree remove -f "${tmp}" 2>/dev/null || true; }

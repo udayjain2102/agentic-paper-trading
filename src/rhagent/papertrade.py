@@ -84,6 +84,7 @@ class PaperTrader:
         out_dir: str | Path = "journal/papertrade",
         run_id: str | None = None,
         overlay: Overlay | None = None,
+        lessons: str = "",
     ) -> None:
         self.engine = engine
         self.source = source
@@ -93,6 +94,7 @@ class PaperTrader:
         self.out_dir = Path(out_dir)
         self.run_id = run_id or new_run_id()
         self.overlay = overlay or IdentityOverlay()
+        self.lessons = lessons
 
     def run(self) -> Path:
         frames = self.source.bars()
@@ -214,6 +216,7 @@ class PaperTrader:
             "notional": self.notional,
             "overlay": self.overlay.name,
             "created_ts": datetime.now(timezone.utc).isoformat(),
+            "lessons": self.lessons,
         }
         (run_dir / "run.json").write_text(json.dumps(meta, indent=2, sort_keys=True))
 
@@ -293,6 +296,7 @@ def main(argv: list[str] | None = None) -> int:
     source = HistoricalSource(
         symbols, start.isoformat(), end.isoformat(), cache_dir=args.cache_dir
     )
+    lessons = ""
     if args.engine == "agent":
         from .learn import lessons_from_runs
 
@@ -304,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
     overlay = build_overlay(args.overlay)
     trader = PaperTrader(
         engine=engine, source=source, cost_bps=args.cost_bps,
-        out_dir=args.out_dir, overlay=overlay,
+        out_dir=args.out_dir, overlay=overlay, lessons=lessons,
     )
     run_dir = trader.run()
     _print_report(run_dir)

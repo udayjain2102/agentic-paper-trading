@@ -107,6 +107,16 @@ def test_compare_runs(tmp_path, run_dir):
             "sharpe", "max_drawdown"} <= set(df.columns)
 
 
+def test_compare_runs_pnl_comes_from_return_curve_not_trade_sum(tmp_path):
+    rid = "2026-07-12T00-00-00Z-dddddddd"
+    # Trade ledger sums to +$10,000, but the account return curve is +1%.
+    # The dashboard/comparison should report the return-derived account P&L.
+    _write_run(tmp_path / rid, [_trade(f"{rid}#0001", 10000.0, 1.0, "win")],
+               [0.01], engine="mean_reversion")
+    df = compare_runs(tmp_path)
+    assert df.loc[0, "net_pnl"] == pytest.approx(100.0)
+
+
 def test_load_run_missing_files_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         load_run(tmp_path / "nope")

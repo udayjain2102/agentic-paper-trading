@@ -37,7 +37,8 @@ agent:
 # Caveat: conviction's 95% CI lower bound still sits ~0, so this is the best
 # candidate, not a statistically-proven edge — confirm with forward OOS data.
 # The `overlay` field applies in the paper-trade evaluation path (papertrade.py);
-# wiring it into the live/forward path (runner.py, forward.py) is a follow-up.
+# the conviction overlay is also wired into the forward path (forward.py) — see
+# apply_conviction there. Other overlays (bucket, winprob) are paper-trade-only.
 # This block is only used when the runner is invoked with STRATEGY_MODE=true; the
 # default (no env var) keeps the LLM agent.
 strategy:
