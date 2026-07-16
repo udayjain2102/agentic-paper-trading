@@ -33,7 +33,7 @@ def _write_run(run_dir: Path, *, engine="mean_reversion", net=(0.01,)):
     )
 
 
-def test_default_dashboard_writes_unified_page_and_legacy_redirects(tmp_path):
+def test_default_dashboard_writes_only_one_dashboard_html(tmp_path):
     mod = _dashboard_module()
     paper = tmp_path / "journal" / "papertrade"
     _write_run(paper / "2026-07-12T00-00-00Z-aaaaaaaa")
@@ -47,10 +47,11 @@ def test_default_dashboard_writes_unified_page_and_legacy_redirects(tmp_path):
     assert "Trading Dashboard" in html
     assert "Now · forward track record" in html
     assert "Research pulse" in html
+    assert "href='#run-2026-07-12T00-00-00Z-aaaaaaaa'" in html
+    assert "<details class=\"rundetail\" id=\"run-2026-07-12T00-00-00Z-aaaaaaaa\"" in html
 
-    for legacy in [
+    for legacy_dashboard in [
         tmp_path / "journal" / "papertrade" / "dashboard.html",
         tmp_path / "journal" / "forward" / "dashboard.html",
     ]:
-        assert legacy.exists()
-        assert "unified trading dashboard" in legacy.read_text()
+        assert not legacy_dashboard.exists()

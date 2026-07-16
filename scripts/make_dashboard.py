@@ -32,6 +32,7 @@ from rhagent.evaluate import (  # noqa: E402
     failure_buckets,
     load_run,
 )
+from rhagent.learn import lessons_from_runs  # noqa: E402
 
 
 def _latest_run(base_dir: Path) -> Path:
@@ -61,6 +62,18 @@ def _return_pnl(total_return: float, notional: float) -> float:
 
 def _run_dirs(base_dir: Path) -> list[Path]:
     return sorted(p.parent for p in base_dir.glob("*/run.json"))
+
+
+def _run_anchor(run_id: str) -> str:
+    safe = "".join(c if c.isalnum() else "-" for c in str(run_id)).strip("-")
+    return f"run-{safe}"
+
+
+def _latest_forward_run(forward_dir: Path) -> Path | None:
+    dirs = _run_dirs(forward_dir)
+    if not dirs:
+        return None
+    return max(dirs, key=lambda d: str(load_run(d)[0].get("end", "")))
 
 
 def _safe_compare(base_dir: Path) -> pd.DataFrame:
@@ -291,10 +304,7 @@ def _compare_table(df: pd.DataFrame, current: str, link: bool = False) -> str:
             badges += "<span class='tag best'>best</span>"
         if rid == current:
             badges += "<span class='tag cur'>viewing</span>"
-        idcell = (
-            f"<a class='mono' href='#run-{escape(rid)}'>{escape(rid)}</a>"
-            if link else f"{escape(rid)}"
-        )
+        idcell = f"<a class='mono' href='#{_run_anchor(rid)}'>{escape(rid)}</a>" if link else f"{escape(rid)}"
         pnl = float(r["net_pnl"])
         pnl_cls = "up" if pnl >= 0 else "down"
         rows.append(
@@ -364,23 +374,6 @@ def _latest_summary(run_dir: Path, label: str) -> str:
     )
 
 
-def _code_health(graph_dir: Path) -> str:
-    report = graph_dir / "GRAPH_REPORT.md"
-    graph = graph_dir / "graph.html"
-    if not report.exists() and not graph.exists():
-        return "<p class='muted'>no code graph generated yet</p>"
-    links = []
-    if graph.exists():
-        links.append(f"<a class='mono' href='{escape(graph.resolve().as_uri())}'>graph.html</a>")
-    if report.exists():
-        links.append(f"<a class='mono' href='{escape(report.resolve().as_uri())}'>GRAPH_REPORT.md</a>")
-    return (
-        "<div class='notice'><b>Code topology available.</b> "
-        "Use it for dependency spelunking, but keep this trading dashboard as the operational source of truth. "
-        + " · ".join(links) + "</div>"
-    )
-
-
 def _overview_cards(base_dir: Path, forward_dir: Path, comparison: pd.DataFrame) -> str:
     forward_runs = _run_dirs(forward_dir)
     latest_forward_end = ""
@@ -436,6 +429,38 @@ def _bakeoff_table(base_dir) -> str:
     )
 
 
+def _run_order_sparkline(rows: pd.DataFrame, label: str) -> str:
+    """Net P&L trend across a run-id-ordered slice of one engine's paper-trade runs."""
+    if len(rows) == 0:
+        return (
+            f"<div class='panel'><div class='eyebrow'>{escape(label)}</div>"
+            "<p class='muted'>no runs yet</p></div>"
+        )
+    rows = rows.sort_values("run_id")
+    pnls = rows["net_pnl"].astype(float).tolist()
+    n = len(pnls)
+    w, h = 420, 90
+    lo, hi = min(pnls), max(pnls)
+    span = (hi - lo) or 1.0
+
+    def px(i: int) -> float:
+        return 10 + (w - 20) * (i / max(n - 1, 1))
+
+    def py(v: float) -> float:
+        return h - 10 - (h - 20) * ((v - lo) / span)
+
+    pts = " ".join(f"{px(i):.1f},{py(v):.1f}" for i, v in enumerate(pnls))
+    stroke = "var(--up)" if pnls[-1] >= 0 else "var(--down)"
+    return (
+        f"<div class='panel'><div class='eyebrow'>{escape(label)} · {n} runs</div>"
+        f"<svg viewBox='0 0 {w} {h}' class='equity' role='img' "
+        f"aria-label='{escape(label)} net P&amp;L trend across runs'>"
+        f"<polyline points='{pts}' fill='none' stroke='{stroke}' stroke-width='2'/></svg>"
+        f"<div class='tile-s'>latest win rate {_pct(float(rows['win_rate'].iloc[-1]))} · "
+        f"latest p&amp;l {_money(pnls[-1])}</div></div>"
+    )
+
+
 _CSS = """
 :root{--bg:#0f1216;--panel:#171b21;--panel2:#1c2128;--line:#2a313b;--fg:#e6edf3;
 --muted:#8b949e;--up:#3fb950;--down:#f85149;--accent:#58a6ff}
@@ -451,6 +476,11 @@ margin:36px 0 12px;font-weight:600}
 h3{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
 margin:22px 0 10px;font-weight:600}
 .runcard{border-top:2px solid var(--line);margin-top:44px;padding-top:4px;scroll-margin-top:16px}
+.rundetail{border-top:1px solid var(--line);margin-top:10px;scroll-margin-top:16px}
+.rundetail>summary{list-style:none;cursor:pointer;padding:14px 0;color:var(--fg)}
+.rundetail>summary::-webkit-details-marker{display:none}
+.rundetail>summary:hover .mono{text-decoration:underline}
+.rundetail[open]{padding-bottom:8px}
 h2.runhead{font-size:19px;text-transform:none;letter-spacing:-.01em;color:var(--fg);margin:20px 0 10px}
 a.mono{color:var(--accent);text-decoration:none}
 a.mono:hover{text-decoration:underline}
@@ -470,6 +500,7 @@ background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:1
 .eyebrow{text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-size:11px;margin-bottom:2px}
 .notice{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;color:var(--muted)}
 .notice b{color:var(--fg)}
+.sidebyside{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin:12px 0}
 .overview{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:18px 0 6px}
 .overview-card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
 .overview-v{font-size:20px;font-weight:700;margin-top:4px}
@@ -543,7 +574,7 @@ def _run_section(run_dir: Path, anchored: bool = False) -> str:
             ("notional", _money(meta["notional"])),
         ]
     )
-    aid = f" id='run-{escape(rid)}'" if anchored else ""
+    aid = f" id='{_run_anchor(rid)}'" if anchored else ""
     back = "<a class='backlink' href='#allruns'>← all runs</a>" if anchored else ""
     return f"""
   <section class="runcard"{aid}>
@@ -562,6 +593,35 @@ def _run_section(run_dir: Path, anchored: bool = False) -> str:
   <h3>Failure buckets · where losses concentrate</h3>
   <div class="tblscroll">{_buckets_table(buckets)}</div>
   </section>"""
+
+
+def _run_detail(run_dir: Path, open_: bool = False) -> str:
+    meta, trades, net = load_run(run_dir)
+    a = aggregate(trades, net)
+    buckets = failure_buckets(trades)
+    rid = str(meta["run_id"])
+    pnl = _return_pnl(a["total_return"], float(meta["notional"]))
+    pnl_cls = "up" if pnl >= 0 else "down"
+    open_attr = " open" if open_ else ""
+    return f"""
+  <details class="rundetail" id="{_run_anchor(rid)}"{open_attr}>
+    <summary><span class="mono">{escape(rid)}</span> · {escape(str(meta["engine"]))}
+      <span class="{pnl_cls}">{'+' if pnl >= 0 else ''}{_money(pnl)}</span>
+      <span class="muted">{_pct(a["total_return"])} · {_num(a["sharpe"])} Sharpe</span>
+    </summary>
+    <h3>Scorecard</h3>
+    {_scorecard(a, trades, meta["notional"])}
+    <h3>Equity curve</h3>
+    {_equity_svg(net)}
+    <h3>Trade ledger · {len(trades)} trades</h3>
+    <div class="tblscroll">{_trades_table(trades)}</div>
+    <h3>Failure buckets · where losses concentrate</h3>
+    <div class="tblscroll">{_buckets_table(buckets)}</div>
+  </details>"""
+
+
+def _run_details(runs: list[Path], latest: Path) -> str:
+    return "".join(_run_detail(run_dir, open_=run_dir == latest) for run_dir in runs)
 
 
 def _page(title: str, body: str, footer: str) -> str:
@@ -590,37 +650,51 @@ def render(run_dir: Path, base_dir: Path) -> str:
 
 
 def render_all(base_dir: Path) -> str:
-    """Unified control room: forward records, research index, latest detail."""
+    """Unified control room: forward record, grading, research index, run detail."""
     runs = sorted(_run_dirs(base_dir), reverse=True)
     if not runs:
         raise SystemExit(f"no runs found under {base_dir} — run rhagent.papertrade first")
     comparison = compare_runs(base_dir)
     latest = runs[0]
-    best = comparison.loc[comparison["total_return"].idxmax(), "run_id"]
-    best_dir = base_dir / str(best)
     forward_dir = base_dir.parent / "forward"
-    graph_dir = base_dir.parents[0].parent / "graphify-out"
-    index = (
-        _overview_cards(base_dir, forward_dir, comparison)
-        + "<h2>Now · forward track record</h2>"
-        f"<div class='tblscroll'>{_forward_table(forward_dir)}</div>"
-        "<h2>Research pulse</h2>"
-        + _latest_summary(latest, "latest paper-trade run")
-        + (_latest_summary(best_dir, "best paper-trade run") if best_dir != latest else "")
-        + f"<h2>All paper-trade runs · {len(runs)} total</h2>"
-        + f"<div class='tblscroll'>{_compare_table(comparison, '', link=False)}</div>"
-    )
+    forward_latest = _latest_forward_run(forward_dir)
+
+    index = _overview_cards(base_dir, forward_dir, comparison)
+
+    index += "<h2>Now · forward track record</h2>"
+    if forward_latest is not None:
+        _, _, forward_net = load_run(forward_latest)
+        index += _equity_svg(forward_net)
+    index += f"<div class='tblscroll'>{_forward_table(forward_dir)}</div>"
+
+    index += "<h2>Research pulse</h2>" + _latest_summary(latest, "latest paper-trade run")
+    meta, trades, net = load_run(latest)
+    a = aggregate(trades, net)
+    index += f"<h3>Scorecard</h3>{_scorecard(a, trades, meta['notional'])}"
     index += (
+        "<h3>Failure buckets · where losses concentrate</h3>"
+        f"<div class='tblscroll'>{_buckets_table(failure_buckets(trades))}</div>"
+    )
+    lessons = lessons_from_runs(base_dir)
+    if lessons:
+        index += f"<h3>Lessons learned so far</h3><p class='sub'>{escape(lessons)}</p>"
+
+    index += (
+        f"<h2>All paper-trade runs · {len(runs)} total</h2>"
+        f"<div class='tblscroll'>{_compare_table(comparison, '', link=True)}</div>"
         "<h2>Bake-off · robust Sharpe (fold + bootstrap + deflated)</h2>"
         "<p class='sub'>A variant beats baseline only if its 95% CI lower bound "
         "clears the baseline Sharpe.</p>"
         f"<div class='tblscroll'>{_bakeoff_table(base_dir)}</div>"
-        "<h2>Code graph</h2>"
-        f"{_code_health(graph_dir)}"
-        "<h2>Latest run detail</h2>"
+        "<h2>Agent vs rule · is the agent beating the baseline?</h2>"
+        "<div class='sidebyside'>"
+        + _run_order_sparkline(comparison[comparison["engine"] == "agent"], "agent")
+        + _run_order_sparkline(comparison[comparison["engine"] == "mean_reversion"], "mean_reversion (baseline)")
+        + "</div>"
+        "<h2>Run details</h2>"
     )
     return _page(
-        f"Trading dashboard — {len(runs)} research runs", index + _run_section(latest),
+        f"Trading dashboard — {len(runs)} research runs", index + _run_details(runs, latest),
         f"Generated from {escape(str(base_dir.parent))} · rhagent trading harness",
     )
 
@@ -646,28 +720,10 @@ def main(argv: list[str] | None = None) -> int:
 
     out = Path(args.out) if args.out else base_dir.parent / "dashboard.html"
     out.write_text(html, encoding="utf-8")
-    if not args.run and args.out is None:
-        _write_redirect_stubs(out)
     print(f"wrote {out}  ({label})")
     if args.open:
         webbrowser.open(out.resolve().as_uri())
     return 0
-
-
-def _write_redirect_stubs(target: Path) -> None:
-    """Keep legacy dashboard paths from becoming competing sources of truth."""
-    for legacy in [target.parent / "papertrade" / "dashboard.html",
-                   target.parent / "forward" / "dashboard.html"]:
-        rel = legacy.parent.relative_to(target.parent)
-        href = ("../" * len(rel.parts)) + target.name
-        legacy.write_text(
-            "<!doctype html><html><head><meta charset='utf-8'>"
-            f"<meta http-equiv='refresh' content='0; url={escape(href)}'>"
-            "<title>Trading Dashboard</title></head><body>"
-            f"<p>Moved to <a href='{escape(href)}'>the unified trading dashboard</a>.</p>"
-            "</body></html>",
-            encoding="utf-8",
-        )
 
 
 if __name__ == "__main__":

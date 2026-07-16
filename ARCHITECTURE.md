@@ -5,8 +5,8 @@ and the loop by which it improves — all behind hard, code-enforced safety rail
 
 The project has **two decision brains** that share one safety funnel:
 
-1. **The LLM agent** — Claude/Nemotron reasons over the live account each cron
-   tick and proposes orders.
+1. **The LLM agent** — Nemotron (via NVIDIA's API) reasons over the live account
+   each cron tick and proposes orders.
 2. **The quant strategy pipeline** — rule-based strategies that are searched,
    statistically gated, and paper-traded offline, then run live in "strategy mode".
 
@@ -132,10 +132,15 @@ before going live").
 
 ---
 
-## 2. The math
+## 2. The math (candidate generation, not the judge)
 
-This is how the system judges whether a signal is *real* rather than lucky. The
-core metric is **cross-sectional Information Coefficient (IC)**, not raw P\&L.
+This is an offline research tool for *generating* candidate signals — it is not
+the system's grading path. The judge is trade-level: the scorecard + failure
+buckets (`evaluate.py`) and robust Sharpe bake-off (`evaluate_robust.py`),
+confirmed by the live forward record. See the README's "How a strategy is
+graded" section. This section's core metric is **cross-sectional Information
+Coefficient (IC)**, not raw P\&L, and is useful for narrowing candidates before
+they enter the paper-trade bake-off — but it does not decide what ships.
 
 ### 2a. Information Coefficient (`factor/ic.py`)
 
