@@ -35,7 +35,14 @@ echo "== tick forward record =="
 python -m rhagent.forward
 
 echo "== tick forward record (agent) =="
-python -m rhagent.forward --engine agent --eval-id agent
+# The agent tick needs NVIDIA_API_KEY (one LLM call per symbol per new bar).
+# Without the key it can't run; don't let it kill the strategy record above.
+if [ -n "${NVIDIA_API_KEY:-}" ]; then
+  python -m rhagent.forward --engine agent --eval-id agent \
+    || echo "!! agent tick failed -- strategy record still persisted" >&2
+else
+  echo "NVIDIA_API_KEY not set -- skipping agent tick"
+fi
 
 echo "== persist cache + record to ${STATE_BRANCH} =="
 tmp="$(mktemp -d)"

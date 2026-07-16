@@ -49,11 +49,6 @@ def run_strategy_mode(cfg, broker, executor, journal, *, fetch=None) -> str:
 
     sc = cfg.strategy
 
-    if sc.name == "pairs" and len(sc.universe) != 2:
-        raise SystemExit(
-            f"pairs strategy requires exactly 2 symbols in universe, got {sc.universe!r}"
-        )
-
     end = date.today()
     start = end - timedelta(days=200)
     bars = get_bars(sc.universe, start.isoformat(), end.isoformat(), fetch=fetch)
@@ -64,28 +59,11 @@ def run_strategy_mode(cfg, broker, executor, journal, *, fetch=None) -> str:
     per_trade = getattr(cfg, "limits", None)
     notional = per_trade.per_trade_max_usd if per_trade else 250
 
-    if sc.name == "pairs":
-        from .strategies.pairs import Pairs
-        from .strategy_runner import pairs_target_orders
+    from .strategies import build
+    from .strategy_runner import target_orders
 
-        symbol_a, symbol_b = sc.universe
-        pairs = Pairs(**sc.params)
-        orders = pairs_target_orders(
-            pairs,
-            bars[symbol_a],
-            bars[symbol_b],
-            symbol_a,
-            symbol_b,
-            held,
-            notional,
-            held_values=held_values,
-        )
-    else:
-        from .strategies import build
-        from .strategy_runner import target_orders
-
-        strategy = build(sc.name, sc.params)
-        orders = target_orders(strategy, bars, held, notional, held_values=held_values)
+    strategy = build(sc.name, sc.params)
+    orders = target_orders(strategy, bars, held, notional, held_values=held_values)
 
     lines = [f"[strategy:{sc.name}] {len(orders)} order(s) proposed"]
     for symbol, side, amount in orders:
