@@ -1,5 +1,17 @@
 # Forward paper-run: cadence and its OAuth constraint
 
+> **Open blocker, unresolved as of 2026-07-16: there is currently no verified
+> way to advance the forward record unattended — not overnight, not while
+> anyone's asleep, not headlessly at all.** GitHub Actions can't authenticate
+> (see below), and the interactive-session path further down is not a
+> confirmed substitute: the MCP's OAuth session was observed to expire on the
+> same day it was granted, and its actual lifetime is unknown. Don't treat a
+> scheduled `/loop` as a solution until someone confirms the token survives
+> long enough to matter (ideally: multi-hour/overnight) and that a lapsed
+> token fails loudly rather than silently stalling the record. Until that's
+> confirmed, growing the record means someone manually re-running `/mcp` and
+> the tick steps below on each session that needs it.
+
 The forward record (`journal/forward/*`) only grows when something ticks it
 daily: `refresh --fetch` (or the stdin path) to update `data/*.csv`, then
 `rhagent.forward` per engine. This doc covers how that tick actually runs
