@@ -1,101 +1,58 @@
-# Forward paper-run: cadence and its OAuth constraint
+# Durable daily paper-run (GitHub Actions)
 
-> **Open blocker, unresolved as of 2026-07-16: there is currently no verified
-> way to advance the forward record unattended — not overnight, not while
-> anyone's asleep, not headlessly at all.** GitHub Actions can't authenticate
-> (see below), and the interactive-session path further down is not a
-> confirmed substitute: the MCP's OAuth session was observed to expire on the
-> same day it was granted, and its actual lifetime is unknown. Don't treat a
-> scheduled `/loop` as a solution until someone confirms the token survives
-> long enough to matter (ideally: multi-hour/overnight) and that a lapsed
-> token fails loudly rather than silently stalling the record. Until that's
-> confirmed, growing the record means someone manually re-running `/mcp` and
-> the tick steps below on each session that needs it.
+Runs `refresh --fetch` + `forward` tick every weekday on GitHub's runners, so the
+forward record grows without your laptop being on. The cumulative cache (`data/`)
+and record (`journal/`) are gitignored, so they live on a dedicated `paper-state`
+branch that the workflow reads and writes each run.
 
-The forward record (`journal/forward/*`) only grows when something ticks it
-daily: `refresh --fetch` (or the stdin path) to update `data/*.csv`, then
-`rhagent.forward` per engine. This doc covers how that tick actually runs
-today, and why the originally-planned GitHub Actions workflow doesn't work.
+Workflow: `.github/workflows/daily-paper-run.yml` → `scripts/paper_cron.sh`.
 
-## Why headless CI can't do this
+Data comes from Yahoo's chart API — keyless, so **no secrets are required**. The
+Robinhood MCP is used instead only if `ROBINHOOD_MCP_URL`/`ROBINHOOD_MCP_TOKEN`
+are ever set (its OAuth only completes inside an interactive Claude session, so
+in practice CI always uses Yahoo).
 
-Robinhood's agent MCP (`https://agent.robinhood.com/mcp/trading`) is
-**OAuth-only** — there is no dashboard or API-key page that issues a separate,
-long-lived bearer token for server-to-server use. The OAuth handshake only
-completes inside an interactive Claude Code session (`/mcp` → `robinhood-trading`),
-and the resulting credential isn't an extractable static secret you can paste
-into a GitHub Actions repo secret.
+## One-time setup
 
-That means `rhagent.refresh --fetch` and `McpBroker` — both of which need
-`ROBINHOOD_MCP_URL`/`ROBINHOOD_MCP_TOKEN` as plain env vars for a direct,
-unattended HTTP call — cannot authenticate in **any** headless context, not
-just GitHub's runners. A plain cron job on an always-on box would hit the same
-wall. `.github/workflows/daily-paper-run.yml` is kept in the repo but its
-schedule is disabled (see below) because it can never succeed as designed.
+### 1. Seed `paper-state` with your current cache + record
 
-If Robinhood's agent product ever adds a non-interactive API-key mechanism,
-headless CI becomes possible again — see "If a static token becomes
-available" at the bottom.
-
-## The actual working path: an interactive Claude session
-
-The Robinhood MCP tools (`mcp__robinhood-trading__*`) are only live inside a
-Claude Code session that has completed `/mcp` OAuth. So the daily tick has to
-run from inside one. Two ways to do that:
-
-**Manual, on any trading day:**
+CI must start from the cache you already have — mean-reversion needs the full
+lookback history, and this preserves the existing forward anchor. Do **not** let
+it cold-start. From your live checkout (which has `data/` and `journal/`), on a
+clean working tree:
 
 ```bash
-# 1. In a live Claude Code session (MCP already connected via /mcp):
-#    ask Claude to fetch fresh bars (get_equity_historicals) and pipe the
-#    payload into refresh — this is the "stdin" path in refresh.py, and it
-#    doesn't need ROBINHOOD_MCP_URL/TOKEN at all.
-... | PYTHONPATH=src .venv/bin/python -m rhagent.refresh --cache-dir data
-
-# 2. Tick both forward records:
-PYTHONPATH=src .venv/bin/python -m rhagent.forward
-PYTHONPATH=src .venv/bin/python -m rhagent.forward --engine agent --eval-id agent
-
-# 3. Rebuild the dashboard:
-PYTHONPATH=src .venv/bin/python scripts/make_dashboard.py
+git fetch origin
+git worktree add -f --detach /tmp/seed origin/main
+cp -r data journal /tmp/seed/
+( cd /tmp/seed
+  git switch -c paper-state
+  git add -Af data journal
+  git -c user.name=paper-bot -c user.email=paper-bot@users.noreply.github.com \
+      commit -m "seed paper-state: cache + forward record"
+  git push -u origin paper-state )
+git worktree remove -f /tmp/seed
 ```
 
-**Scheduled, without babysitting it:** run this as a recurring `/loop` inside
-a Claude Code session left open on a machine that stays on (e.g. `/loop 1d`
-with a prompt that does steps 1–3 above). This keeps the record growing
-without a fully headless CI job — the session just needs to be alive and
-MCP-authenticated once a day.
+### 2. Enable and smoke-test
 
-**Caveat: the OAuth session itself expires, so this isn't "set up once and
-forget it."** Confirmed directly (2026-07-16): even after `/mcp` OAuth had
-been completed earlier the same day, a later session's call to
-`mcp__robinhood-trading__get_equity_quotes` failed with `MCP server
-"robinhood-trading" requires re-authorization (token expired)`. Re-auth
-appears to be needed fairly often — possibly every session, or on whatever
-lifetime the token has — not just once. In practice: before relying on a
-`/loop` or a manual tick landing successfully, check that the Robinhood tools
-actually respond (a cheap read like `get_equity_quotes`); if they error with
-"requires re-authorization," someone has to run `/mcp` → `robinhood-trading`
-again in an interactive session before the tick can proceed. Don't assume a
-scheduled `/loop` will silently keep working across days without that.
+- **Actions** tab → enable workflows if prompted.
+- Open **daily-paper-run** → **Run workflow** (the `workflow_dispatch` button) to
+  trigger a run now instead of waiting for the schedule. Watch the log: it should
+  restore state, fetch, report `appended N day(s)`, and push `paper-state` only if
+  something changed.
 
-## Reading the record
+## Notes
 
-`journal/forward/<engine>/` holds the growing record directly in your working
-tree (gitignored, local) — no `paper-state` branch round-trip is needed since
-nothing is running off-box. `git show`/dashboard regen work the same as
-before, just against your local `journal/`.
-
-## If a static token becomes available later
-
-Should Robinhood's agent MCP ever add a separate long-lived token/API-key
-mechanism:
-
-1. Add `ROBINHOOD_MCP_URL` / `ROBINHOOD_MCP_TOKEN` as repo secrets (GitHub →
-   Settings → Secrets and variables → Actions).
-2. Seed a `paper-state` branch with your current `data/` + `journal/` (see
-   git history for the exact seeding commands — they're straightforward:
-   worktree, copy, commit, push).
-3. Re-enable the `schedule:` trigger in
-   `.github/workflows/daily-paper-run.yml` (currently commented out) and
-   smoke-test via **Actions → daily-paper-run → Run workflow**.
+- **Schedule is UTC.** `17 11 * * 1-5` = 11:17 UTC weekdays. Edit the cron in the
+  workflow to move it; GitHub has no per-timezone cron and may start a few minutes
+  late under load.
+- **`appended 0 days` is normal** until the whole 65-name basket has settled the
+  next trading day (the realized-day guard). Not an error.
+- **Dead names.** A symbol Yahoo stops serving is skipped with a warning; the
+  full-coverage guard in `forward.py` then freezes the record until the name is
+  dropped from the universe.
+- **Reading the record.** The latest cache + record always sit on the
+  `paper-state` branch; `git fetch && git show origin/paper-state:journal/...` or
+  regenerate the dashboard from a checkout of it.
+- **Paper only.** No broker token is set (`LIVE` unset), so nothing trades.
