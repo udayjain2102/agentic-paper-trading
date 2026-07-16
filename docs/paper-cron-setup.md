@@ -54,6 +54,19 @@ with a prompt that does steps 1–3 above). This keeps the record growing
 without a fully headless CI job — the session just needs to be alive and
 MCP-authenticated once a day.
 
+**Caveat: the OAuth session itself expires, so this isn't "set up once and
+forget it."** Confirmed directly (2026-07-16): even after `/mcp` OAuth had
+been completed earlier the same day, a later session's call to
+`mcp__robinhood-trading__get_equity_quotes` failed with `MCP server
+"robinhood-trading" requires re-authorization (token expired)`. Re-auth
+appears to be needed fairly often — possibly every session, or on whatever
+lifetime the token has — not just once. In practice: before relying on a
+`/loop` or a manual tick landing successfully, check that the Robinhood tools
+actually respond (a cheap read like `get_equity_quotes`); if they error with
+"requires re-authorization," someone has to run `/mcp` → `robinhood-trading`
+again in an interactive session before the tick can proceed. Don't assume a
+scheduled `/loop` will silently keep working across days without that.
+
 ## Reading the record
 
 `journal/forward/<engine>/` holds the growing record directly in your working
