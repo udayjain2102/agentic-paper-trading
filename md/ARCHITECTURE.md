@@ -375,7 +375,7 @@ One overlay survives:
 
 Two other variants (BucketFilter, a loss-bucket veto; WinProbGate, a logit
 win-probability gate) were baked off against it, lost, and were removed in the
-2026-07-17 cleanup (docs/AUDIT-2026-07-17.md); they live in git history.
+2026-07-17 cleanup (md/AUDIT-2026-07-17.md); they live in git history.
 
 Because these barely-profitable strategies live in the noise, the bake-off is
 judged by a **robust evaluator** (`evaluate_robust.py`), not a single Sharpe:
@@ -419,7 +419,7 @@ forward numbers match the ranking path exactly.
   `scripts/paper_cron.sh`) runs `refresh --fetch` + tick on GitHub's runners, so the
   record grows without a live laptop or Claude session. The cumulative cache and
   record (both gitignored) persist on a dedicated `paper-state` branch. One-time
-  setup in `docs/paper-cron-setup.md`.
+  setup in `md/paper-cron-setup.md`.
 
 This record is the evidence the promotion decision (below) waits on: it is what turns
 "the backtest looks good" into "it held up out-of-sample," before anyone flips

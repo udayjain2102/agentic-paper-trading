@@ -10,7 +10,7 @@
 # ROBINHOOD_MCP_URL/TOKEN are set, in which case the MCP is used. Run from repo root.
 #
 # paper-state must be seeded once from a checkout that already has the full cache
-# + record -- see docs/paper-cron-setup.md. A cold start would give the strategy
+# + record -- see md/paper-cron-setup.md. A cold start would give the strategy
 # too little lookback history and orphan the existing forward record.
 set -euo pipefail
 
@@ -24,7 +24,7 @@ if git fetch origin "${STATE_BRANCH}" 2>/dev/null; then
   # them in despite the local .gitignore.
   git restore --source="origin/${STATE_BRANCH}" -- data journal
 else
-  echo "!! ${STATE_BRANCH} not found on origin -- seed it first (see docs/paper-cron-setup.md)" >&2
+  echo "!! ${STATE_BRANCH} not found on origin -- seed it first (see md/paper-cron-setup.md)" >&2
   exit 1
 fi
 
