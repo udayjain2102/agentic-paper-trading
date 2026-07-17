@@ -10,7 +10,7 @@ everything else can happen at leisure once the record is growing.
 
 The workflow fails at "paper-state not found on origin" and both MCP secrets
 are empty. Two one-time setup steps were never done; they're documented in
-`md/paper-cron-setup.md`. Condensed:
+`.md/paper-cron-setup.md`. Condensed:
 
 **1a. Add the two repo secrets.**
 GitHub → repo **Settings → Secrets and variables → Actions**:

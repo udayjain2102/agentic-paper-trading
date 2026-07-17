@@ -108,9 +108,9 @@ win/loss, profit factor, Sharpe, max drawdown) and failure buckets
 deflated Sharpe, `rhagent.evaluate_robust`) — all confirmed against the live
 forward paper-trade record, not backtests. That forward record, growing
 unattended every trading day, is the only thing that can earn the eventual
-`LIVE=true` flip; see `md/FINDINGS.md` for the trust ladder.
+`LIVE=true` flip; see `.md/FINDINGS.md` for the trust ladder.
 
-The IC/ICIR machinery under `factor/`, `search/`, and `gate/` (md/ARCHITECTURE.md
+The IC/ICIR machinery under `factor/`, `search/`, and `gate/` (.md/ARCHITECTURE.md
 §2) is an offline research tool for *narrowing candidates* before they enter
 the bake-off above — it is not a competing grading system, and a strategy does
 not need to clear its gates to be promoted.
