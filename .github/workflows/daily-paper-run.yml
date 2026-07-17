@@ -3,7 +3,7 @@ name: daily-paper-run
 # Laptop-independent daily forward paper-run. Refreshes the cache (Yahoo by
 # default — keyless; the Robinhood MCP if the secrets are ever set) and ticks
 # the forward record, persisting both to the `paper-state` branch. See
-# docs/paper-cron-setup.md for one-time setup.
+# md/paper-cron-setup.md for one-time setup.
 
 on:
   schedule:

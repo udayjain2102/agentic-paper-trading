@@ -88,7 +88,7 @@ def apply_conviction(positions: pd.Series, signal: pd.Series,
 
 # BucketFilter and WinProbGate (loss-bucket veto, logit win-probability gate)
 # lost the 2026-07 bake-off to ConvictionGate and were removed — see
-# docs/AUDIT-2026-07-17.md; they live in git history if ever needed again.
+# md/AUDIT-2026-07-17.md; they live in git history if ever needed again.
 def build_overlay(name: str) -> Overlay:
     if name == "none":
         return IdentityOverlay()
