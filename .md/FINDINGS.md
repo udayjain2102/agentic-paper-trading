@@ -53,7 +53,7 @@ invested in the second while describing the first.
   cache/record on was **never seeded**, and the `ROBINHOOD_MCP_URL` /
   `ROBINHOOD_MCP_TOKEN` secrets are **empty**. It dies in 25 seconds at
   "paper-state not found on origin". One-time setup in
-  `md/paper-cron-setup.md` was never completed.
+  `.md/paper-cron-setup.md` was never completed.
 - The `mean_reversion` forward record ends **2026-07-13** — it's already stale.
 - The `agent` and `pairs` forward records contain **one day each**
   (2026-07-09) and have been dead since. They're corpses on the dashboard.
@@ -136,7 +136,7 @@ None of these are new systems. All three plug into code that already exists.
 ## The refocus plan, in order
 
 1. **Fix the daily run** (highest value, ~30 min): seed the `paper-state`
-   branch per `md/paper-cron-setup.md`, set the two repo secrets. Until this
+   branch per `.md/paper-cron-setup.md`, set the two repo secrets. Until this
    is green, nothing else matters — the forward record is the project's only
    irreplaceable asset.
 2. **Delete the dead forward tracks** (`agent`, `pairs` one-day records) or
