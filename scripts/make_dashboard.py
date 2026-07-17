@@ -139,7 +139,7 @@ def _equity_svg(net: pd.Series, width: int = 900, height: int = 300) -> str:
         v = lo + span * k / 4
         y = py(v)
         grid.append(f"<line x1='{padL}' y1='{y:.1f}' x2='{width - padR}' y2='{y:.1f}' class='grid'/>")
-        ylabels.append(f"<text x='{padL - 8}' y='{y + 4:.1f}' class='ytick'>{v:.3f}×</text>")
+        ylabels.append(f"<text x='{padL - 8}' y='{y + 4:.1f}' class='ytick'>{v:.2f}×</text>")
 
     pts = " ".join(f"{px(i):.1f},{py(v):.1f}" for i, v in enumerate(ys))
     area = f"{px(0):.1f},{py(lo):.1f} " + pts + f" {px(n - 1):.1f},{py(lo):.1f}"
@@ -149,7 +149,7 @@ def _equity_svg(net: pd.Series, width: int = 900, height: int = 300) -> str:
     base_y = py(1.0) if lo <= 1.0 <= hi else None
     baseline = (
         f"<line x1='{padL}' y1='{base_y:.1f}' x2='{width - padR}' y2='{base_y:.1f}' "
-        f"class='baseline'/><text x='{padL - 8}' y='{base_y + 4:.1f}' class='ytick base'>1.000×</text>"
+        f"class='baseline'/><text x='{padL - 8}' y='{base_y + 4:.1f}' class='ytick base'>1.00×</text>"
         if base_y is not None else ""
     )
 
@@ -182,7 +182,7 @@ def _equity_svg(net: pd.Series, width: int = 900, height: int = 300) -> str:
         f"<text x='{width - padR}' y='{height - 8}' class='xtick' text-anchor='end'>{dates[-1]}</text>"
     )
 
-    return f"""<svg viewBox="0 0 {width} {height}" class="equity" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Equity curve, final {equity.iloc[-1]:.3f} times starting capital, {_pct(final - 1)}">
+    return f"""<svg viewBox="0 0 {width} {height}" class="equity" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Equity curve, final {equity.iloc[-1]:.2f} times starting capital, {_pct(final - 1)}">
   {''.join(grid)}
   {dd_shade}
   <polygon points="{area}" fill="{stroke}" opacity="0.12"/>
@@ -190,7 +190,7 @@ def _equity_svg(net: pd.Series, width: int = 900, height: int = 300) -> str:
   <polyline points="{pts}" fill="none" stroke="{stroke}" stroke-width="2" stroke-linejoin="round"/>
   {peak_dot}{dd_marker}
   {''.join(ylabels)}{xlabels}
-  <text x="{padL}" y="16" class="svglabel">equity {equity.iloc[-1]:.3f}× · {_pct(final - 1)}</text>
+  <text x="{padL}" y="16" class="svglabel">equity {equity.iloc[-1]:.2f}× · {_pct(final - 1)}</text>
 </svg>"""
 
 
@@ -226,7 +226,7 @@ def _scorecard(a: dict, trades: pd.DataFrame, notional: float) -> str:
         tile("avg loss", _money(a["avg_loss"]), "down"),
         tile("sharpe", _num(a["sharpe"])),
         tile("max drawdown", _pct(a["max_drawdown"]), "down"),
-        tile("avg holding", f"{a['avg_holding_bars']:.1f} bars"),
+        tile("avg holding", f"{a['avg_holding_bars']:.2f} bars"),
     ]) + "</div>"
 
 
@@ -371,6 +371,26 @@ def _latest_summary(run_dir: Path, label: str) -> str:
         f"<div class='summary-metric {pnl_cls}'>{'+' if pnl >= 0 else ''}{_money(pnl)}</div>"
         f"<div class='summary-mini'>{_pct(a['total_return'])} return · "
         f"{_num(a['sharpe'])} Sharpe · {_pct(a['max_drawdown'])} max DD</div></div>"
+    )
+
+
+_RUNBOOK = [
+    ("daily forward tick", "PYTHONPATH=src .venv/bin/python -m rhagent.forward"),
+    ("new research run", "PYTHONPATH=src .venv/bin/python -m rhagent.papertrade --engine mean_reversion --symbols all"),
+    ("unattended daily loop", "scripts/paper_cron.sh"),
+    ("rebuild this page", ".venv/bin/python scripts/make_dashboard.py --open"),
+    ("run the tests", ".venv/bin/python -m pytest"),
+]
+
+
+def _runbook() -> str:
+    rows = "".join(
+        f"<tr><td>{escape(label)}</td><td class='mono'>{escape(cmd)}</td></tr>"
+        for label, cmd in _RUNBOOK
+    )
+    return (
+        "<table class='grid'><thead><tr><th>action</th><th>command</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
     )
 
 
@@ -660,6 +680,9 @@ def render_all(base_dir: Path) -> str:
     forward_latest = _latest_forward_run(forward_dir)
 
     index = _overview_cards(base_dir, forward_dir, comparison)
+
+    index += "<h2>Runbook · every command from here</h2>"
+    index += f"<div class='tblscroll'>{_runbook()}</div>"
 
     index += "<h2>Now · forward track record</h2>"
     if forward_latest is not None:
