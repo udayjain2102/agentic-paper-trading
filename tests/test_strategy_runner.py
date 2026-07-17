@@ -1,8 +1,7 @@
 import pandas as pd
 
 from rhagent.strategies.momentum import Momentum
-from rhagent.strategies.pairs import Pairs
-from rhagent.strategy_runner import pairs_target_orders, target_orders
+from rhagent.strategy_runner import target_orders
 
 
 def _bars(prices):
@@ -40,34 +39,4 @@ def test_sell_liquidates_actual_held_value_not_fixed_notional():
     assert orders == [("AAPL", "sell", 180.0)]
 
 
-def test_pairs_buys_cheap_leg_and_leaves_other_flat():
-    # A dips relative to B -> long-only signal longs A, clamps B's short to flat.
-    a = [100] * 20 + [90]
-    b = [100] * 21
-    orders = pairs_target_orders(
-        Pairs(lookback=20, entry=1.0),
-        _bars(a),
-        _bars(b),
-        "A",
-        "B",
-        held=set(),
-        notional_usd=250,
-    )
-    assert orders == [("A", "buy", 250)]
 
-
-def test_pairs_sell_liquidates_held_value_when_signal_flat():
-    # A was held long from a prior cheap signal; now flat -> sell at held value.
-    a = [100] * 21
-    b = [100] * 21
-    orders = pairs_target_orders(
-        Pairs(lookback=20, entry=1.0),
-        _bars(a),
-        _bars(b),
-        "A",
-        "B",
-        held={"A"},
-        notional_usd=250,
-        held_values={"A": 175.0},
-    )
-    assert orders == [("A", "sell", 175.0)]

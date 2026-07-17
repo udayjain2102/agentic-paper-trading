@@ -66,7 +66,6 @@ Every strategy implements one contract (`strategies/base.py`):
 | **mean\_reversion** | `-z`, where `z = (close − rollmean)/rollstd` over `lookback` | long when `z < −entry`, exit to flat when `z ≥ −exit` (hysteresis avoids churn) |   |           |
 | **momentum**        | `close.pct_change(lookback)` (trailing return)               | `sign(trailing return)`                                                         |   |           |
 | **linreg**          | rolling-OLS prediction of next-day return                    | long when prediction > 0                                                        |   |           |
-| **pairs**           | z-score of `log(A) − log(B)` spread                          | long the cheap leg / short the rich leg when \`                                 | z | > entry\` |
 
 `linreg` is the only one that fits parameters: at each day *t* it runs
 `np.linalg.lstsq` on features `[1, ret_lag1, ret_lag2, ma_ratio]` against next-day
@@ -369,17 +368,14 @@ bar — the seam snapshots it once per bar, before any of that bar's own closes,
 the same **no-lookahead invariant** holds as everywhere else. Return `0` to veto,
 a fraction to down-size, or the raw target to pass through. The baseline is an
 `IdentityOverlay` (a `--overlay none` run is byte-identical to no overlay at all).
-Three overlays exist as interchangeable, comparable variants:
+One overlay survives:
 
 - **ConvictionGate** — vetoes entries whose `|conviction|` is below a rolling
   percentile of that symbol's own past convictions (trade-level noise filter).
-- **BucketFilter** — vetoes/down-sizes entries whose setup bucket (the same
-  vol/gap/side buckets as the failure analysis) has been the worst loser among
-  closed trades so far. Size is snapped to coarse levels to avoid per-bar churn.
-- **WinProbGate** — a numpy-logit (IRLS) win-probability model over closed-trade
-  features that vetoes entries below a probability threshold; inert at the default
-  \~68% base win rate, so it only bites when the threshold is raised. **ParamTune**
-  (a walk-forward parameter re-fit) remains planned — the seam is built for it.
+
+Two other variants (BucketFilter, a loss-bucket veto; WinProbGate, a logit
+win-probability gate) were baked off against it, lost, and were removed in the
+2026-07-17 cleanup (docs/AUDIT-2026-07-17.md); they live in git history.
 
 Because these barely-profitable strategies live in the noise, the bake-off is
 judged by a **robust evaluator** (`evaluate_robust.py`), not a single Sharpe:

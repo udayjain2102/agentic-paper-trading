@@ -43,7 +43,7 @@ model cannot talk its way past a hard cap — the cap is enforced in code.
 | `src/rhagent/runner.py` | Orchestrates one cron tick. |
 | `src/rhagent/journal.py` | Append-only JSONL audit trail. |
 | `config.yaml` | Guardrail limits + model config. |
-| `src/rhagent/strategies/` | Rule-based strategies (mean-reversion, momentum, linreg, pairs). |
+| `src/rhagent/strategies/` | Rule-based strategies (mean-reversion, momentum, linreg). |
 | `src/rhagent/backtest.py` | Offline backtest engine (equity curve + metrics). |
 | `src/rhagent/data.py` | Historical bars via the RH MCP, cached to `data/*.csv`. |
 | `src/rhagent/compare.py` | Rank all strategies by total return, pick the winner. |

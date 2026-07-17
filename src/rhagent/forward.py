@@ -7,7 +7,7 @@ appends it to a single growing record under journal/forward/<eval_id>/, in the
 same format evaluate.py / the dashboard already read.
 
 Anchored at first run so the curve reflects the go-forward period, not backfilled
-history. Reuses Pairs.positions_pair + backtest.net_returns (the exact math
+history. Reuses backtest.net_returns (the exact math
 compare.py ranks with), so forward numbers match the backtest path.
 
 Usage (cache must already be refreshed for today -- see rhagent.refresh):
@@ -70,12 +70,6 @@ def _positions(cfg, engine: str, bars: dict[str, pd.DataFrame],
 
             agent = AgentEngine(lessons=lessons_from_runs())
         return {s: _agent_positions(eval_dir, s, bars[s], agent) for s in cfg.strategy.universe}
-    if engine == "pairs":
-        from .strategies.pairs import Pairs
-
-        a, b = cfg.strategy.universe
-        pa, pb = Pairs(**cfg.strategy.params).positions_pair(bars[a], bars[b])
-        return {a: pa, b: pb}
     from .strategies import build
 
     strat = build(engine, cfg.strategy.params)
@@ -173,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="rhagent.forward")
     p.add_argument("--out-dir", default="journal/forward")
     p.add_argument("--eval-id", help="record dir name (default: engine name)")
-    p.add_argument("--engine", help="pairs|momentum|linreg|mean_reversion|agent "
+    p.add_argument("--engine", help="momentum|linreg|mean_reversion|agent "
                                     "(default: config strategy)")
     p.add_argument("--cost-bps", type=float, default=1.0)
     p.add_argument("--report", action="store_true", help="report only, no tick")
@@ -204,14 +198,15 @@ def _selfcheck() -> None:
         return pd.DataFrame({"open": close, "high": close, "low": close,
                              "close": close, "volume": 1e6}, index=idx)
     bars = {"AAA": frame(1), "BBB": frame(2)}
-    cfg = SimpleNamespace(strategy=SimpleNamespace(name="pairs", params={},
-                                                   universe=["AAA", "BBB"]))
+    cfg = SimpleNamespace(strategy=SimpleNamespace(name="mean_reversion", params={},
+                                                   universe=["AAA", "BBB"],
+                                                   overlay="none"))
     with tempfile.TemporaryDirectory() as d:
         cache = Path(d) / "cache"
         cache.mkdir()
         for s, f in bars.items():
             f.to_csv(cache / f"{s}.csv", index_label="date")
-        ed = Path(d) / "pairs"
+        ed = Path(d) / "mr"
         r1 = tick(cfg, ed, today=date(2026, 3, 20), cache_dir=cache)
         assert r1["appended"] == 1, r1          # first tick anchors to 1 day
         r2 = tick(cfg, ed, today=date(2026, 3, 20), cache_dir=cache)

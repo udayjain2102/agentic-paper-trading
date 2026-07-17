@@ -39,4 +39,5 @@ jobs:
         env:
           ROBINHOOD_MCP_URL: ${{ secrets.ROBINHOOD_MCP_URL }}
           ROBINHOOD_MCP_TOKEN: ${{ secrets.ROBINHOOD_MCP_TOKEN }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}  # enables the agent tick; skipped if unset
         run: bash scripts/paper_cron.sh

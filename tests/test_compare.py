@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from rhagent.compare import best_pair, evaluate
+from rhagent.compare import evaluate
 
 
 def _bars(prices, start="2025-01-01"):
@@ -24,11 +24,8 @@ def _universe():
 def test_evaluate_returns_one_row_per_strategy_sorted_by_return():
     rows = evaluate(_universe(), cost_bps=1.0)
     names = [name for name, _ in rows]
-    assert set(names) == {"mean_reversion", "momentum", "linreg", "pairs"}
+    assert set(names) == {"mean_reversion", "momentum", "linreg"}
     returns = [res.total_return for _, res in rows]
     assert returns == sorted(returns, reverse=True)  # descending
 
 
-def test_best_pair_picks_the_two_most_correlated():
-    pair = best_pair(_universe())
-    assert set(pair) == {"AAPL", "MSFT"}
