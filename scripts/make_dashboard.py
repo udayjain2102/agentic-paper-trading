@@ -33,6 +33,7 @@ from rhagent.evaluate import (  # noqa: E402
     load_run,
 )
 from rhagent.learn import lessons_from_runs  # noqa: E402
+from rhagent.memory import read_memory  # noqa: E402
 
 
 def _latest_run(base_dir: Path) -> Path:
@@ -701,6 +702,14 @@ def render_all(base_dir: Path) -> str:
     lessons = lessons_from_runs(base_dir)
     if lessons:
         index += f"<h3>Lessons learned so far</h3><p class='sub'>{escape(lessons)}</p>"
+    memory = read_memory()
+    if memory:
+        recent = memory.split("\n## ")[1:][-3:]
+        entries = "".join(f"<p class='sub'>## {escape(e)}</p>" for e in recent)
+        index += (
+            "<h3>Agent's own lessons (self-written)</h3>"
+            f"<details><summary>last {len(recent)} reflection(s)</summary>{entries}</details>"
+        )
 
     index += (
         f"<h2>All paper-trade runs · {len(runs)} total</h2>"
