@@ -7,6 +7,7 @@ because journal/ lives on the paper-state branch (see paper_cron.sh).
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Callable
 
@@ -102,9 +103,13 @@ def reflect(complete: Callable[[str], str], memory_path: str | Path,
     )
     try:
         text = complete(prompt).strip()
-    except Exception:
+    except Exception as e:
+        # Loud but non-fatal: a silently-skipped reflection looks identical to
+        # a deliberate no-op in run.json, which defeats the audit trail.
+        print(f"!! reflect: model call failed: {e}", file=sys.stderr)
         return ""
     if not text:
+        print("!! reflect: model returned empty text", file=sys.stderr)
         return ""
     append_reflection(memory_path, date_str, text)
     return text

@@ -48,15 +48,25 @@ def _agent_positions(eval_dir: Path, symbol: str, bars: pd.DataFrame,
         prev = pd.Series(0.0, index=bars.index[:-1])
     pos = float(prev.iloc[-1]) if len(prev) else 0.0
     decided = dict(prev)
+    new_rows = []
     for ts in bars.index:
         if ts in decided:
             pos = decided[ts]
             continue
         history = bars.loc[:ts]
-        pos = agent.decide(symbol, history, pos).target
+        d = agent.decide(symbol, history, pos)
+        pos = d.target
         decided[ts] = pos
+        new_rows.append({"date": str(ts.date()), "symbol": symbol,
+                         "target": pos, "reason": d.reason})
     out = pd.Series(decided).reindex(bars.index).astype(float)
     out.rename_axis("date").rename("pos").to_csv(cache)
+    # Append-only decisions log: without the reason, a deliberate flat is
+    # indistinguishable from a "parse-fail: held" API failure after the fact.
+    if new_rows:
+        with (eval_dir / "decisions.jsonl").open("a") as f:
+            for r in new_rows:
+                f.write(json.dumps(r) + "\n")
     return out
 
 
