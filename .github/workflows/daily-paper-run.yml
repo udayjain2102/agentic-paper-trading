@@ -15,6 +15,8 @@ on:
 
 permissions:
   contents: write         # push updated state to paper-state via GITHUB_TOKEN
+  pages: write            # publish the dashboard to GitHub Pages
+  id-token: write         # required by actions/deploy-pages
 
 concurrency:
   group: paper-run        # never let two runs clobber each other's state push
@@ -41,3 +43,17 @@ jobs:
           ROBINHOOD_MCP_TOKEN: ${{ secrets.ROBINHOOD_MCP_TOKEN }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}  # enables the agent tick; skipped if unset
         run: bash scripts/paper_cron.sh
+
+      # Publish the dashboard to GitHub Pages after every run, so the public
+      # URL always shows the latest state — "live" at the cadence the data
+      # actually changes (once per weekday run).
+      - name: build dashboard
+        run: |
+          mkdir -p site
+          PYTHONPATH=src python scripts/make_dashboard.py --out site/index.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - uses: actions/deploy-pages@v4
