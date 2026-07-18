@@ -17,7 +17,7 @@ from __future__ import annotations
 import argparse
 import sys
 import webbrowser
-from datetime import date
+from datetime import date, datetime, timezone
 from html import escape
 from pathlib import Path
 
@@ -645,12 +645,21 @@ def _run_details(runs: list[Path], latest: Path) -> str:
     return "".join(_run_detail(run_dir, open_=run_dir == latest) for run_dir in runs)
 
 
+# GitHub renders this badge live (in progress / passing / failing), so the
+# static dashboard shows current CI state without any JS or re-render.
+_ACTIONS_URL = ("https://github.com/udayjain2102/papertrading-model-"
+                "/actions/workflows/daily-paper-run.yml")
+
+
 def _page(title: str, body: str, footer: str) -> str:
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{escape(title)}</title>
 <style>{_CSS}</style></head><body><div class="wrap">
   <h1>Trading Dashboard</h1>
+  <p class="sub"><a href="{_ACTIONS_URL}">
+    <img src="{_ACTIONS_URL}/badge.svg?branch=main" alt="daily paper-run status"></a>
+    — live status of the daily paper-run (click for logs)</p>
   {body}
   <footer>{footer}</footer>
 </div></body></html>"""
@@ -727,7 +736,8 @@ def render_all(base_dir: Path) -> str:
     )
     return _page(
         f"Trading dashboard — {len(runs)} research runs", index + _run_details(runs, latest),
-        f"Generated from {escape(str(base_dir.parent))} · rhagent trading harness",
+        f"Generated {datetime.now(timezone.utc):%Y-%m-%d %H:%M UTC} from "
+        f"{escape(str(base_dir.parent))} · rhagent trading harness",
     )
 
 
