@@ -155,3 +155,36 @@ def test_positions_lessons_include_memory(tmp_path, monkeypatch):
     ed.mkdir()
     forward._positions(cfg, "agent", bars, ed)
     assert "avoid overtrading small caps" in captured["lessons"]
+
+
+def test_reflect_failure_is_loud(tmp_path, capsys):
+    def boom(prompt):
+        raise RuntimeError("model down")
+
+    reflect(boom, tmp_path / "mem.md", "AAA pos=+1", "2026-07-18")
+    assert "model call failed" in capsys.readouterr().err
+
+    reflect(lambda p_: "", tmp_path / "mem.md", "AAA pos=+1", "2026-07-18")
+    assert "empty text" in capsys.readouterr().err
+
+
+def test_agent_positions_log_decisions_with_reason(tmp_path):
+    import json
+
+    from rhagent.engine import Decision
+
+    class FakeAgent:
+        def decide(self, symbol, history, current_pos):
+            return Decision(target=1.0, reason="agent: dip buy")
+
+    bars = _bars([10, 11, 12, 13, 14])
+    forward._agent_positions(tmp_path, "AAA", bars, FakeAgent())
+    lines = [json.loads(l) for l in
+             (tmp_path / "decisions.jsonl").read_text().splitlines()]
+    assert lines and lines[-1]["symbol"] == "AAA"
+    assert lines[-1]["target"] == 1.0
+    assert lines[-1]["reason"] == "agent: dip buy"
+    # second call: all bars cached, nothing new appended
+    forward._agent_positions(tmp_path, "AAA", bars, FakeAgent())
+    n2 = len((tmp_path / "decisions.jsonl").read_text().splitlines())
+    assert n2 == len(lines)
