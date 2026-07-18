@@ -67,8 +67,10 @@ def _positions(cfg, engine: str, bars: dict[str, pd.DataFrame],
         if agent is None:
             from .engine import AgentEngine
             from .learn import lessons_from_runs
+            from .memory import read_memory
 
-            agent = AgentEngine(lessons=lessons_from_runs())
+            lessons = read_memory() + "\n" + lessons_from_runs()
+            agent = AgentEngine(lessons=lessons)
         return {s: _agent_positions(eval_dir, s, bars[s], agent) for s in cfg.strategy.universe}
     from .strategies import build
 
@@ -151,6 +153,54 @@ def tick(cfg, eval_dir: Path, cost_bps: float = 1.0, *, engine: str | None = Non
     return {"meta": meta, "appended": len(rows), "total_days": len(combined)}
 
 
+def tick_and_reflect(cfg, eval_dir: Path, cost_bps: float = 1.0, *, engine: str | None = None,
+                     fetch=None, today=None, cache_dir="data", agent=None,
+                     reflect_complete=None,
+                     memory_path: str = "journal/agent_memory.md") -> dict:
+    """Agent-only wrapper around tick(): feeds prior memory into the day's
+    decisions, then -- if the tick actually appended a new day -- writes a
+    self-reflection over recent outcomes. Non-agent engines just tick().
+
+    Records `memory_chars`/`reflected` into run.json so each run's meta is an
+    audit trail of what education it got. Reflection is best-effort: any
+    failure (model, data) is swallowed so it never breaks the tick.
+    """
+    engine = engine or cfg.strategy.name
+    if engine != "agent":
+        return tick(cfg, eval_dir, cost_bps, engine=engine, fetch=fetch,
+                    today=today, cache_dir=cache_dir, agent=agent)
+
+    from .engine import AgentEngine, nvidia_complete
+    from .learn import lessons_from_runs
+    from .memory import read_memory, recent_outcomes, reflect
+
+    memory_text = read_memory(memory_path)
+    if agent is None:
+        agent = AgentEngine(lessons=memory_text + "\n" + lessons_from_runs())
+
+    res = tick(cfg, eval_dir, cost_bps, engine=engine, fetch=fetch, today=today,
+              cache_dir=cache_dir, agent=agent)
+
+    reflected = False
+    if res["appended"] >= 1:
+        try:
+            today_d = today or date.today()
+            start = (today_d - timedelta(days=400)).isoformat()
+            bars = get_bars(cfg.strategy.universe, start, today_d.isoformat(),
+                            fetch=fetch, cache_dir=cache_dir)
+            outcomes = recent_outcomes(eval_dir, bars)
+            complete = reflect_complete or nvidia_complete(max_tokens=600)
+            reflected = bool(reflect(complete, memory_path, outcomes, today_d.isoformat()))
+        except Exception as e:
+            print(f"!! reflection failed (non-fatal): {e}", file=sys.stderr)
+
+    meta = res["meta"]
+    meta["memory_chars"] = len(memory_text)
+    meta["reflected"] = reflected
+    (eval_dir / "run.json").write_text(json.dumps(meta, indent=2, sort_keys=True))
+    return res
+
+
 def _report(eval_dir: Path) -> None:
     from .evaluate import aggregate, load_run
 
@@ -179,7 +229,7 @@ def main(argv: list[str] | None = None) -> int:
     engine = args.engine or cfg.strategy.name
     eval_dir = Path(args.out_dir) / (args.eval_id or engine)
     if not args.report:
-        res = tick(cfg, eval_dir, args.cost_bps, engine=engine)
+        res = tick_and_reflect(cfg, eval_dir, args.cost_bps, engine=engine)
         print(f"tick: appended {res['appended']} day(s), {res['total_days']} total")
     _report(eval_dir)
     return 0

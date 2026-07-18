@@ -420,6 +420,15 @@ forward numbers match the ranking path exactly.
   record grows without a live laptop or Claude session. The cumulative cache and
   record (both gitignored) persist on a dedicated `paper-state` branch. One-time
   setup in `.md/paper-cron-setup.md`.
+- **Self-written memory loop (`memory.py`).** The agent's education is no longer
+  just the one-sentence `lessons_from_runs()` stats line — before each bar's
+  decision it also reads `journal/agent_memory.md`, its own dated reflections.
+  After an agent tick appends a new day, `tick_and_reflect` has the model review
+  its recent decisions and realized outcomes (`recent_outcomes`) and write 3-5
+  falsifiable bullet lessons, appended under a `## <date>` header. Capped at the
+  most recent 40 entries. Because `journal/` persists on `paper-state`, this
+  memory carries forward across CI runs for free; `run.json` records
+  `memory_chars`/`reflected` per run as an audit trail of what education it got.
 
 This record is the evidence the promotion decision (below) waits on: it is what turns
 "the backtest looks good" into "it held up out-of-sample," before anyone flips

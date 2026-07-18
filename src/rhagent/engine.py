@@ -18,6 +18,42 @@ import pandas as pd
 from .strategies.base import Strategy
 
 
+def nvidia_complete(max_tokens: int = 256, model: str = "") -> Callable[[str], str]:
+    """Build an NVIDIA OpenAI-compatible `complete(prompt) -> text` callable.
+
+    Shared client-building seam: AgentEngine's decision calls and memory.reflect's
+    reflection call both need "detailed thinking off" + a token cap to keep
+    nemotron-super's chain-of-thought from ballooning latency (see AgentEngine
+    docstring for why).
+    """
+    from openai import OpenAI
+
+    from .config import load
+
+    cfg = load()
+    # max_retries lets the SDK ride out transient 429s / timeouts with backoff
+    # rather than dropping the call to a parse-fail.
+    client = OpenAI(
+        api_key=cfg.nvidia_api_key, base_url=cfg.nvidia_base_url,
+        timeout=45, max_retries=8,
+    )
+    model = model or cfg.agent.model
+
+    def complete(prompt: str) -> str:
+        resp = client.chat.completions.create(
+            model=model,
+            max_tokens=max_tokens,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": "detailed thinking off"},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        return resp.choices[0].message.content or ""
+
+    return complete
+
+
 @dataclass(frozen=True)
 class Decision:
     target: float  # desired position in {-1, 0, +1}
@@ -86,32 +122,7 @@ class AgentEngine:
         off" system directive plus a small token cap keeps each call ~2s while
         still returning a reasoned verdict.
         """
-        from openai import OpenAI
-
-        from .config import load
-
-        cfg = load()
-        # max_retries lets the SDK ride out transient 429s / timeouts with
-        # backoff rather than dropping the bar to a held "parse-fail" decision.
-        client = OpenAI(
-            api_key=cfg.nvidia_api_key, base_url=cfg.nvidia_base_url,
-            timeout=45, max_retries=8,
-        )
-        model = self.model or cfg.agent.model
-
-        def complete(prompt: str) -> str:
-            resp = client.chat.completions.create(
-                model=model,
-                max_tokens=self.max_tokens,
-                temperature=0,
-                messages=[
-                    {"role": "system", "content": "detailed thinking off"},
-                    {"role": "user", "content": prompt},
-                ],
-            )
-            return resp.choices[0].message.content or ""
-
-        return complete
+        return nvidia_complete(max_tokens=self.max_tokens, model=self.model)
 
     def _prompt(self, symbol: str, history: pd.DataFrame, current_pos: float) -> str:
         close = history["close"].astype(float)
