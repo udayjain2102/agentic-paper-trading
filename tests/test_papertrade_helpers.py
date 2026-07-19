@@ -41,6 +41,20 @@ def test_historical_source_reads_cached_csv(tmp_path):
     assert out["AAPL"]["close"].tolist() == [1.0, 2.0]
 
 
+def test_historical_source_drops_stunted_symbol(tmp_path, capsys):
+    _bars(list(range(283))).to_csv(tmp_path / "AAA.csv")
+    _bars(list(range(283))).to_csv(tmp_path / "BBB.csv")
+    _bars([1.0, 2.0]).to_csv(tmp_path / "XOM.csv")  # 2 bars vs median 283
+
+    src = HistoricalSource(["AAA", "BBB", "XOM"], "2026-01-01", "2026-01-02", cache_dir=tmp_path)
+    out = src.bars()
+
+    assert set(out) == {"AAA", "BBB"}
+    assert list(out["AAA"].index) == list(out["BBB"].index)
+    err = capsys.readouterr().err
+    assert "dropping XOM: 2 bars vs median 283" in err
+
+
 def test_entry_features_keys_and_values():
     closes = [100.0] * 25
     opens = list(closes)

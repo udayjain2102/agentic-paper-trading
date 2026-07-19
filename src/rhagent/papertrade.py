@@ -44,7 +44,25 @@ class HistoricalSource:
     def bars(self) -> dict[str, pd.DataFrame]:
         frames = get_bars(self.symbols, self.start, self.end, cache_dir=self.cache_dir)
         # Multi-symbol runs need one shared bar index; cached ranges differ
-        # (later listings, gaps), so intersect to the common dates.
+        # (later listings, gaps), so intersect to the common dates. But one
+        # stunted cache (e.g. a refresh that only wrote a handful of bars)
+        # would otherwise collapse the shared index for everyone and silently
+        # starve every strategy's lookback. Drop such outliers first.
+        if len(frames) > 1:
+            lengths = sorted(len(df) for df in frames.values())
+            median_len = lengths[len(lengths) // 2]
+            dropped = {s: len(df) for s, df in frames.items() if len(df) < median_len / 2}
+            if dropped:
+                for s, n in dropped.items():
+                    print(
+                        f"dropping {s}: {n} bars vs median {median_len} — "
+                        "cache too short, refetch or backfill",
+                        file=sys.stderr,
+                    )
+                frames = {s: df for s, df in frames.items() if s not in dropped}
+            if not frames:
+                raise ValueError("all symbols dropped: cached history too short for every symbol")
+
         if len(frames) > 1:
             common = None
             for df in frames.values():
