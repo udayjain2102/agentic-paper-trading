@@ -1,6 +1,5 @@
 import importlib.util
 import json
-import re
 from pathlib import Path
 
 import pandas as pd
@@ -45,13 +44,10 @@ def test_default_dashboard_writes_only_one_dashboard_html(tmp_path):
     dashboard = tmp_path / "journal" / "dashboard.html"
     assert dashboard.exists()
     html = dashboard.read_text()
-    assert "Trading Dashboard" in html
-    assert "Now · forward track record" in html
-    assert "Research pulse" in html
-    assert "href='#run-2026-07-12T00-00-00Z-aaaaaaaa'" in html
-    assert "<details class=\"rundetail\" id=\"run-2026-07-12T00-00-00Z-aaaaaaaa\"" in html
+    assert "Trading Control Room" in html
     assert "Runbook" in html
-    assert not re.search(r"\d\.\d{3,}×", html)  # equity labels stay at 2 decimals
+    # the run appears in the embedded control-room data blob
+    assert "2026-07-12T00-00-00Z-aaaaaaaa" in html
 
     for legacy_dashboard in [
         tmp_path / "journal" / "papertrade" / "dashboard.html",

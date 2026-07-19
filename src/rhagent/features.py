@@ -23,7 +23,30 @@ def entry_features(history: pd.DataFrame) -> dict:
         diff = float(close.iloc[-1] - close.iloc[-6])
         trend5 = 0.0 if diff == 0 else (1.0 if diff > 0 else -1.0)
 
-    return {"vol20": vol20, "gap": gap, "trend5": trend5}
+    try:
+        dow = float(history.index[-1].dayofweek)
+    except (AttributeError, TypeError):
+        dow = 0.0
+
+    dist_high20 = 0.0
+    dist_low20 = 0.0
+    ret1 = 0.0
+    if len(close) >= 2:
+        last20 = close.tail(20)
+        dist_high20 = float(close.iloc[-1] / last20.max() - 1.0)
+        dist_low20 = float(close.iloc[-1] / last20.min() - 1.0)
+        ret1 = float(close.iloc[-1] / close.iloc[-2] - 1.0)
+    if pd.isna(dist_high20):
+        dist_high20 = 0.0
+    if pd.isna(dist_low20):
+        dist_low20 = 0.0
+    if pd.isna(ret1):
+        ret1 = 0.0
+
+    return {
+        "vol20": vol20, "gap": gap, "trend5": trend5,
+        "dow": dow, "dist_high20": dist_high20, "dist_low20": dist_low20, "ret1": ret1,
+    }
 
 
 def flatten_trades(trades: pd.DataFrame) -> pd.DataFrame:

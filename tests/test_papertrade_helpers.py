@@ -47,7 +47,7 @@ def test_entry_features_keys_and_values():
     opens[-1] = 102.0  # 2% gap up vs prev close 100
     hist = _bars(closes, opens)
     f = entry_features(hist)
-    assert set(f) == {"vol20", "gap", "trend5"}
+    assert set(f) == {"vol20", "gap", "trend5", "dow", "dist_high20", "dist_low20", "ret1"}
     assert f["vol20"] == 0.0          # flat closes -> zero vol
     assert abs(f["gap"] - 0.02) < 1e-9
     assert f["trend5"] == 0.0         # flat -> no trend

@@ -31,12 +31,14 @@ import pandas as pd  # noqa: E402
 
 from rhagent.config import load as load_config  # noqa: E402
 from rhagent.evaluate import (  # noqa: E402
+    _bucket_labels,
     aggregate,
     compare_runs,
     failure_buckets,
     load_run,
 )
 from rhagent.evaluate_robust import robust_table  # noqa: E402
+from rhagent.features import flatten_trades  # noqa: E402
 from rhagent.learn import lessons_from_runs  # noqa: E402
 from rhagent.memory import read_memory  # noqa: E402
 
@@ -528,32 +530,36 @@ def _win_trades(run_dir: Path) -> list[dict]:
     return rows
 
 
-def _cross_run_holding_buckets(base_dir: Path) -> tuple[list[dict], dict, list[dict], dict]:
-    """Loss + win buckets by holding-bars length, across every archived run."""
+def _cross_run_buckets(base_dir: Path) -> tuple[list[dict], dict, list[dict], dict]:
+    """Top loss + win buckets ranked across every bucketing dimension
+    (vol, gap, holding, symbol, side, dow, near_high, ...), over every
+    archived run."""
     frames = [load_run(d)[1] for d in _run_dirs(base_dir)]
     frames = [f for f in frames if len(f)]
     if not frames:
         return [], {}, [], {}
-    trades = pd.concat(frames, ignore_index=True)
-    bins = [(-1.0, 2.0, "1–2 bars"), (2.0, 9.0, "3–9 bars"), (9.0, float("inf"), "≥10 bars")]
-    n_total, n_losses, n_wins = len(trades), int((trades["outcome"] == "loss").sum()), int((trades["outcome"] == "win").sum())
+    trades = flatten_trades(pd.concat(frames, ignore_index=True))
+    n_total = len(trades)
+    n_losses = int((trades["outcome"] == "loss").sum())
+    n_wins = int((trades["outcome"] == "win").sum())
     src = f"every paper-trade run archived so far ({len(frames)} runs)"
-    loss_rows, win_rows = [], []
-    for lo, hi, label in bins:
-        sub = trades[(trades["holding_bars"] > lo) & (trades["holding_bars"] <= hi)]
-        loss_n = int((sub["outcome"] == "loss").sum())
-        win_n = int((sub["outcome"] == "win").sum())
-        wr = float((sub["outcome"] == "win").mean()) if len(sub) else 0.0
-        loss_rows.append({"dim": "holding_bars", "bucket": label, "lossN": loss_n, "totalN": int(len(sub)), "wr": wr,
-                           "share": loss_n / n_losses if n_losses else 0.0})
-        win_rows.append({"dim": "holding_bars", "bucket": label, "winN": win_n, "totalN": int(len(sub)), "wr": wr,
-                          "share": win_n / n_wins if n_wins else 0.0})
-    loss_rows.sort(key=lambda r: -r["share"])
-    win_rows.sort(key=lambda r: -r["share"])
+    rows = []
+    for dim, labels in _bucket_labels(trades).items():
+        for bucket, idx in trades.groupby(labels).groups.items():
+            sub = trades.loc[idx]
+            loss_n = int((sub["outcome"] == "loss").sum())
+            win_n = int((sub["outcome"] == "win").sum())
+            wr = float((sub["outcome"] == "win").mean()) if len(sub) else 0.0
+            rows.append({"dim": dim, "bucket": str(bucket), "lossN": loss_n, "winN": win_n,
+                         "totalN": int(len(sub)), "wr": wr,
+                         "loss_share": loss_n / n_losses if n_losses else 0.0,
+                         "win_share": win_n / n_wins if n_wins else 0.0})
+    loss_rows = [{**r, "share": r["loss_share"]} for r in sorted(rows, key=lambda r: -r["loss_share"])[:5]]
+    win_rows = [{**r, "share": r["win_share"]} for r in sorted(rows, key=lambda r: -r["win_share"])[:5]]
     loss_meta = {"n": n_total, "losses": n_losses, "runs": len(frames), "source": src,
-                 "caveat": "Holding-time effect measured across every archived paper-trade run, not just the locked config."}
+                 "caveat": "Measured across every archived paper-trade run, not just the locked config."}
     win_meta = {"n": n_total, "wins": n_wins, "source": src,
-                "note": "Same trades, mirrored: short exits contribute most win volume, mid-length holds convert best."}
+                "note": "Top buckets across all dimensions, ranked by share of total wins."}
     return loss_rows, loss_meta, win_rows, win_meta
 
 
@@ -600,7 +606,7 @@ def _build_control_room_data(base_dir: Path) -> dict:
 
     forward_dir = base_dir.parent / "forward"
     curve_vals, curve_dates = _equity_curve(locked_dir)
-    loss_buckets, loss_meta, win_buckets, win_meta = _cross_run_holding_buckets(base_dir)
+    loss_buckets, loss_meta, win_buckets, win_meta = _cross_run_buckets(base_dir)
     g = cfg.limits
 
     return {
@@ -774,7 +780,7 @@ _CONTROL_ROOM_TEMPLATE = r"""<!doctype html>
         </div>
         <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
           <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Where we win</h3>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Same dimension, mirrored.</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Top buckets across all dimensions.</div>
           <div id="cr-winbuckets" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:14px"></div>
           <div id="cr-winbucketsnote" style="padding:11px 13px;background:rgba(5,196,107,.06);border:1px solid rgba(5,196,107,.2);border-radius:10px;font-size:11.5px;color:var(--muted);text-wrap:pretty"></div>
         </div>
