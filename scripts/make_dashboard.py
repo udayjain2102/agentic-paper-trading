@@ -27,11 +27,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import pandas as pd  # noqa: E402
 
 from rhagent.evaluate import (  # noqa: E402
+    _bucket_labels,
     aggregate,
     compare_runs,
     failure_buckets,
     load_run,
 )
+from rhagent.features import flatten_trades  # noqa: E402
 from rhagent.learn import lessons_from_runs  # noqa: E402
 from rhagent.memory import read_memory  # noqa: E402
 
@@ -288,6 +290,65 @@ def _buckets_table(b: pd.DataFrame) -> str:
         "<table class='grid'><thead><tr><th>dimension</th><th>bucket</th>"
         "<th>trades</th><th>win rate</th><th>share of total loss</th></tr></thead>"
         f"<tbody>{''.join(rows)}</tbody></table>"
+    )
+
+
+def _cross_run_buckets(base_dir: Path) -> tuple[list[dict], list[dict]]:
+    """Top-5 loss and top-5 win buckets, ranked across every bucketing dimension
+    (vol, gap, holding, dow, near_high, ...), over every archived paper-trade run."""
+    frames = [load_run(d)[1] for d in _run_dirs(base_dir)]
+    frames = [f for f in frames if len(f)]
+    if not frames:
+        return [], []
+    trades = flatten_trades(pd.concat(frames, ignore_index=True))
+    n_losses = int((trades["outcome"] == "loss").sum())
+    n_wins = int((trades["outcome"] == "win").sum())
+
+    rows = []
+    for dim, labels in _bucket_labels(trades).items():
+        for bucket, idx in trades.groupby(labels).groups.items():
+            sub = trades.loc[idx]
+            loss_n = int((sub["outcome"] == "loss").sum())
+            win_n = int((sub["outcome"] == "win").sum())
+            rows.append({
+                "dim": dim,
+                "bucket": str(bucket),
+                "lossN": loss_n,
+                "winN": win_n,
+                "totalN": int(len(sub)),
+                "wr": float((sub["outcome"] == "win").mean()) if len(sub) else 0.0,
+                "loss_share": loss_n / n_losses if n_losses else 0.0,
+                "win_share": win_n / n_wins if n_wins else 0.0,
+            })
+    loss_rows = sorted(rows, key=lambda r: -r["loss_share"])[:5]
+    win_rows = sorted(rows, key=lambda r: -r["win_share"])[:5]
+    return loss_rows, win_rows
+
+
+def _cross_run_buckets_table(rows: list[dict], count_key: str, share_key: str) -> str:
+    if not rows or all(r[share_key] == 0 for r in rows):
+        return "<p class='muted'>no archived runs yet</p>"
+    body = []
+    for r in rows:
+        share = r[share_key]
+        bar = (
+            f"<div class='barwrap'><div class='bar' style='width:{share*100:.1f}%'></div>"
+            f"<span>{_pct(share)}</span></div>"
+        )
+        body.append(
+            f"<tr><td>{escape(r['dim'])}</td>"
+            f"<td class='mono'>{escape(r['bucket'])}</td>"
+            f"<td class='num'>{r[count_key]}</td>"
+            f"<td class='num'>{r['totalN']}</td>"
+            f"<td class='num'>{_pct(r['wr'])}</td>"
+            f"<td class='sharecell'>{bar}</td></tr>"
+        )
+    count_label = "losses" if count_key == "lossN" else "wins"
+    share_label = "share of total loss" if share_key == "loss_share" else "share of total wins"
+    return (
+        f"<table class='grid'><thead><tr><th>dimension</th><th>bucket</th>"
+        f"<th>{count_label}</th><th>trades</th><th>win rate</th><th>{share_label}</th></tr></thead>"
+        f"<tbody>{''.join(body)}</tbody></table>"
     )
 
 
@@ -719,6 +780,19 @@ def render_all(base_dir: Path) -> str:
             "<h3>Agent's own lessons (self-written)</h3>"
             f"<details><summary>last {len(recent)} reflection(s)</summary>{entries}</details>"
         )
+
+    loss_rows, win_rows = _cross_run_buckets(base_dir)
+    index += (
+        "<h2>Cross-run buckets · biggest loss and win concentrations</h2>"
+        "<p class='sub'>Top buckets across all dimensions. Measured across every archived "
+        "paper-trade run, not just the locked config.</p>"
+        "<div class='sidebyside'>"
+        "<div class='panel'><div class='eyebrow'>biggest loss concentrations</div>"
+        f"<div class='tblscroll'>{_cross_run_buckets_table(loss_rows, 'lossN', 'loss_share')}</div></div>"
+        "<div class='panel'><div class='eyebrow'>biggest win concentrations</div>"
+        f"<div class='tblscroll'>{_cross_run_buckets_table(win_rows, 'winN', 'win_share')}</div></div>"
+        "</div>"
+    )
 
     index += (
         f"<h2>All paper-trade runs · {len(runs)} total</h2>"

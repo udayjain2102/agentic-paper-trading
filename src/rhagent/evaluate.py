@@ -77,13 +77,34 @@ def _bucket_labels(trades: pd.DataFrame) -> dict[str, pd.Series]:
         ["short" if h < 5 else "long" for h in trades["holding_bars"]],
         index=trades.index,
     )
-    return {
+    labels = {
         "vol": vol_bucket.astype(str),
         "gap": gap_bucket,
         "holding": holding,
         "symbol": trades["symbol"],
         "side": trades["side"],
     }
+
+    # NaN feature values (trades from ledgers written before the feature
+    # existed) stay NaN so groupby drops them from that dimension.
+    if "feat_dow" in trades:
+        dow_names = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+        labels["dow"] = pd.Series(
+            [dow_names[int(round(v))]
+             if pd.notna(v) and 0 <= int(round(v)) <= 4 else None
+             for v in trades["feat_dow"].astype(float)],
+            index=trades.index, dtype=object,
+        )
+
+    if "feat_dist_high20" in trades:
+        dist_high20 = trades["feat_dist_high20"].astype(float)
+        near_high = pd.Series(None, index=trades.index, dtype=object)
+        near_high[dist_high20.notna()] = "far_below"
+        near_high[dist_high20 > -0.05] = "mid"
+        near_high[dist_high20 > -0.005] = "at_high"
+        labels["near_high"] = near_high
+
+    return labels
 
 
 def failure_buckets(trades: pd.DataFrame) -> pd.DataFrame:

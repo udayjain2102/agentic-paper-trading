@@ -4,7 +4,13 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from rhagent.evaluate import aggregate, compare_runs, failure_buckets, load_run
+from rhagent.evaluate import (
+    _bucket_labels,
+    aggregate,
+    compare_runs,
+    failure_buckets,
+    load_run,
+)
 
 
 def _trade(tid, pnl_abs, pnl_pct, outcome, vol=0.01, gap=0.0, holding=3,
@@ -115,6 +121,38 @@ def test_compare_runs_pnl_comes_from_return_curve_not_trade_sum(tmp_path):
                [0.01], engine="mean_reversion")
     df = compare_runs(tmp_path)
     assert df.loc[0, "net_pnl"] == pytest.approx(100.0)
+
+
+def test_bucket_labels_dow_and_near_high(run_dir):
+    _, trades, _ = load_run(run_dir)
+    trades["feat_dow"] = [0.0, 4.0, 6.0, 2.0]  # Mon, Fri, out-of-range->dropped, Wed
+    trades["feat_dist_high20"] = [-0.001, -0.02, -0.2, -0.004]  # at_high, mid, far_below, at_high
+    labels = _bucket_labels(trades)
+    assert list(labels["dow"]) == ["Mon", "Fri", None, "Wed"]
+    assert list(labels["near_high"]) == ["at_high", "mid", "far_below", "at_high"]
+
+
+def test_bucket_labels_nan_features_drop_out(run_dir):
+    # Trades concatenated from a pre-feature ledger carry NaN in the new
+    # feat_ columns; they must drop out of those dimensions, not crash.
+    _, trades, _ = load_run(run_dir)
+    trades["feat_dow"] = [0.0, float("nan"), 4.0, float("nan")]
+    trades["feat_dist_high20"] = [float("nan"), -0.02, float("nan"), -0.001]
+    labels = _bucket_labels(trades)
+    assert list(labels["dow"]) == ["Mon", None, "Fri", None]
+    nh = list(labels["near_high"])
+    assert [nh[1], nh[3]] == ["mid", "at_high"]
+    assert pd.isna(nh[0]) and pd.isna(nh[2])
+    # groupby drops the NaN/None rows from the dimension entirely
+    grouped = trades.groupby(labels["dow"]).size()
+    assert grouped.sum() == 2
+
+
+def test_bucket_labels_skips_dow_and_near_high_when_missing(run_dir):
+    _, trades, _ = load_run(run_dir)
+    labels = _bucket_labels(trades)
+    assert "dow" not in labels
+    assert "near_high" not in labels
 
 
 def test_load_run_missing_files_raises(tmp_path):
