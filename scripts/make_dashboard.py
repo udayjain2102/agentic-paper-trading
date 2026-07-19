@@ -1173,7 +1173,8 @@ function buildDetail(runId) {
     { label: 'profit factor', value: num(r.pf), color: r.pf >= 1 ? 'var(--up)' : 'var(--down)' },
     { label: 'avg win', value: money(avgWin), color: 'var(--up)' },
     { label: 'avg loss', value: money(avgLoss), color: 'var(--down)' },
-    { label: 'gross win', value: money(r.gw, 0), color: 'var(--fg)' },
+    { label: 'gross win', value: money(r.gw, 0), color: 'var(--up)' },
+    { label: 'gross loss', value: money(-r.gl, 0), color: 'var(--down)' },
   ];
   return {
     idFull: r.id, engine: r.engine, dot: engineColor(r.engine), overlay: r.overlay || 'no overlay',
