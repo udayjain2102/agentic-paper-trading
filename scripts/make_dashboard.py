@@ -1083,7 +1083,8 @@ function renderScorecard() {
     { label: 'sharpe', value: S.sharpe.toFixed(2), color: 'var(--fg)' },
     { label: 'max drawdown', value: pctAbs(S.dd, 2), color: 'var(--down)' },
     { label: 'avg holding', value: S.avgHold.toFixed(1) + ' bars', color: 'var(--fg)' },
-    { label: 'gross win', value: money(S.gw, 0), color: 'var(--fg)' },
+    { label: 'gross win', value: money(S.gw, 0), color: 'var(--up)' },
+    { label: 'gross loss', value: money(-S.gl, 0), color: 'var(--down)' },
   ];
   document.getElementById('cr-scoretiles').innerHTML = tiles.map(t => `
     <div style="background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:13px 15px">
