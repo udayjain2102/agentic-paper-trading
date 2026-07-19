@@ -41,3 +41,23 @@ jobs:
           ROBINHOOD_MCP_TOKEN: ${{ secrets.ROBINHOOD_MCP_TOKEN }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}  # enables the agent tick; skipped if unset
         run: bash scripts/paper_cron.sh
+
+      # Redeploy the dashboard to Vercel after every run, so
+      # https://trading-dashboard-five-pied.vercel.app always shows the latest
+      # state — "live" at the cadence the data actually changes (once per
+      # weekday run). Skipped (non-fatal) when VERCEL_TOKEN is unset.
+      - name: deploy dashboard to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          # Project link — ids are not secret; they pin the deploy target.
+          VERCEL_ORG_ID: team_nIr8FIk1aHaczeM9eK0Qobfu
+          VERCEL_PROJECT_ID: prj_CVEuzY6WJp9SUS3r8AELmwnqypXv
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "VERCEL_TOKEN not set -- skipping dashboard deploy"
+            exit 0
+          fi
+          mkdir -p site
+          PYTHONPATH=src python scripts/make_dashboard.py --out site/index.html
+          npx vercel deploy site --prod --yes --token "$VERCEL_TOKEN" \
+            || echo "!! dashboard deploy failed -- paper state already persisted" >&2
