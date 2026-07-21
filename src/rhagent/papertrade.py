@@ -148,7 +148,12 @@ class PaperTrader:
                 exit_price=price,
                 exit_reason=reason,
                 pnl_pct=pnl_pct,
-                pnl_abs=self.notional * pnl_pct,
+                # Each symbol only ever gets a 1/N slice of notional (see the
+                # daily_net accrual below), so the per-trade dollar figure
+                # must use that same slice, not the full notional — otherwise
+                # gross win/loss (sum of pnl_abs) run ~N times larger than the
+                # portfolio's actual net P&L.
+                pnl_abs=(self.notional / len(symbols)) * abs(q) * pnl_pct,
                 holding_bars=bar_i - tr.pop("_entry_i"),
                 outcome=(
                     "win" if pnl_pct > 0 else "loss" if pnl_pct < 0 else "flat"

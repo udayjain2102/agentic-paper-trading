@@ -124,6 +124,10 @@ def test_two_symbols_equal_weight_returns(tmp_path):
     rets = pd.read_csv(run_dir / "returns.csv")
     # A earns 10% on day1; B flat -> equal-weight 5%
     assert abs(rets["net"].iloc[1] - 0.05) < 1e-12
+    # A's trade should book its 1/N notional slice, not the full $10,000,
+    # else gross win/loss (sum of pnl_abs) drift away from net portfolio P&L.
+    a_trade = next(t for t in trades if t["symbol"] == "A")
+    assert abs(a_trade["pnl_abs"] - 1050.0) < 1e-9  # (10000/2) * 21% (100->121)
 
 
 def test_entry_features_present_on_trades(tmp_path):

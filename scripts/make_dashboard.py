@@ -838,7 +838,7 @@ _CONTROL_ROOM_TEMPLATE = r"""<!doctype html>
 const DATA = __DATA_JSON__;
 const ACTIONS_URL = DATA.actionsUrl;
 
-const ST = { chartMode: 'cum', hoverIdx: null, engine: 'all', runSort: 'pnl', runDir: -1, tradeFilter: 'all', copied: -1, selectedRun: null };
+const ST = { chartMode: 'cum', hoverIdx: null, engine: 'all', runSort: 'id', runDir: -1, tradeFilter: 'all', copied: -1, selectedRun: null };
 
 function money(x, dp = 2) { const s = x < 0 ? '-' : ''; return s + '$' + Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp }); }
 function pct(x, dp = 2) { return (x >= 0 ? '+' : '') + (x * 100).toFixed(dp) + '%'; }
@@ -1019,7 +1019,7 @@ function renderBakeoff() {
 }
 
 const RUN_COLS = [
-  { key: 'sid', label: 'run', align: 'left' }, { key: 'engine', label: 'engine', align: 'left' },
+  { key: 'id', label: 'run', align: 'left' }, { key: 'engine', label: 'engine', align: 'left' },
   { key: 'overlay', label: 'overlay', align: 'left' }, { key: 'n', label: 'trades', align: 'right' },
   { key: 'wr', label: 'win %', align: 'right' }, { key: 'pf', label: 'PF', align: 'right' },
   { key: 'pnl', label: 'P&L', align: 'right' }, { key: 'ret', label: 'return', align: 'right' },
@@ -1248,7 +1248,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.engine) { ST.engine = t.dataset.engine; renderRuns(); }
   else if (t.dataset.sort) {
     if (ST.runSort === t.dataset.sort) ST.runDir = -ST.runDir;
-    else { ST.runSort = t.dataset.sort; ST.runDir = ['sid', 'engine', 'overlay'].includes(t.dataset.sort) ? 1 : -1; }
+    else { ST.runSort = t.dataset.sort; ST.runDir = ['id', 'engine', 'overlay'].includes(t.dataset.sort) ? 1 : -1; }
     renderRuns();
   } else if (t.dataset.open) { ST.selectedRun = t.dataset.open; renderDrawer(); }
   else if (t.dataset.tradefilter) { ST.tradeFilter = t.dataset.tradefilter; renderLedger(); }
