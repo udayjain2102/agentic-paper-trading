@@ -1156,12 +1156,6 @@ function renderLedger() {
 async function triggerResearchRun() {
   const status = document.getElementById('cr-trigger-status');
   const btn = document.getElementById('cr-trigger-btn');
-  let secret = localStorage.getItem('rh_trigger_secret');
-  if (!secret) {
-    secret = prompt('Passphrase to trigger a research run:');
-    if (!secret) return;
-    localStorage.setItem('rh_trigger_secret', secret);
-  }
   btn.disabled = true;
   status.textContent = 'triggering…';
   status.style.color = 'var(--muted)';
@@ -1169,13 +1163,9 @@ async function triggerResearchRun() {
     const r = await fetch('/api/trigger-run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ secret }),
+      body: '{}',
     });
-    if (r.status === 401) {
-      localStorage.removeItem('rh_trigger_secret');
-      status.textContent = 'wrong passphrase';
-      status.style.color = 'var(--down)';
-    } else if (r.ok) {
+    if (r.ok) {
       status.textContent = 'triggered — running on GitHub Actions';
       status.style.color = 'var(--up)';
     } else {
