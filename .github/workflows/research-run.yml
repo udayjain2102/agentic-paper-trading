@@ -1,0 +1,76 @@
+name: research-run
+
+# On-demand research run, triggered either from GitHub's "Run workflow"
+# button or from the dashboard's own trigger button (Vercel serverless
+# function -> this workflow's dispatch API). Runs the mean_reversion
+# strategy over the full cached universe, appends the run to the
+# journal/papertrade archive on paper-state, and redeploys the dashboard.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write         # push the new run to paper-state via GITHUB_TOKEN
+
+concurrency:
+  group: paper-run        # shared with daily-paper-run.yml -- never let a
+  cancel-in-progress: false  # forward tick and a research run race on paper-state
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: restore cache from paper-state
+        run: |
+          git fetch origin paper-state
+          git restore --source=origin/paper-state -- data journal
+
+      - name: research run (mean_reversion, full universe)
+        run: PYTHONPATH=src python -m rhagent.papertrade --engine mean_reversion --symbols all
+
+      - name: persist run to paper-state
+        run: |
+          tmp="$(mktemp -d)"
+          cleanup() { git worktree remove -f "${tmp}" 2>/dev/null || true; }
+          trap cleanup EXIT
+          git worktree add -f --detach "${tmp}" origin/paper-state
+          rsync -a --delete data/ "${tmp}/data/"
+          rsync -a --delete journal/ "${tmp}/journal/"
+          git -C "${tmp}" add -Af data journal
+          if git -C "${tmp}" diff --cached --quiet; then
+            echo "no state change to commit"
+          else
+            git -C "${tmp}" \
+              -c user.name="paper-bot" \
+              -c user.email="paper-bot@users.noreply.github.com" \
+              commit -q -m "research run $(date -u +%FT%TZ)"
+            git -C "${tmp}" push origin "HEAD:paper-state"
+            echo "pushed updated state"
+          fi
+
+      - name: deploy dashboard to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: team_nIr8FIk1aHaczeM9eK0Qobfu
+          VERCEL_PROJECT_ID: prj_CVEuzY6WJp9SUS3r8AELmwnqypXv
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "VERCEL_TOKEN not set -- skipping dashboard deploy"
+            exit 0
+          fi
+          mkdir -p site/api
+          PYTHONPATH=src python scripts/make_dashboard.py --out site/index.html
+          cp deploy_api/trigger-run.js site/api/trigger-run.js
+          npx vercel deploy site --prod --yes --token "$VERCEL_TOKEN" \
+            || echo "!! dashboard deploy failed -- paper state already persisted" >&2

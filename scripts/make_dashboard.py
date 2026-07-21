@@ -815,8 +815,17 @@ _CONTROL_ROOM_TEMPLATE = r"""<!doctype html>
     </section>
 
     <section style="margin-top:30px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-      <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Runbook</h3>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Every command that drives this system. Click to copy.</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div>
+          <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Runbook</h3>
+          <div style="font-size:12px;color:var(--muted)">Every command that drives this system. Click to copy.</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="cr-trigger-status" style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace"></span>
+          <button id="cr-trigger-btn" class="cr-btn" style="padding:9px 16px;border-radius:8px;font-size:12.5px;font-weight:600;background:var(--panel2);border:1px solid var(--line);color:var(--fg)">Run new research run</button>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin:16px 0 16px"></div>
       <div id="cr-runbook" style="display:flex;flex-direction:column;gap:8px"></div>
     </section>
 
@@ -1144,6 +1153,44 @@ function renderLedger() {
   }).join('');
 }
 
+async function triggerResearchRun() {
+  const status = document.getElementById('cr-trigger-status');
+  const btn = document.getElementById('cr-trigger-btn');
+  let secret = localStorage.getItem('rh_trigger_secret');
+  if (!secret) {
+    secret = prompt('Passphrase to trigger a research run:');
+    if (!secret) return;
+    localStorage.setItem('rh_trigger_secret', secret);
+  }
+  btn.disabled = true;
+  status.textContent = 'triggering…';
+  status.style.color = 'var(--muted)';
+  try {
+    const r = await fetch('/api/trigger-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret }),
+    });
+    if (r.status === 401) {
+      localStorage.removeItem('rh_trigger_secret');
+      status.textContent = 'wrong passphrase';
+      status.style.color = 'var(--down)';
+    } else if (r.ok) {
+      status.textContent = 'triggered — running on GitHub Actions';
+      status.style.color = 'var(--up)';
+    } else {
+      const body = await r.json().catch(() => ({}));
+      status.textContent = 'failed: ' + (body.error || r.status);
+      status.style.color = 'var(--down)';
+    }
+  } catch (e) {
+    status.textContent = 'failed: ' + e.message;
+    status.style.color = 'var(--down)';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function renderRunbook() {
   document.getElementById('cr-runbook').innerHTML = DATA.runbook.map(([label, cmd], i) => `
     <button class="cr-btn" data-copy="${i}" style="text-align:left;display:flex;align-items:center;gap:14px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:11px 14px">
@@ -1243,7 +1290,7 @@ function renderAll() {
 }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-chartmode],[data-engine],[data-sort],[data-open],[data-tradefilter],[data-copy],[data-close-drawer]');
+  const t = e.target.closest('[data-chartmode],[data-engine],[data-sort],[data-open],[data-tradefilter],[data-copy],[data-close-drawer],#cr-trigger-btn');
   if (!t) return;
   if (t.dataset.chartmode) { ST.chartMode = t.dataset.chartmode; renderChart(); }
   else if (t.dataset.engine) { ST.engine = t.dataset.engine; renderRuns(); }
@@ -1253,6 +1300,7 @@ document.addEventListener('click', e => {
     renderRuns();
   } else if (t.dataset.open) { ST.selectedRun = t.dataset.open; renderDrawer(); }
   else if (t.dataset.tradefilter) { ST.tradeFilter = t.dataset.tradefilter; renderLedger(); }
+  else if (t.id === 'cr-trigger-btn') { triggerResearchRun(); }
   else if (t.dataset.copy != null) {
     const i = Number(t.dataset.copy);
     const cmd = DATA.runbook[i][1];

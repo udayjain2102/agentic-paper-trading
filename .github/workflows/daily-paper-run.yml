@@ -57,7 +57,8 @@ jobs:
             echo "VERCEL_TOKEN not set -- skipping dashboard deploy"
             exit 0
           fi
-          mkdir -p site
+          mkdir -p site/api
           PYTHONPATH=src python scripts/make_dashboard.py --out site/index.html
+          cp deploy_api/trigger-run.js site/api/trigger-run.js
           npx vercel deploy site --prod --yes --token "$VERCEL_TOKEN" \
             || echo "!! dashboard deploy failed -- paper state already persisted" >&2
