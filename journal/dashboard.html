@@ -1,0 +1,679 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading Control Room — 19 research runs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:#0a0c10}
+  ::selection{background:rgba(5,196,107,.25)}
+  a{color:#4db8ff;text-decoration:none}
+  a:hover{color:#7fcfff}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @keyframes drawerIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
+  @keyframes backdropIn{from{opacity:0}to{opacity:1}}
+  .cr-scroll::-webkit-scrollbar{height:9px;width:9px}
+  .cr-scroll::-webkit-scrollbar-thumb{background:#2b333f;border-radius:6px}
+  .cr-scroll::-webkit-scrollbar-track{background:transparent}
+  .cr-row:hover{background:var(--panel2)}
+  .cr-btn{border:none;cursor:pointer;font-family:'IBM Plex Sans',sans-serif}
+</style>
+</head>
+<body>
+<div id="cr-root" style="--bg:#0a0c10;--panel:#12161c;--panel2:#171d25;--line:#232a34;--line2:#2e3742;--fg:#e8edf4;--muted:#828d9b;--up:#05c46b;--down:#ff5c5c;--accent:#4db8ff;--warn:#ffb020;--purple:#b388ff;min-height:100vh;background:radial-gradient(1200px 600px at 78% -8%,rgba(77,184,255,.06),transparent 60%),var(--bg);color:var(--fg);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased">
+
+  <header style="position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:14px 26px;background:rgba(10,12,16,.82);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)">
+    <div style="display:flex;align-items:center;gap:11px">
+      <div style="width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--up),#00a35a);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px rgba(5,196,107,.35),0 4px 14px rgba(5,196,107,.25)">
+        <div style="width:9px;height:9px;background:#04120b;transform:rotate(45deg);border-radius:1px"></div>
+      </div>
+      <div style="line-height:1.15">
+        <div style="font-weight:700;letter-spacing:-.01em;font-size:15px">RHAGENT<span style="color:var(--muted);font-weight:500"> · Trading Control Room</span></div>
+        <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">autonomous US-equities agent · guardrail-enforced</div>
+      </div>
+    </div>
+    <div style="flex:1"></div>
+    <div id="cr-headerpills" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"></div>
+  </header>
+
+  <main style="max-width:1240px;margin:0 auto;padding:26px 26px 90px">
+
+    <section style="animation:fadeUp .4s ease both">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px">
+        <h2 style="margin:0;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600">The verdict · agent vs baseline</h2>
+        <span style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">forward paper track</span>
+      </div>
+      <div id="cr-verdict"></div>
+    </section>
+
+    <section style="margin-top:30px">
+      <div id="cr-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px"></div>
+    </section>
+
+    <section style="margin-top:30px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:6px">
+        <div>
+          <h3 style="margin:0;font-size:15px;font-weight:600">Equity curve · locked strategy candidate</h3>
+          <div id="cr-chartsub" style="font-size:12px;color:var(--muted);margin-top:3px"></div>
+        </div>
+        <div id="cr-chartmodes" style="display:flex;gap:5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px"></div>
+      </div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:8px">
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace"><span style="width:16px;height:3px;background:var(--up);border-radius:2px"></span>equity</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace"><span style="width:16px;height:0;border-top:2px dashed var(--accent)"></span>break-even</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace"><span style="width:12px;height:12px;border-radius:50%;background:rgba(255,92,92,.12);border:1px solid var(--down)"></span>max drawdown window</span>
+      </div>
+      <div id="cr-chart"></div>
+    </section>
+
+    <section style="margin-top:30px;display:grid;grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr);gap:20px">
+      <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <h3 style="margin:0;font-size:15px;font-weight:600">Guardrails · armed</h3>
+          <span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--up);font-family:'IBM Plex Mono',monospace"><span style="width:7px;height:7px;border-radius:50%;background:var(--up);box-shadow:0 0 0 3px rgba(5,196,107,.18)"></span>0 BREACHES</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Hard caps enforced in code — the model cannot talk its way past them.</div>
+        <div id="cr-guardrails" style="display:flex;flex-direction:column;gap:14px"></div>
+        <div id="cr-guardrail-chips" style="display:flex;gap:7px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)"></div>
+      </div>
+
+      <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
+        <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Overlay bake-off · robust Sharpe</h3>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:16px">A variant beats baseline only if its 95% CI lower bound clears the baseline Sharpe.</div>
+        <div class="cr-scroll" style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+            <thead>
+              <tr style="color:var(--muted);text-align:left">
+                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line)">overlay</th>
+                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">point</th>
+                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">deflated</th>
+                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">fold ±sd</th>
+                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">95% CI</th>
+                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:center">vs base</th>
+              </tr>
+            </thead>
+            <tbody id="cr-bakeoff"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section style="margin-top:30px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px">
+        <div>
+          <h3 id="cr-runcount" style="margin:0;font-size:15px;font-weight:600"></h3>
+          <div style="font-size:12px;color:var(--muted);margin-top:3px">Every paper-trade run in the archive. Click a column to sort, a row to open.</div>
+        </div>
+        <div id="cr-enginechips" style="display:flex;gap:5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px;flex-wrap:wrap"></div>
+      </div>
+      <div class="cr-scroll" style="overflow-x:auto;border:1px solid var(--line);border-radius:12px">
+        <div style="min-width:760px">
+          <div id="cr-runcols" style="display:grid;grid-template-columns:minmax(150px,1.5fr) 1fr 0.9fr 0.65fr 0.7fr 0.6fr 1fr 1.25fr;background:var(--panel2);border-bottom:1px solid var(--line)"></div>
+          <div id="cr-runrows"></div>
+        </div>
+      </div>
+    </section>
+
+    <section style="margin-top:30px">
+      <h3 style="margin:0 0 14px;font-size:15px;font-weight:600">Engine leaderboard <span style="color:var(--muted);font-weight:400;font-size:13px">· best P&amp;L per strategy family</span></h3>
+      <div id="cr-leaderboard" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px"></div>
+    </section>
+
+    <section style="margin-top:30px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+        <h3 style="margin:0;font-size:15px;font-weight:600">Locked-config scorecard</h3>
+        <span id="cr-winid" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)"></span>
+        <span style="padding:2px 9px;border-radius:6px;background:rgba(5,196,107,.14);color:var(--up);font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace">FORWARD CANDIDATE</span>
+      </div>
+      <div id="cr-scoretiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:11px"></div>
+    </section>
+
+    <section style="margin-top:30px;display:grid;grid-template-columns:minmax(0,0.85fr) minmax(0,1.15fr);gap:20px;align-items:stretch">
+      <div style="display:flex;flex-direction:column;gap:20px;height:100%">
+        <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
+          <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Where losses concentrate</h3>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Very short exits and very long holds both underperform.</div>
+          <div id="cr-buckets" style="display:flex;flex-direction:column;gap:14px"></div>
+          <div id="cr-bucketscaveat" style="margin-top:16px;padding:11px 13px;background:rgba(255,176,32,.07);border:1px solid rgba(255,176,32,.22);border-radius:10px;font-size:11.5px;color:var(--muted);text-wrap:pretty"></div>
+        </div>
+        <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
+          <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Where we win</h3>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Top buckets across all dimensions.</div>
+          <div id="cr-winbuckets" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:14px"></div>
+          <div id="cr-winbucketsnote" style="padding:11px 13px;background:rgba(5,196,107,.06);border:1px solid rgba(5,196,107,.2);border-radius:10px;font-size:11.5px;color:var(--muted);text-wrap:pretty"></div>
+        </div>
+      </div>
+
+      <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+          <div>
+            <h3 style="margin:0;font-size:15px;font-weight:600">Trade ledger</h3>
+            <div id="cr-ledgercount" style="font-size:12px;color:var(--muted);margin-top:3px"></div>
+          </div>
+          <div id="cr-tradechips" style="display:flex;gap:5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px"></div>
+        </div>
+        <div class="cr-scroll" style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px">
+            <thead>
+              <tr style="color:var(--muted);text-align:right">
+                <th style="padding:8px 9px;font-weight:600;border-bottom:1px solid var(--line);text-align:left">#</th>
+                <th style="padding:8px 9px;font-weight:600;border-bottom:1px solid var(--line);text-align:left">sym</th>
+                <th style="padding:8px 9px;font-weight:600;border-bottom:1px solid var(--line);text-align:left">entry → exit</th>
+                <th style="padding:8px 9px;font-weight:600;border-bottom:1px solid var(--line)">bars</th>
+                <th style="padding:8px 9px;font-weight:600;border-bottom:1px solid var(--line)">pnl %</th>
+                <th style="padding:8px 9px;font-weight:600;border-bottom:1px solid var(--line)">pnl $</th>
+                <th style="padding:8px 9px;font-weight:600;border-bottom:1px solid var(--line);text-align:right;min-width:90px">weight</th>
+              </tr>
+            </thead>
+            <tbody id="cr-ledger"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section style="margin-top:30px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div>
+          <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Runbook</h3>
+          <div style="font-size:12px;color:var(--muted)">Every command that drives this system. Click to copy.</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="cr-trigger-status" style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace"></span>
+          <button id="cr-trigger-btn" class="cr-btn" style="padding:9px 16px;border-radius:8px;font-size:12.5px;font-weight:600;background:var(--panel2);border:1px solid var(--line);color:var(--fg)">Run new research run</button>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin:16px 0 16px"></div>
+      <div id="cr-runbook" style="display:flex;flex-direction:column;gap:8px"></div>
+    </section>
+
+    <section id="cr-agentnotes" style="margin-top:30px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px;display:none">
+      <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Agent's own lessons (self-written)</h3>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Reflections the agent journaled after past runs.</div>
+      <div id="cr-reflections" style="display:flex;flex-direction:column;gap:10px;font-size:12.5px;color:var(--fg)"></div>
+    </section>
+
+    <footer style="margin-top:40px;padding-top:20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;color:var(--muted);font-size:11.5px;font-family:'IBM Plex Mono',monospace">
+      <span>rhagent trading harness · journal/papertrade + journal/forward</span>
+      <span>numbers reproduced from rhagent.evaluate · not investment advice</span>
+    </footer>
+  </main>
+
+  <div id="cr-drawerwrap"></div>
+</div>
+
+<script>
+const DATA = {"updated": "2026-07-21 12:49 UTC", "winRunId": "2026-07-15T14-34-42Z-b3f5d32a", "lockedEngine": "mean_reversion", "lockedOverlay": "conviction", "guardrails": {"per_trade_max_usd": 250, "total_deployed_max_usd": 2000, "max_new_positions_per_run": 2, "max_orders_per_run": 5, "daily_loss_limit_usd": 200, "live": false, "halt": false, "model": "nvidia/llama-3.3-nemotron-super-49b-v1.5"}, "forward": {"agent": {"engine": "agent", "symbols": ["NVDA", "SPY"], "start": "2026-07-09", "end": "2026-07-09", "days": 1, "ret": 0.0, "pnl": 0.0, "notional": 10000.0, "sharpe": 0.0, "dd": 0.0}, "baseline": {"engine": "mean_reversion", "symbols": ["AAPL", "ABBV", "ABT", "ADBE", "AMD", "AMGN", "AMZN", "AVGO", "AXP", "BA", "BAC", "BLK", "BMY", "C", "CAT", "CMCSA", "COST", "CRM", "CSCO", "CVX", "DHR", "DIS", "GE", "GILD", "GOOGL", "GS", "HD", "HON", "IBM", "INTC", "JNJ", "JPM", "KO", "LIN", "LLY", "LOW", "MA", "MCD", "MDT", "META", "MRK", "MS", "MSFT", "NFLX", "NKE", "NOW", "NVDA", "ORCL", "PEP", "PFE", "PG", "PM", "QCOM", "SBUX", "SPY", "T", "TMO", "TSLA", "TXN", "UNH", "UNP", "V", "VZ", "WFC", "WMT"], "start": "2026-07-09", "end": "2026-07-13", "days": 3, "ret": -0.0008515721757764716, "pnl": -8.515721757764716, "notional": 10000.0, "sharpe": -8.307608368360526, "dd": -0.0008767030238282514}}, "bakeoff": [{"overlay": "none", "point": 1.2337613798749463, "deflated": 0.5410706885860579, "fold": "1.59\u00b10.86", "ci": "[-0.62, 2.89]", "beats": false}, {"overlay": "conviction", "point": 1.8167189519202187, "deflated": 0.7637369465674224, "fold": "1.93\u00b11.11", "ci": "[-0.03, 3.71]", "beats": false}, {"overlay": "bucket", "point": 1.1281936979075438, "deflated": 0.4956453785091742, "fold": "1.16\u00b11.36", "ci": "[-0.68, 3.02]", "beats": false}, {"overlay": "winprob", "point": 1.155754651113779, "deflated": 0.5070217240306601, "fold": "1.43\u00b11.55", "ci": "[-0.72, 3.02]", "beats": false}], "curveDaily": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.9999, 0.9928210619469027, 0.9679969480985411, 0.9726365223630711, 0.9705798038746711, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0198918202784024, 1.0197898310963747, 1.0397364174067665, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.080638339175852, 1.0805302753419346, 1.1016878697990642, 1.1016878697990642, 1.1016878697990642, 1.1016878697990642, 1.1016878697990642, 1.1016878697990642, 1.1016878697990642, 1.1016878697990642, 1.1016878697990642, 1.1016878697990642, 1.1016878697990642, 1.1016878697990642, 1.1016878697990642, 1.1016878697990642, 1.1016878697990642, 1.1016878697990642, 1.1016878697990642, 1.1015777010120842, 1.1028858488458464, 1.1028858488458464, 1.102775560260962, 1.1083222116223908, 1.1083222116223908, 1.1083222116223908, 1.1083222116223908, 1.1083222116223908, 1.1083222116223908, 1.1082113794012285, 1.0928769169358044, 1.0728398859809836, 1.0645388302997005, 1.059263775211595, 1.0606132079085524, 1.0642116951004386, 1.0674830470930625, 1.0630258300031123, 1.0558697475192478, 1.044910718343958, 1.0088031707253726, 1.0126879012166135, 1.0155503342101593, 1.0142826853130176, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0443185872765333, 1.0442141554178057, 1.0539248441401925, 1.0539248441401925, 1.0539248441401925, 1.0538194516557784, 1.0305807055370007, 1.041705637189607, 1.0474111531555823, 1.0473064120402669, 1.0431999853626666, 1.039135460998103, 1.053697357014862, 1.053697357014862, 1.053697357014862, 1.053697357014862, 1.053697357014862, 1.0535919872791606, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0840738179150788, 1.0839654105332874, 1.0878080688463119, 1.102808769755689, 1.1026984888787135, 1.1226248865191548, 1.1226248865191548, 1.1226248865191548, 1.1226248865191548, 1.1226248865191548, 1.1226248865191548, 1.1226248865191548, 1.122512624030503, 1.15760765586962, 1.157491895104033, 1.1886819180473143, 1.1886819180473143, 1.1886819180473143, 1.1886819180473143, 1.1886819180473143, 1.1886819180473143, 1.1886819180473143, 1.1886819180473143, 1.1886819180473143, 1.1886819180473143], "curveDates": ["2025-06-02", "2025-06-03", "2025-06-04", "2025-06-05", "2025-06-06", "2025-06-09", "2025-06-10", "2025-06-11", "2025-06-12", "2025-06-13", "2025-06-16", "2025-06-17", "2025-06-18", "2025-06-20", "2025-06-23", "2025-06-24", "2025-06-25", "2025-06-26", "2025-06-27", "2025-06-30", "2025-07-01", "2025-07-02", "2025-07-03", "2025-07-07", "2025-07-08", "2025-07-09", "2025-07-10", "2025-07-11", "2025-07-14", "2025-07-15", "2025-07-16", "2025-07-17", "2025-07-18", "2025-07-21", "2025-07-22", "2025-07-23", "2025-07-24", "2025-07-25", "2025-07-28", "2025-07-29", "2025-07-30", "2025-07-31", "2025-08-01", "2025-08-04", "2025-08-05", "2025-08-06", "2025-08-07", "2025-08-08", "2025-08-11", "2025-08-12", "2025-08-13", "2025-08-14", "2025-08-15", "2025-08-18", "2025-08-19", "2025-08-20", "2025-08-21", "2025-08-22", "2025-08-25", "2025-08-26", "2025-08-27", "2025-08-28", "2025-08-29", "2025-09-02", "2025-09-03", "2025-09-04", "2025-09-05", "2025-09-08", "2025-09-09", "2025-09-10", "2025-09-11", "2025-09-12", "2025-09-15", "2025-09-16", "2025-09-17", "2025-09-18", "2025-09-19", "2025-09-22", "2025-09-23", "2025-09-24", "2025-09-25", "2025-09-26", "2025-09-29", "2025-09-30", "2025-10-01", "2025-10-02", "2025-10-03", "2025-10-06", "2025-10-07", "2025-10-08", "2025-10-09", "2025-10-10", "2025-10-13", "2025-10-14", "2025-10-15", "2025-10-16", "2025-10-17", "2025-10-20", "2025-10-21", "2025-10-22", "2025-10-23", "2025-10-24", "2025-10-27", "2025-10-28", "2025-10-29", "2025-10-30", "2025-10-31", "2025-11-03", "2025-11-04", "2025-11-05", "2025-11-06", "2025-11-07", "2025-11-10", "2025-11-11", "2025-11-12", "2025-11-13", "2025-11-14", "2025-11-17", "2025-11-18", "2025-11-19", "2025-11-20", "2025-11-21", "2025-11-24", "2025-11-25", "2025-11-26", "2025-11-28", "2025-12-01", "2025-12-02", "2025-12-03", "2025-12-04", "2025-12-05", "2025-12-08", "2025-12-09", "2025-12-10", "2025-12-11", "2025-12-12", "2025-12-15", "2025-12-16", "2025-12-17", "2025-12-18", "2025-12-19", "2025-12-22", "2025-12-23", "2025-12-24", "2025-12-26", "2025-12-29", "2025-12-30", "2025-12-31", "2026-01-02", "2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09", "2026-01-12", "2026-01-13", "2026-01-14", "2026-01-15", "2026-01-16", "2026-01-20", "2026-01-21", "2026-01-22", "2026-01-23", "2026-01-26", "2026-01-27", "2026-01-28", "2026-01-29", "2026-01-30", "2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06", "2026-02-09", "2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-23", "2026-02-24", "2026-02-25", "2026-02-26", "2026-02-27", "2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-14", "2026-04-15", "2026-04-16", "2026-04-17", "2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", "2026-04-24", "2026-04-27", "2026-04-28", "2026-04-29", "2026-04-30", "2026-05-01", "2026-05-04", "2026-05-05", "2026-05-06", "2026-05-07", "2026-05-08", "2026-05-11", "2026-05-12", "2026-05-13", "2026-05-14", "2026-05-15", "2026-05-18", "2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-15", "2026-06-16", "2026-06-17", "2026-06-18", "2026-06-22", "2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02", "2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10", "2026-07-13", "2026-07-14"], "runs": [{"id": "2026-07-11T18-58-43Z-0e997190", "engine": "mean_reversion", "overlay": "", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-06", "n": 17, "won": 14, "lost": 3, "pnl": 1429.9825615645734, "gw": 1774.2367748246998, "gl": 436.40393978587076, "pf": 4.065583770154, "ret": 0.14299825615645734, "wr": 0.8235294117647058, "uni": "NVDA, SPY", "nsym": 2, "sid": "2026-07-11\u00b70e997190"}, {"id": "2026-07-11T19-08-50Z-6007b221", "engine": "momentum", "overlay": "", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-06", "n": 23, "won": 7, "lost": 16, "pnl": -179.50669846775293, "gw": 1132.7635222355707, "gl": 1339.6353472403162, "pf": 0.8455760178089456, "ret": -0.01795066984677529, "wr": 0.30434782608695654, "uni": "NVDA, SPY", "nsym": 2, "sid": "2026-07-11\u00b76007b221"}, {"id": "2026-07-11T19-08-50Z-bdaa006a", "engine": "linreg", "overlay": "", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-06", "n": 32, "won": 18, "lost": 14, "pnl": 364.0168198173166, "gw": 2430.8073856358997, "gl": 2016.7723527457765, "pf": 1.2052958690783453, "ret": 0.03640168198173166, "wr": 0.5625, "uni": "NVDA, SPY", "nsym": 2, "sid": "2026-07-11\u00b7bdaa006a"}, {"id": "2026-07-13T07-20-10Z-7c7772af", "engine": "momentum", "overlay": "", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-10", "n": 23, "won": 7, "lost": 16, "pnl": -112.44054861724084, "gw": 1206.8780827952567, "gl": 1339.6353472403162, "pf": 0.9009004467383285, "ret": -0.011244054861724084, "wr": 0.30434782608695654, "uni": "NVDA, SPY", "nsym": 2, "sid": "2026-07-13\u00b77c7772af"}, {"id": "2026-07-13T10-45-59Z-6f4ad393", "engine": "mean_reversion", "overlay": "", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-10", "n": 17, "won": 14, "lost": 3, "pnl": 1700.7132020121628, "gw": 1774.2367748246998, "gl": 209.92904948845515, "pf": 8.451602001476562, "ret": 0.1700713202012163, "wr": 0.8235294117647058, "uni": "NVDA, SPY", "nsym": 2, "sid": "2026-07-13\u00b76f4ad393"}, {"id": "2026-07-13T10-45-59Z-7cabdaf1", "engine": "momentum", "overlay": "", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-10", "n": 23, "won": 7, "lost": 16, "pnl": -112.44054861724084, "gw": 1206.8780827952567, "gl": 1339.6353472403162, "pf": 0.9009004467383285, "ret": -0.011244054861724084, "wr": 0.30434782608695654, "uni": "NVDA, SPY", "nsym": 2, "sid": "2026-07-13\u00b77cabdaf1"}, {"id": "2026-07-13T10-46-00Z-25a43094", "engine": "linreg", "overlay": "", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-10", "n": 32, "won": 18, "lost": 14, "pnl": 861.631392952893, "gw": 2499.3614806814003, "gl": 1651.1950897023967, "pf": 1.513668188737088, "ret": 0.08616313929528929, "wr": 0.5625, "uni": "NVDA, SPY", "nsym": 2, "sid": "2026-07-13\u00b725a43094"}, {"id": "2026-07-13T11-01-22Z-0ca1ad52", "engine": "momentum", "overlay": "", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-06", "n": 1190, "won": 361, "lost": 829, "pnl": -46.31500556056767, "gw": 3586.974437004528, "gl": 3446.1351080238596, "pf": 1.0408687775046148, "ret": -0.004631500556056767, "wr": 0.3033613445378151, "uni": "universe (66)", "nsym": 66, "sid": "2026-07-13\u00b70ca1ad52"}, {"id": "2026-07-13T11-01-58Z-5693add7", "engine": "mean_reversion", "overlay": "", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-06", "n": 1077, "won": 732, "lost": 345, "pnl": 53.121764332642044, "gw": 3712.143096126878, "gl": 3806.991430757988, "pf": 0.9750857504262296, "ret": 0.005312176433264204, "wr": 0.6796657381615598, "uni": "universe (66)", "nsym": 66, "sid": "2026-07-13\u00b75693add7"}, {"id": "2026-07-13T11-16-46Z-8a1680d4", "engine": "linreg", "overlay": "", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-06", "n": 4227, "won": 2128, "lost": 2099, "pnl": -127.91201502587057, "gw": 7572.0951029014905, "gl": 7654.216820526937, "pf": 0.9892710489458288, "ret": -0.012791201502587057, "wr": 0.5034303288384196, "uni": "universe (66)", "nsym": 66, "sid": "2026-07-13\u00b78a1680d4"}, {"id": "2026-07-13T12-48-05Z-b9f711a0", "engine": "mean_reversion", "overlay": "none", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-06", "n": 1077, "won": 732, "lost": 345, "pnl": 53.121764332642044, "gw": 3712.143096126878, "gl": 3806.991430757988, "pf": 0.9750857504262296, "ret": 0.005312176433264204, "wr": 0.6796657381615598, "uni": "universe (66)", "nsym": 66, "sid": "2026-07-13\u00b7b9f711a0"}, {"id": "2026-07-13T12-48-30Z-43e91a86", "engine": "mean_reversion", "overlay": "conviction", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-06", "n": 1540, "won": 1035, "lost": 505, "pnl": 291.42112317234404, "gw": 3642.0407592694464, "gl": 3397.5877680534836, "pf": 1.0719489849576462, "ret": 0.029142112317234403, "wr": 0.672077922077922, "uni": "universe (66)", "nsym": 66, "sid": "2026-07-13\u00b743e91a86"}, {"id": "2026-07-13T12-53-41Z-88ab17ae", "engine": "mean_reversion", "overlay": "bucket", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-06", "n": 12052, "won": 6061, "lost": 5991, "pnl": 58.733631905589775, "gw": 6057.541872806796, "gl": 6048.372221710645, "pf": 1.001516052709725, "ret": 0.005873363190558978, "wr": 0.5029040823099901, "uni": "universe (66)", "nsym": 66, "sid": "2026-07-13\u00b788ab17ae"}, {"id": "2026-07-13T13-11-06Z-841b2c31", "engine": "mean_reversion", "overlay": "bucket", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-06", "n": 2220, "won": 1306, "lost": 914, "pnl": -2.8568597563860543, "gw": 2463.2460824356276, "gl": 2541.8324239086883, "pf": 0.9690827999777362, "ret": -0.00028568597563860543, "wr": 0.5882882882882883, "uni": "universe (66)", "nsym": 66, "sid": "2026-07-13\u00b7841b2c31"}, {"id": "2026-07-13T18-29-02Z-a90c465c", "engine": "mean_reversion", "overlay": "none", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-06", "n": 505, "won": 347, "lost": 158, "pnl": 709.0101566538998, "gw": 1856.0012455075046, "gl": 1211.0862031145257, "pf": 1.5325096105747584, "ret": 0.07090101566538998, "wr": 0.6871287128712872, "uni": "universe (66)", "nsym": 66, "sid": "2026-07-13\u00b7a90c465c"}, {"id": "2026-07-13T18-29-20Z-1adb5734", "engine": "mean_reversion", "overlay": "conviction", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-06", "n": 753, "won": 528, "lost": 225, "pnl": 845.5971314262367, "gw": 1910.194583654474, "gl": 1124.2835301456466, "pf": 1.699032790604889, "ret": 0.08455971314262367, "wr": 0.701195219123506, "uni": "universe (66)", "nsym": 66, "sid": "2026-07-13\u00b71adb5734"}, {"id": "2026-07-13T18-29-55Z-f6c59fd0", "engine": "mean_reversion", "overlay": "bucket", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-06", "n": 533, "won": 362, "lost": 171, "pnl": 228.94024621774145, "gw": 677.7549819352728, "gl": 463.76648537897904, "pf": 1.4614143179868364, "ret": 0.022894024621774145, "wr": 0.6791744840525328, "uni": "universe (66)", "nsym": 66, "sid": "2026-07-13\u00b7f6c59fd0"}, {"id": "2026-07-13T18-44-58Z-d038c839", "engine": "mean_reversion", "overlay": "winprob", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-06", "n": 505, "won": 346, "lost": 159, "pnl": 704.1934538021976, "gw": 1839.6704318864186, "gl": 1197.8559302110375, "pf": 1.535802750137328, "ret": 0.07041934538021977, "wr": 0.6851485148514852, "uni": "universe (66)", "nsym": 66, "sid": "2026-07-13\u00b7d038c839"}, {"id": "2026-07-15T14-34-42Z-b3f5d32a", "engine": "mean_reversion", "overlay": "conviction", "notional": 10000.0, "start": "2025-06-02", "end": "2026-07-14", "n": 14, "won": 12, "lost": 2, "pnl": 1886.8191804731428, "gw": 2422.564610207662, "gl": 639.4462235516389, "pf": 3.7885353310121257, "ret": 0.18868191804731427, "wr": 0.8571428571428571, "uni": "AAPL", "nsym": 1, "sid": "2026-07-15\u00b7b3f5d32a"}], "winScore": {"notional": 10000.0, "ret": 0.18868191804731427, "pnl": 1886.8191804731428, "balance": 11886.819180473143, "n": 14, "won": 12, "lost": 2, "wr": 0.8571428571428571, "pf": 3.7885353310121257, "avgWin": 201.88038418397184, "avgLoss": -319.72311177581946, "sharpe": 1.5209513528216367, "dd": -0.08979251688129541, "avgHold": 2.7142857142857144, "gw": 2422.564610207662, "gl": 639.4462235516389}, "winTrades": [{"id": "0001", "sym": "AAPL", "side": "long", "entry": "2025-07-30", "in": 209.05, "exit": "2025-08-06", "out": 213.25, "bars": 5, "pnlPct": 0.019890887347524512, "pnl": 198.90887347524512, "oc": "win"}, {"id": "0002", "sym": "AAPL", "side": "long", "entry": "2025-10-16", "in": 247.45, "exit": "2025-10-20", "out": 262.24, "bars": 2, "pnlPct": 0.05956965043443139, "pnl": 595.6965043443139, "oc": "win"}, {"id": "0003", "sym": "AAPL", "side": "long", "entry": "2025-11-20", "in": 266.25, "exit": "2025-11-21", "out": 271.49, "bars": 1, "pnlPct": 0.019480751173708934, "pnl": 194.80751173708933, "oc": "win"}, {"id": "0004", "sym": "AAPL", "side": "long", "entry": "2025-12-17", "in": 271.84, "exit": "2025-12-18", "out": 272.19, "bars": 1, "pnlPct": 0.0010875220718069346, "pnl": 10.875220718069345, "oc": "win"}, {"id": "0005", "sym": "AAPL", "side": "long", "entry": "2025-12-22", "in": 270.97, "exit": "2025-12-23", "out": 272.36, "bars": 1, "pnlPct": 0.004929719157102253, "pnl": 49.29719157102253, "oc": "win"}, {"id": "0006", "sym": "AAPL", "side": "long", "entry": "2026-01-02", "in": 271.01, "exit": "2026-01-26", "out": 255.41, "bars": 15, "pnlPct": -0.057762451570052796, "pnl": -577.6245157005279, "oc": "loss"}, {"id": "0007", "sym": "AAPL", "side": "long", "entry": "2026-03-06", "in": 257.46, "exit": "2026-03-09", "out": 259.88, "bars": 1, "pnlPct": 0.009199518371785875, "pnl": 91.99518371785875, "oc": "win"}, {"id": "0008", "sym": "AAPL", "side": "long", "entry": "2026-03-12", "in": 255.76, "exit": "2026-03-17", "out": 254.23, "bars": 3, "pnlPct": -0.006182170785111096, "pnl": -61.82170785111096, "oc": "loss"}, {"id": "0009", "sym": "AAPL", "side": "long", "entry": "2026-03-18", "in": 249.94, "exit": "2026-03-23", "out": 251.49, "bars": 3, "pnlPct": 0.006001488357205687, "pnl": 60.01488357205687, "oc": "win"}, {"id": "0010", "sym": "AAPL", "side": "long", "entry": "2026-03-30", "in": 246.63, "exit": "2026-03-31", "out": 253.79, "bars": 1, "pnlPct": 0.028831342496857572, "pnl": 288.3134249685757, "oc": "win"}, {"id": "0011", "sym": "AAPL", "side": "long", "entry": "2026-06-09", "in": 290.55, "exit": "2026-06-11", "out": 295.63, "bars": 2, "pnlPct": 0.01728408191361195, "pnl": 172.8408191361195, "oc": "win"}, {"id": "0012", "sym": "AAPL", "side": "long", "entry": "2026-06-12", "in": 291.13, "exit": "2026-06-15", "out": 296.42, "bars": 1, "pnlPct": 0.01797057671830469, "pnl": 179.70576718304687, "oc": "win"}, {"id": "0013", "sym": "AAPL", "side": "long", "entry": "2026-06-25", "in": 275.15, "exit": "2026-06-26", "out": 283.78, "bars": 1, "pnlPct": 0.03116471015809561, "pnl": 311.64710158095613, "oc": "win"}, {"id": "0014", "sym": "AAPL", "side": "long", "entry": "2026-06-29", "in": 281.74, "exit": "2026-06-30", "out": 289.36, "bars": 1, "pnlPct": 0.02684621282033082, "pnl": 268.46212820330817, "oc": "win"}], "buckets": [{"dim": "holding", "bucket": "short", "lossN": 8930, "winN": 10882, "totalN": 19812, "wr": 0.5492630728851201, "loss_share": 0.7551797040169134, "win_share": 0.775347345920912, "share": 0.7551797040169134}, {"dim": "gap", "bucket": "flat", "lossN": 6448, "winN": 7798, "totalN": 14246, "wr": 0.547381721184894, "loss_share": 0.5452854122621564, "win_share": 0.5556109725685785, "share": 0.5452854122621564}, {"dim": "side", "bucket": "long", "lossN": 6000, "winN": 7781, "totalN": 13781, "wr": 0.5646179522531021, "loss_share": 0.507399577167019, "win_share": 0.5543997149982187, "share": 0.507399577167019}, {"dim": "side", "bucket": "short", "lossN": 5825, "winN": 6254, "totalN": 12079, "wr": 0.5177580925573309, "loss_share": 0.492600422832981, "win_share": 0.4456002850017813, "share": 0.492600422832981}, {"dim": "vol", "bucket": "med", "lossN": 3991, "winN": 4633, "totalN": 8624, "wr": 0.537221706864564, "loss_share": 0.33750528541226216, "win_share": 0.3301033131457072, "share": 0.33750528541226216}], "bucketsMeta": {"n": 25860, "losses": 11825, "runs": 19, "source": "every paper-trade run archived so far (19 runs)", "caveat": "Measured across every archived paper-trade run, not just the locked config."}, "winBuckets": [{"dim": "holding", "bucket": "short", "lossN": 8930, "winN": 10882, "totalN": 19812, "wr": 0.5492630728851201, "loss_share": 0.7551797040169134, "win_share": 0.775347345920912, "share": 0.775347345920912}, {"dim": "gap", "bucket": "flat", "lossN": 6448, "winN": 7798, "totalN": 14246, "wr": 0.547381721184894, "loss_share": 0.5452854122621564, "win_share": 0.5556109725685785, "share": 0.5556109725685785}, {"dim": "side", "bucket": "long", "lossN": 6000, "winN": 7781, "totalN": 13781, "wr": 0.5646179522531021, "loss_share": 0.507399577167019, "win_share": 0.5543997149982187, "share": 0.5543997149982187}, {"dim": "side", "bucket": "short", "lossN": 5825, "winN": 6254, "totalN": 12079, "wr": 0.5177580925573309, "loss_share": 0.492600422832981, "win_share": 0.4456002850017813, "share": 0.4456002850017813}, {"dim": "vol", "bucket": "low", "lossN": 3866, "winN": 4755, "totalN": 8621, "wr": 0.551560143834822, "loss_share": 0.32693446088794925, "win_share": 0.33879586747417173, "share": 0.33879586747417173}], "winBucketsMeta": {"n": 25860, "wins": 14035, "source": "every paper-trade run archived so far (19 runs)", "note": "Top buckets across all dimensions, ranked by share of total wins."}, "runbook": [["daily forward tick", "PYTHONPATH=src .venv/bin/python -m rhagent.forward"], ["new research run", "PYTHONPATH=src .venv/bin/python -m rhagent.papertrade --engine mean_reversion --symbols all"], ["unattended daily loop", "scripts/paper_cron.sh"], ["rebuild this page", ".venv/bin/python scripts/make_dashboard.py --open"], ["run the tests", ".venv/bin/python -m pytest"]], "lessons": "Lessons from 19 prior paper-trades (25860 trades). Losses concentrate in: holding=long (loss_share 61%, win_rate 52%, n=6048); side=long (loss_share 59%, win_rate 56%, n=13781); vol=high (loss_share 48%, win_rate 54%, n=8615). Prefer avoiding or downsizing these setups.", "reflections": [], "actionsUrl": "https://github.com/udayjain2102/papertrading-model-/actions/workflows/daily-paper-run.yml"};
+const ACTIONS_URL = DATA.actionsUrl;
+
+const ST = { chartMode: 'cum', hoverIdx: null, engine: 'all', runSort: 'id', runDir: -1, tradeFilter: 'all', copied: -1, selectedRun: null };
+
+function money(x, dp = 2) { const s = x < 0 ? '-' : ''; return s + '$' + Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp }); }
+function pct(x, dp = 2) { return (x >= 0 ? '+' : '') + (x * 100).toFixed(dp) + '%'; }
+function pctAbs(x, dp = 1) { return (x * 100).toFixed(dp) + '%'; }
+function num(x) { return x >= 999 ? '∞' : x.toFixed(2); }
+function engineColor(e) { return { mean_reversion: 'var(--accent)', momentum: 'var(--warn)', linreg: 'var(--purple)', agent: 'var(--up)' }[e] || 'var(--muted)'; }
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+function renderHeaderPills() {
+  const g = DATA.guardrails;
+  const el = document.getElementById('cr-headerpills');
+  el.innerHTML = `
+    <span style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:${g.live ? 'rgba(5,196,107,.1)' : 'rgba(255,176,32,.12)'};border:1px solid ${g.live ? 'rgba(5,196,107,.28)' : 'rgba(255,176,32,.3)'};color:${g.live ? 'var(--up)' : 'var(--warn)'};font-size:11px;font-weight:600;font-family:'IBM Plex Mono',monospace"><span style="width:6px;height:6px;border-radius:50%;background:currentColor"></span>${g.live ? 'LIVE · TRADING' : 'PAPER · DRY-RUN'}</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:${g.halt ? 'rgba(255,92,92,.12)' : 'rgba(5,196,107,.1)'};border:1px solid ${g.halt ? 'var(--down)' : 'rgba(5,196,107,.28)'};color:${g.halt ? 'var(--down)' : 'var(--up)'};font-size:11px;font-weight:600;font-family:'IBM Plex Mono',monospace">HALT · ${g.halt ? 'SET' : 'CLEAR'}</span>
+    <a href="${ACTIONS_URL}" style="display:inline-flex"><img src="${ACTIONS_URL}/badge.svg?branch=main" alt="daily paper-run status"></a>
+    <span style="padding:5px 11px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-size:11px;font-family:'IBM Plex Mono',monospace">upd ${esc(DATA.updated)}</span>`;
+}
+
+function renderVerdict() {
+  const f = DATA.forward, agent = f.agent, base = f.baseline;
+  const days = agent.days || base.days || 0;
+  let badge = 'TOO EARLY TO CALL', note = `Forward track has ${days} day(s) logged. Verdict needs weeks of OOS data.`;
+  if (days >= 5) {
+    if (agent.pnl > base.pnl) { badge = 'AGENT LEADS'; note = 'Agent forward P&L ahead of the mean-reversion baseline over the tracked window.'; }
+    else if (base.pnl > agent.pnl) { badge = 'BASELINE LEADS'; note = 'Baseline forward P&L ahead of the agent over the tracked window.'; }
+    else { badge = 'TIED'; note = 'Agent and baseline forward P&L are tied so far.'; }
+  }
+  const sub = leg => `${leg.days} day${leg.days === 1 ? '' : 's'} · ${(leg.symbols || []).join(', ') || '—'} · ${leg.ret >= 0 ? 'up' : 'down'}`;
+  document.getElementById('cr-verdict').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:0;align-items:stretch;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden">
+      <div style="padding:22px 26px;display:flex;flex-direction:column;gap:6px">
+        <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600">LLM Agent</div>
+        <div style="font-size:34px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em">${money(agent.pnl)}</div>
+        <div style="font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${sub(agent)}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:22px 30px;background:var(--panel2);border-left:1px solid var(--line);border-right:1px solid var(--line);min-width:220px">
+        <div style="padding:6px 16px;border-radius:999px;background:rgba(255,176,32,.12);border:1px solid rgba(255,176,32,.35);color:var(--warn);font-weight:700;font-size:13px;letter-spacing:.03em">${badge}</div>
+        <div style="font-size:12px;color:var(--muted);text-align:center;max-width:210px;text-wrap:pretty">${esc(note)}</div>
+      </div>
+      <div style="padding:22px 26px;display:flex;flex-direction:column;gap:6px;text-align:right">
+        <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--purple);font-weight:600">Mean-Reversion Baseline</div>
+        <div style="font-size:34px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em">${money(base.pnl)}</div>
+        <div style="font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${sub(base)}</div>
+      </div>
+    </div>
+    <div style="margin-top:10px;display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(5,196,107,.06);border:1px solid rgba(5,196,107,.22);border-radius:12px">
+      <span style="width:8px;height:8px;border-radius:50%;background:var(--up);flex:none;box-shadow:0 0 0 4px rgba(5,196,107,.15)"></span>
+      <div style="font-size:13px;color:var(--fg)"><b style="color:var(--up)">Research winner locked:</b> ${esc(DATA.lockedEngine)}, gated by the <b>${esc(DATA.lockedOverlay || 'no')}</b> overlay. This is the config the forward track is now paper-trading.</div>
+    </div>`;
+}
+
+function renderKpis() {
+  const S = DATA.winScore, f = DATA.forward.agent;
+  const kpis = [
+    { label: 'Forward balance', value: money(f.notional + f.pnl), color: 'var(--fg)', bar: 'var(--accent)', sub: `${f.days} day(s) tracked · net ${pct(f.ret)}` },
+    { label: 'Locked-config return', value: pct(S.ret), color: 'var(--up)', bar: 'var(--up)', sub: `${esc(DATA.lockedEngine)} + ${esc(DATA.lockedOverlay)}` },
+    { label: 'Win rate', value: pctAbs(S.wr, 1), color: 'var(--up)', bar: 'var(--up)', sub: `${S.won}W / ${S.lost}L` },
+    { label: 'Profit factor', value: S.pf.toFixed(2), color: 'var(--up)', bar: 'var(--up)', sub: `${money(S.gw, 0)} / ${money(S.gl, 0)}` },
+    { label: 'Max drawdown', value: pctAbs(S.dd, 2), color: 'var(--down)', bar: 'var(--down)', sub: `${S.avgHold.toFixed(1)} bar avg hold` },
+    { label: 'System health', value: DATA.guardrails.halt ? 'HALTED' : 'ARMED', color: DATA.guardrails.halt ? 'var(--down)' : 'var(--up)', bar: DATA.guardrails.halt ? 'var(--down)' : 'var(--up)', sub: '5 guardrails · 0 breaches' },
+  ];
+  document.getElementById('cr-kpis').innerHTML = kpis.map(k => `
+    <div style="background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;position:relative;overflow:hidden">
+      <div style="position:absolute;top:0;left:0;width:3px;height:100%;background:${k.bar}"></div>
+      <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600">${esc(k.label)}</div>
+      <div style="font-size:27px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em;margin-top:6px;color:${k.color}">${esc(k.value)}</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:5px;font-family:'IBM Plex Mono',monospace">${esc(k.sub)}</div>
+    </div>`).join('');
+}
+
+function buildChartSvg() {
+  const ys = DATA.curveDaily, dates = DATA.curveDates, n = ys.length;
+  if (!n) return '<p style="color:var(--muted)">no equity series</p>';
+  const W = 960, H = 320, padL = 54, padR = 18, padT = 20, padB = 30;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const mode = ST.chartMode;
+  const vals = mode === 'cum' ? ys : ys.map(v => (v - 1) * 100);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const m = (hi - lo) * 0.14 || 0.01; lo -= m; hi += m; const span = hi - lo || 1;
+  const px = i => padL + plotW * (i / Math.max(n - 1, 1));
+  const py = v => padT + plotH * (1 - (v - lo) / span);
+  let grid = '', yl = '';
+  for (let k = 0; k < 5; k++) {
+    const v = lo + span * k / 4, y = py(v);
+    grid += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#232a34" stroke-width="1" opacity="0.55"/>`;
+    yl += `<text x="${padL - 9}" y="${y + 3.5}" text-anchor="end" fill="#828d9b" font-size="11" font-family="'IBM Plex Mono',monospace">${mode === 'cum' ? v.toFixed(2) + '×' : v.toFixed(0) + '%'}</text>`;
+  }
+  const line = vals.map((v, i) => px(i).toFixed(1) + ',' + py(v).toFixed(1)).join(' ');
+  const area = px(0).toFixed(1) + ',' + py(lo).toFixed(1) + ' ' + line + ' ' + px(n - 1).toFixed(1) + ',' + py(lo).toFixed(1);
+  const stroke = ys[n - 1] >= 1 ? '#05c46b' : '#ff5c5c';
+  const baseVal = mode === 'cum' ? 1 : 0;
+  const baseEl = (baseVal >= lo && baseVal <= hi) ? `<line x1="${padL}" y1="${py(baseVal)}" x2="${W - padR}" y2="${py(baseVal)}" stroke="#4db8ff" stroke-dasharray="4 4" opacity="0.5"/>` : '';
+  let rm = -Infinity, ddMin = 0, ddI = 0, peakI = 0;
+  ys.forEach((v, i) => { rm = Math.max(rm, v); const x = v / rm - 1; if (x < ddMin) { ddMin = x; ddI = i; } });
+  let pk = -Infinity; for (let i = 0; i <= ddI; i++) if (ys[i] > pk) { pk = ys[i]; peakI = i; }
+  const ddBand = ddMin < 0 ? `<rect x="${px(peakI)}" y="${padT}" width="${Math.max(px(ddI) - px(peakI), 1)}" height="${plotH}" fill="#ff5c5c" opacity="0.07"/>` : '';
+  const peakDot = `<circle cx="${px(peakI)}" cy="${py(vals[peakI])}" r="3.5" fill="#05c46b" stroke="#0a0c10" stroke-width="1.5"/>`;
+  const troughDot = ddMin < 0 ? `<circle cx="${px(ddI)}" cy="${py(vals[ddI])}" r="3.5" fill="#ff5c5c" stroke="#0a0c10" stroke-width="1.5"/>` : '';
+  const xl = [0, Math.floor(n / 2), n - 1].map((i, k) => `<text x="${px(i)}" y="${H - 9}" text-anchor="${k === 0 ? 'start' : k === 2 ? 'end' : 'middle'}" fill="#828d9b" font-size="11" font-family="'IBM Plex Mono',monospace">${esc(dates[i])}</text>`).join('');
+  let hov = '';
+  if (ST.hoverIdx != null) {
+    const hIdx = ST.hoverIdx, hx = px(hIdx), hy = py(vals[hIdx]);
+    const label = mode === 'cum' ? ys[hIdx].toFixed(3) + '×  (' + pct(ys[hIdx] - 1) + ')' : pct(ys[hIdx] - 1);
+    const tw = 172, tx = Math.min(Math.max(hx - tw / 2, padL), W - padR - tw), ty = Math.max(hy - 50, padT + 2);
+    hov = `<g pointer-events="none"><line x1="${hx}" y1="${padT}" x2="${hx}" y2="${padT + plotH}" stroke="#828d9b" stroke-width="1" opacity="0.5"/>
+      <circle cx="${hx}" cy="${hy}" r="4.5" fill="${stroke}" stroke="#0a0c10" stroke-width="2"/>
+      <g transform="translate(${tx},${ty})"><rect width="${tw}" height="42" rx="7" fill="#05070a" stroke="#2e3742"/>
+      <text x="11" y="18" fill="#e8edf4" font-size="12.5" font-family="'IBM Plex Mono',monospace" font-weight="600">${esc(label)}</text>
+      <text x="11" y="33" fill="#828d9b" font-size="11" font-family="'IBM Plex Mono',monospace">${esc(dates[hIdx])}</text></g></g>`;
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" preserveAspectRatio="xMidYMid meet" id="cr-chart-svg">
+    ${grid}${ddBand}<polygon points="${area}" fill="${stroke}" opacity="0.1"/>${baseEl}
+    <polyline points="${line}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${peakDot}${troughDot}${yl}${xl}${hov}
+    <rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent" id="cr-chart-overlay"/>
+  </svg>`;
+}
+
+function renderChart() {
+  const cm = ST.chartMode;
+  document.getElementById('cr-chartmodes').innerHTML = ['cum', 'ret'].map(id => `
+    <button class="cr-btn" data-chartmode="${id}" style="padding:6px 14px;border-radius:7px;font-size:12px;font-weight:600;background:${cm === id ? 'var(--accent)' : 'transparent'};color:${cm === id ? '#04121f' : 'var(--muted)'}">${id === 'cum' ? 'Cumulative ×' : 'Return %'}</button>`).join('');
+  const dates = DATA.curveDates;
+  document.getElementById('cr-chartsub').textContent = `${esc(DATA.lockedEngine)}${DATA.lockedOverlay ? ' + ' + DATA.lockedOverlay : ''} · ${dates[0] || ''} → ${dates[dates.length - 1] || ''} · ${money(DATA.winScore.notional, 0)} notional`;
+  document.getElementById('cr-chart').innerHTML = buildChartSvg();
+  const overlay = document.getElementById('cr-chart-overlay');
+  if (overlay) {
+    overlay.addEventListener('mousemove', e => {
+      const svg = overlay.ownerSVGElement, r = svg.getBoundingClientRect();
+      const xr = (e.clientX - r.left) / r.width * 960;
+      let i = Math.round((xr - 54) / (960 - 54 - 18) * (DATA.curveDaily.length - 1));
+      i = Math.max(0, Math.min(DATA.curveDaily.length - 1, i));
+      if (i !== ST.hoverIdx) { ST.hoverIdx = i; renderChart(); }
+    });
+    overlay.addEventListener('mouseleave', () => { if (ST.hoverIdx != null) { ST.hoverIdx = null; renderChart(); } });
+  }
+}
+
+function renderGuardrails() {
+  const g = DATA.guardrails;
+  const rows = [
+    { label: 'Per-trade max', cap: money(g.per_trade_max_usd, 0), note: 'rejected above ceiling' },
+    { label: 'Total deployed max', cap: money(g.total_deployed_max_usd, 0), note: 'hard cap on live exposure' },
+    { label: 'Max new positions / run', cap: String(g.max_new_positions_per_run), note: 'per cron tick' },
+    { label: 'Max orders / run', cap: String(g.max_orders_per_run), note: 'rate limit' },
+    { label: 'Daily realized-loss kill', cap: money(g.daily_loss_limit_usd, 0), note: 'halts the day when breached' },
+  ];
+  document.getElementById('cr-guardrails').innerHTML = rows.map(r => `
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
+        <span style="font-size:12.5px;color:var(--fg)">${esc(r.label)}</span>
+        <span style="font-size:13px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--fg)">${esc(r.cap)}</span>
+      </div>
+      <div style="height:6px;background:var(--bg);border-radius:4px;overflow:hidden;border:1px solid var(--line)">
+        <div style="height:100%;width:100%;background:linear-gradient(90deg,var(--up),#3ad98a);border-radius:4px"></div>
+      </div>
+      <div style="font-size:10.5px;color:var(--muted);margin-top:4px;font-family:'IBM Plex Mono',monospace">${esc(r.note)}</div>
+    </div>`).join('');
+  document.getElementById('cr-guardrail-chips').innerHTML = ['US-equities only', 'daily-loss kill switch', 'HALT file', g.model.split('/').pop()]
+    .map(c => `<span style="padding:4px 10px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${esc(c)}</span>`).join('');
+}
+
+function renderBakeoff() {
+  const rows = DATA.bakeoff;
+  if (!rows.length) { document.getElementById('cr-bakeoff').innerHTML = `<tr><td colspan="6" style="padding:12px;color:var(--muted)">no bake-off data</td></tr>`; return; }
+  const maxPoint = Math.max(...rows.map(b => b.point));
+  document.getElementById('cr-bakeoff').innerHTML = rows.map(b => `
+    <tr style="background:${b.beats ? 'rgba(5,196,107,.07)' : 'transparent'}">
+      <td style="padding:9px 10px;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;color:${b.beats ? 'var(--up)' : 'var(--fg)'};font-weight:${b.beats ? 700 : 500}">${esc(b.overlay)}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace">
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px"><span style="width:44px;height:5px;background:var(--bg);border-radius:3px;overflow:hidden;border:1px solid var(--line)"><span style="display:block;height:100%;width:${(b.point / maxPoint * 100).toFixed(0)}%;background:${b.beats ? 'var(--up)' : 'var(--muted)'}"></span></span>${b.point.toFixed(2)}</div>
+      </td>
+      <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--muted)">${b.deflated.toFixed(2)}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--muted)">${esc(b.fold)}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--muted)">${esc(b.ci)}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:center">${b.beats ? '✓ beats' : '—'}</td>
+    </tr>`).join('');
+}
+
+const RUN_COLS = [
+  { key: 'id', label: 'run', align: 'left' }, { key: 'engine', label: 'engine', align: 'left' },
+  { key: 'overlay', label: 'overlay', align: 'left' }, { key: 'n', label: 'trades', align: 'right' },
+  { key: 'wr', label: 'win %', align: 'right' }, { key: 'pf', label: 'PF', align: 'right' },
+  { key: 'pnl', label: 'P&L', align: 'right' }, { key: 'ret', label: 'return', align: 'right' },
+];
+
+function renderRuns() {
+  document.getElementById('cr-runcount').textContent = `Research runs · ${DATA.runs.length} total`;
+  document.getElementById('cr-enginechips').innerHTML = ['all', ...new Set(DATA.runs.map(r => r.engine))].map(e => `
+    <button class="cr-btn" data-engine="${esc(e)}" style="padding:6px 13px;border-radius:7px;font-size:12px;font-weight:600;background:${ST.engine === e ? 'var(--panel2)' : 'transparent'};color:${ST.engine === e ? 'var(--fg)' : 'var(--muted)'};display:inline-flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:${e === 'all' ? 'var(--muted)' : engineColor(e)}"></span>${esc(e)}</button>`).join('');
+  document.getElementById('cr-runcols').innerHTML = RUN_COLS.map(c => `
+    <div class="cr-btn" data-sort="${c.key}" style="padding:10px 12px;font-weight:600;color:var(--muted);font-size:12.5px;white-space:nowrap;cursor:pointer;text-align:${c.align}">${esc(c.label)}<span style="color:var(--accent)">${ST.runSort === c.key ? (ST.runDir < 0 ? ' ↓' : ' ↑') : ''}</span></div>`).join('');
+
+  let rows = DATA.runs.filter(r => ST.engine === 'all' || r.engine === ST.engine);
+  rows = rows.slice().sort((a, b) => {
+    const av = a[ST.runSort], bv = b[ST.runSort];
+    return typeof av === 'string' ? ST.runDir * av.localeCompare(bv) : ST.runDir * (av - bv);
+  });
+  const maxAbsRet = Math.max(...rows.map(r => Math.abs(r.ret)), 0.01);
+  document.getElementById('cr-runrows').innerHTML = rows.map(r => {
+    const win = r.id === DATA.winRunId;
+    const w = Math.abs(r.ret) / maxAbsRet * 100;
+    return `<div class="cr-row cr-btn" data-open="${esc(r.id)}" style="display:grid;grid-template-columns:minmax(150px,1.5fr) 1fr 0.9fr 0.65fr 0.7fr 0.6fr 1fr 1.25fr;align-items:center;background:${win ? 'rgba(5,196,107,.06)' : 'transparent'};border-bottom:1px solid var(--line);border-left:3px solid ${win ? 'var(--up)' : 'transparent'};font-size:12.5px">
+      <div style="padding:9px 12px;font-family:'IBM Plex Mono',monospace;white-space:nowrap"><span style="color:var(--accent);border-bottom:1px dashed rgba(77,184,255,.45);padding-bottom:1px">${esc(r.sid)}</span>${win ? '<span style="color:var(--up);font-weight:700;font-size:10px;margin-left:6px">◆ LOCKED</span>' : ''}</div>
+      <div style="padding:9px 12px;white-space:nowrap;display:flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:${engineColor(r.engine)};flex:none"></span>${esc(r.engine)}</div>
+      <div style="padding:9px 12px;font-family:'IBM Plex Mono',monospace;color:var(--muted)">${esc(r.overlay || '—')}</div>
+      <div style="padding:9px 12px;text-align:right;font-family:'IBM Plex Mono',monospace">${r.n}</div>
+      <div style="padding:9px 12px;text-align:right;font-family:'IBM Plex Mono',monospace">${pctAbs(r.wr, 1)}</div>
+      <div style="padding:9px 12px;text-align:right;font-family:'IBM Plex Mono',monospace">${num(r.pf)}</div>
+      <div style="padding:9px 12px;text-align:right;font-family:'IBM Plex Mono',monospace;color:${r.pnl >= 0 ? 'var(--up)' : 'var(--down)'};font-weight:600">${(r.pnl >= 0 ? '+' : '') + money(r.pnl, 0)}</div>
+      <div style="padding:9px 12px;font-family:'IBM Plex Mono',monospace;display:flex;align-items:center;justify-content:flex-end;gap:8px"><span style="width:52px;height:5px;background:var(--bg);border-radius:3px;overflow:hidden;border:1px solid var(--line);flex:none"><span style="display:block;height:100%;width:${w.toFixed(0)}%;background:${r.ret >= 0 ? 'var(--up)' : 'var(--down)'}"></span></span><span style="color:${r.ret >= 0 ? 'var(--up)' : 'var(--down)'};min-width:56px;text-align:right">${pct(r.ret, 1)}</span></div>
+    </div>`;
+  }).join('');
+}
+
+function renderLeaderboard() {
+  const byEngine = {};
+  DATA.runs.forEach(r => { if (!byEngine[r.engine] || r.pnl > byEngine[r.engine].pnl) byEngine[r.engine] = r; });
+  const arr = Object.values(byEngine).sort((a, b) => b.pnl - a.pnl);
+  const maxLb = Math.max(...arr.map(r => r.pnl), 1);
+  document.getElementById('cr-leaderboard').innerHTML = arr.map(r => `
+    <div style="background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="width:9px;height:9px;border-radius:50%;background:${engineColor(r.engine)}"></span><span style="font-weight:600;font-size:14px">${esc(r.engine)}</span></div>
+      <div style="font-size:26px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:${r.pnl >= 0 ? 'var(--up)' : 'var(--down)'};letter-spacing:-.02em">${(r.pnl >= 0 ? '+' : '') + money(r.pnl, 0)}</div>
+      <div style="height:7px;background:var(--bg);border:1px solid var(--line);border-radius:4px;overflow:hidden;margin:10px 0 8px"><div style="height:100%;width:${(r.pnl / maxLb * 100).toFixed(0)}%;background:${engineColor(r.engine)};border-radius:4px"></div></div>
+      <div style="font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${r.n} trades · ${pctAbs(r.wr, 1)} win · ${esc(r.overlay || 'no overlay')}</div>
+    </div>`).join('');
+}
+
+function renderScorecard() {
+  const S = DATA.winScore;
+  document.getElementById('cr-winid').textContent = DATA.winRunId;
+  const tiles = [
+    { label: 'balance', value: money(S.balance), color: 'var(--up)' },
+    { label: 'net P&L', value: '+' + money(S.pnl), color: 'var(--up)' },
+    { label: 'total return', value: pct(S.ret), color: 'var(--up)' },
+    { label: 'trades', value: String(S.n), color: 'var(--fg)' },
+    { label: 'win rate', value: pctAbs(S.wr, 1), color: 'var(--fg)' },
+    { label: 'profit factor', value: S.pf.toFixed(2), color: 'var(--up)' },
+    { label: 'avg win', value: money(S.avgWin), color: 'var(--up)' },
+    { label: 'avg loss', value: money(S.avgLoss), color: 'var(--down)' },
+    { label: 'sharpe', value: S.sharpe.toFixed(2), color: 'var(--fg)' },
+    { label: 'max drawdown', value: pctAbs(S.dd, 2), color: 'var(--down)' },
+    { label: 'avg holding', value: S.avgHold.toFixed(1) + ' bars', color: 'var(--fg)' },
+    { label: 'gross win', value: money(S.gw, 0), color: 'var(--up)' },
+    { label: 'gross loss', value: money(-S.gl, 0), color: 'var(--down)' },
+  ];
+  document.getElementById('cr-scoretiles').innerHTML = tiles.map(t => `
+    <div style="background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:13px 15px">
+      <div style="font-size:20px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:${t.color};letter-spacing:-.01em">${esc(t.value)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.04em">${esc(t.label)}</div>
+    </div>`).join('');
+}
+
+function renderBuckets() {
+  const bm = DATA.bucketsMeta || {};
+  document.getElementById('cr-buckets').innerHTML = DATA.buckets.map(b => `
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
+        <span style="font-size:12.5px"><span style="color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:11px">${esc(b.dim)}</span> · ${esc(b.bucket)}</span>
+        <span style="font-size:12.5px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--down)">${pctAbs(b.share, 1)}</span>
+      </div>
+      <div style="height:8px;background:var(--bg);border:1px solid var(--line);border-radius:4px;overflow:hidden"><div style="height:100%;width:${(b.share * 100).toFixed(0)}%;background:linear-gradient(90deg,var(--down),#ff8a8a);border-radius:4px"></div></div>
+      <div style="font-size:10.5px;color:var(--muted);margin-top:4px;font-family:'IBM Plex Mono',monospace">${b.lossN.toLocaleString()} of ${b.totalN.toLocaleString()} trades · ${pctAbs(b.wr, 0)} win rate</div>
+    </div>`).join('');
+  document.getElementById('cr-bucketscaveat').innerHTML = bm.n ? `⚠ ${esc(bm.caveat || '')}` : '';
+
+  const wm = DATA.winBucketsMeta || {};
+  document.getElementById('cr-winbuckets').innerHTML = DATA.winBuckets.map(w => `
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
+        <span style="font-size:12.5px"><span style="color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:11px">${esc(w.dim)}</span> · ${esc(w.bucket)}</span>
+        <span style="font-size:12.5px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--up)">${pctAbs(w.share, 1)}</span>
+      </div>
+      <div style="height:8px;background:var(--bg);border:1px solid var(--line);border-radius:4px;overflow:hidden"><div style="height:100%;width:${(w.share * 100).toFixed(0)}%;background:linear-gradient(90deg,var(--up),#3ad98a);border-radius:4px"></div></div>
+      <div style="font-size:10.5px;color:var(--muted);margin-top:4px;font-family:'IBM Plex Mono',monospace">${w.winN.toLocaleString()} of ${w.totalN.toLocaleString()} trades · ${pctAbs(w.wr, 0)} win rate</div>
+    </div>`).join('');
+  document.getElementById('cr-winbucketsnote').textContent = wm.note || '';
+}
+
+function renderLedger() {
+  const S = DATA.winScore;
+  document.getElementById('cr-ledgercount').textContent = `${S.won} wins · ${S.lost} losses · ${S.n} trades`;
+  document.getElementById('cr-tradechips').innerHTML = [['all', 'all'], ['win', 'wins'], ['loss', 'losses']].map(([id, label]) => `
+    <button class="cr-btn" data-tradefilter="${id}" style="padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600;background:${ST.tradeFilter === id ? 'var(--panel2)' : 'transparent'};color:${ST.tradeFilter === id ? 'var(--fg)' : 'var(--muted)'}">${esc(label)}</button>`).join('');
+  const trades = DATA.winTrades.filter(t => ST.tradeFilter === 'all' || t.oc === ST.tradeFilter);
+  const maxAbsPnl = Math.max(...DATA.winTrades.map(t => Math.abs(t.pnl)), 1);
+  document.getElementById('cr-ledger').innerHTML = trades.map(t => {
+    const w = Math.abs(t.pnl) / maxAbsPnl * 100;
+    const color = t.oc === 'win' ? 'var(--up)' : 'var(--down)';
+    return `<tr style="border-left:3px solid ${color}">
+      <td style="padding:8px 9px;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;color:var(--muted)">#${esc(t.id)}</td>
+      <td style="padding:8px 9px;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-weight:600">${esc(t.sym)}</td>
+      <td style="padding:8px 9px;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:11px">${esc(t.entry)} → ${esc(t.exit)}</td>
+      <td style="padding:8px 9px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace">${t.bars}</td>
+      <td style="padding:8px 9px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace;color:${color}">${pct(t.pnlPct)}</td>
+      <td style="padding:8px 9px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace;color:${color};font-weight:600">${(t.pnl >= 0 ? '+' : '') + money(t.pnl)}</td>
+      <td style="padding:8px 9px;border-bottom:1px solid var(--line)">
+        <div style="display:flex;align-items:center;gap:0;height:12px"><span style="flex:1;display:flex;justify-content:flex-end"><span style="height:8px;width:${t.pnl < 0 ? w.toFixed(0) : 0}%;background:var(--down);border-radius:2px 0 0 2px"></span></span><span style="width:1px;height:12px;background:var(--line2)"></span><span style="flex:1;display:flex;justify-content:flex-start"><span style="height:8px;width:${t.pnl >= 0 ? w.toFixed(0) : 0}%;background:var(--up);border-radius:0 2px 2px 0"></span></span></div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function triggerResearchRun() {
+  const status = document.getElementById('cr-trigger-status');
+  const btn = document.getElementById('cr-trigger-btn');
+  let secret = localStorage.getItem('rh_trigger_secret');
+  if (!secret) {
+    secret = prompt('Passphrase to trigger a research run:');
+    if (!secret) return;
+    localStorage.setItem('rh_trigger_secret', secret);
+  }
+  btn.disabled = true;
+  status.textContent = 'triggering…';
+  status.style.color = 'var(--muted)';
+  try {
+    const r = await fetch('/api/trigger-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret }),
+    });
+    if (r.status === 401) {
+      localStorage.removeItem('rh_trigger_secret');
+      status.textContent = 'wrong passphrase';
+      status.style.color = 'var(--down)';
+    } else if (r.ok) {
+      status.textContent = 'triggered — running on GitHub Actions';
+      status.style.color = 'var(--up)';
+    } else {
+      const body = await r.json().catch(() => ({}));
+      status.textContent = 'failed: ' + (body.error || r.status);
+      status.style.color = 'var(--down)';
+    }
+  } catch (e) {
+    status.textContent = 'failed: ' + e.message;
+    status.style.color = 'var(--down)';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderRunbook() {
+  document.getElementById('cr-runbook').innerHTML = DATA.runbook.map(([label, cmd], i) => `
+    <button class="cr-btn" data-copy="${i}" style="text-align:left;display:flex;align-items:center;gap:14px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:11px 14px">
+      <span style="font-size:12px;color:var(--muted);min-width:150px;flex:none">${esc(label)}</span>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--fg);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(cmd)}</span>
+      <span style="font-size:11px;font-weight:600;color:${ST.copied === i ? 'var(--up)' : 'var(--muted)'};flex:none;font-family:'IBM Plex Mono',monospace">${ST.copied === i ? 'COPIED' : 'COPY'}</span>
+    </button>`).join('');
+}
+
+function renderAgentNotes() {
+  const sec = document.getElementById('cr-agentnotes');
+  if (!DATA.reflections || !DATA.reflections.length) { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+  document.getElementById('cr-reflections').innerHTML = DATA.reflections.map(r => `<p style="margin:0">## ${esc(r)}</p>`).join('');
+}
+
+function buildDetail(runId) {
+  const r = DATA.runs.find(x => x.id === runId); if (!r) return null;
+  const win = r.id === DATA.winRunId;
+  const balance = r.notional * (1 + r.ret);
+  const avgWin = r.won ? r.gw / r.won : 0, avgLoss = r.lost ? -r.gl / r.lost : 0;
+  const tiles = [
+    { label: 'balance', value: money(balance), color: balance >= r.notional ? 'var(--up)' : 'var(--down)' },
+    { label: 'net P&L', value: (r.pnl >= 0 ? '+' : '') + money(r.pnl), color: r.pnl >= 0 ? 'var(--up)' : 'var(--down)' },
+    { label: 'return', value: pct(r.ret), color: r.ret >= 0 ? 'var(--up)' : 'var(--down)' },
+    { label: 'trades', value: String(r.n), color: 'var(--fg)' },
+    { label: 'win rate', value: pctAbs(r.wr, 1), color: 'var(--fg)' },
+    { label: 'profit factor', value: num(r.pf), color: r.pf >= 1 ? 'var(--up)' : 'var(--down)' },
+    { label: 'avg win', value: money(avgWin), color: 'var(--up)' },
+    { label: 'avg loss', value: money(avgLoss), color: 'var(--down)' },
+    { label: 'gross win', value: money(r.gw, 0), color: 'var(--up)' },
+    { label: 'gross loss', value: money(-r.gl, 0), color: 'var(--down)' },
+  ];
+  return {
+    idFull: r.id, engine: r.engine, dot: engineColor(r.engine), overlay: r.overlay || 'no overlay',
+    winTag: win ? '◆ LOCKED CONFIG' : '', ret: pct(r.ret), retColor: r.ret >= 0 ? 'var(--up)' : 'var(--down)',
+    pnl: (r.pnl >= 0 ? '+' : '') + money(r.pnl), notional: money(r.notional, 0),
+    symbols: r.uni, period: r.start + ' → ' + r.end, tiles, won: r.won, lost: r.lost,
+    winW: (r.won / r.n * 100).toFixed(1) + '%', lossW: (r.lost / r.n * 100).toFixed(1) + '%',
+    note: win ? 'This is the config the forward paper track is now trading.' : `Per-trade ledger for this run is available from the CLI: rhagent.evaluate --run ${r.id}.`,
+  };
+}
+
+function renderDrawer() {
+  const wrap = document.getElementById('cr-drawerwrap');
+  if (!ST.selectedRun) { wrap.innerHTML = ''; return; }
+  const d = buildDetail(ST.selectedRun);
+  if (!d) { wrap.innerHTML = ''; return; }
+  wrap.innerHTML = `
+    <div data-close-drawer style="position:fixed;inset:0;z-index:40;background:rgba(4,6,9,.6);backdrop-filter:blur(2px);animation:backdropIn .18s ease both"></div>
+    <aside style="position:fixed;top:0;right:0;z-index:41;height:100vh;width:min(540px,94vw);background:var(--panel);border-left:1px solid var(--line2);box-shadow:-24px 0 60px rgba(0,0,0,.5);overflow-y:auto;animation:drawerIn .22s cubic-bezier(.2,.8,.2,1) both" class="cr-scroll">
+      <div style="position:sticky;top:0;z-index:2;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:20px 24px;background:rgba(18,22,28,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:14px"><span style="width:8px;height:8px;border-radius:50%;background:${d.dot}"></span>${esc(d.engine)}</span>
+            <span style="padding:2px 8px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${esc(d.overlay)}</span>
+            ${d.winTag ? `<span style="padding:2px 8px;border-radius:6px;background:rgba(5,196,107,.14);color:var(--up);font-size:10px;font-weight:700;font-family:'IBM Plex Mono',monospace">${d.winTag}</span>` : ''}
+          </div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--muted);margin-top:6px">${esc(d.idFull)}</div>
+        </div>
+        <button data-close-drawer style="flex:none;width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--muted);cursor:pointer;font-size:15px;line-height:1">✕</button>
+      </div>
+      <div style="padding:22px 24px">
+        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px">
+          <div style="font-size:38px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em;color:${d.retColor}">${d.ret}</div>
+          <div style="font-size:14px;color:${d.retColor};font-family:'IBM Plex Mono',monospace;font-weight:600">${d.pnl}</div>
+        </div>
+        <div style="font-size:12px;color:var(--muted)">total return on ${d.notional} notional</div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin:18px 0 20px">
+          <span style="padding:5px 11px;border-radius:7px;background:var(--bg);border:1px solid var(--line);font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${esc(d.symbols)}</span>
+          <span style="padding:5px 11px;border-radius:7px;background:var(--bg);border:1px solid var(--line);font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${esc(d.period)}</span>
+        </div>
+        <h4 style="margin:0 0 12px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600">Scorecard</h4>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+          ${d.tiles.map(t => `<div style="background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:12px 14px">
+            <div style="font-size:18px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:${t.color};letter-spacing:-.01em">${esc(t.value)}</div>
+            <div style="font-size:10.5px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.04em">${esc(t.label)}</div></div>`).join('')}
+        </div>
+        <div style="margin-top:16px;display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg);border:1px solid var(--line);border-radius:11px">
+          <div style="flex:1">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-family:'IBM Plex Mono',monospace">win / loss split · ${d.won}W / ${d.lost}L</div>
+            <div style="display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--panel2)">
+              <div style="height:100%;width:${d.winW};background:var(--up)"></div>
+              <div style="height:100%;width:${d.lossW};background:var(--down)"></div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:16px;padding:12px 14px;background:rgba(77,184,255,.06);border:1px solid rgba(77,184,255,.22);border-radius:11px;font-size:12px;color:var(--muted);text-wrap:pretty">${esc(d.note)}</div>
+      </div>
+    </aside>`;
+}
+
+function renderAll() {
+  renderHeaderPills(); renderVerdict(); renderKpis(); renderChart(); renderGuardrails();
+  renderBakeoff(); renderRuns(); renderLeaderboard(); renderScorecard(); renderBuckets();
+  renderLedger(); renderRunbook(); renderAgentNotes(); renderDrawer();
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-chartmode],[data-engine],[data-sort],[data-open],[data-tradefilter],[data-copy],[data-close-drawer],#cr-trigger-btn');
+  if (!t) return;
+  if (t.dataset.chartmode) { ST.chartMode = t.dataset.chartmode; renderChart(); }
+  else if (t.dataset.engine) { ST.engine = t.dataset.engine; renderRuns(); }
+  else if (t.dataset.sort) {
+    if (ST.runSort === t.dataset.sort) ST.runDir = -ST.runDir;
+    else { ST.runSort = t.dataset.sort; ST.runDir = ['id', 'engine', 'overlay'].includes(t.dataset.sort) ? 1 : -1; }
+    renderRuns();
+  } else if (t.dataset.open) { ST.selectedRun = t.dataset.open; renderDrawer(); }
+  else if (t.dataset.tradefilter) { ST.tradeFilter = t.dataset.tradefilter; renderLedger(); }
+  else if (t.id === 'cr-trigger-btn') { triggerResearchRun(); }
+  else if (t.dataset.copy != null) {
+    const i = Number(t.dataset.copy);
+    const cmd = DATA.runbook[i][1];
+    if (navigator.clipboard) navigator.clipboard.writeText(cmd).catch(() => {});
+    ST.copied = i; renderRunbook();
+    setTimeout(() => { ST.copied = -1; renderRunbook(); }, 1400);
+  } else if (t.hasAttribute('data-close-drawer')) { ST.selectedRun = null; renderDrawer(); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && ST.selectedRun) { ST.selectedRun = null; renderDrawer(); } });
+
+renderAll();
+</script>
+</body>
+</html>
