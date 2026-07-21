@@ -263,6 +263,7 @@ def _buckets_table(b: pd.DataFrame) -> str:
 def _compare_table(df: pd.DataFrame, current: str, link: bool = False) -> str:
     if len(df) == 0:
         return "<p class='muted'>no runs</p>"
+    df = df.sort_values("run_id", ascending=False)
     best_id = df.loc[df["total_return"].idxmax(), "run_id"] if len(df) else None
     rows = []
     for _, r in df.iterrows():
