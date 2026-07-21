@@ -1,6 +1,6 @@
 import pandas as pd
 
-from rhagent.data import get_bars, rows_to_df
+from rhagent.data import fallback_fetch, get_bars, rows_to_df
 
 
 FIXTURE = {
@@ -32,6 +32,46 @@ def test_get_bars_fetches_then_caches(tmp_path):
     out2 = get_bars(["AAPL"], "2025-01-01", "2025-02-01", fetch=fake_fetch, cache_dir=tmp_path)
     assert out2["AAPL"]["close"].iloc[-1] == 191.0
     assert calls == [["AAPL"]]  # only the first call fetched
+
+
+def test_fallback_fetch_fills_gaps_from_next_source():
+    """Primary covers only some symbols; the secondary is asked for exactly the
+    ones still missing, and results are merged."""
+    def primary(symbols, start, end):
+        return {"MSFT": [{"date": "2025-01-02", "close": 400.0}]}
+
+    def secondary(symbols, start, end):
+        assert list(symbols) == ["AAPL"]  # only the gap, not MSFT
+        return {"AAPL": [{"date": "2025-01-02", "close": 190.0}]}
+
+    out = fallback_fetch(primary, secondary)(["AAPL", "MSFT"], "2025-01-01", "2025-02-01")
+    assert out["AAPL"][0]["close"] == 190.0  # from secondary
+    assert out["MSFT"][0]["close"] == 400.0  # from primary
+
+
+def test_fallback_fetch_skips_a_raising_source():
+    """A source that raises is skipped entirely; the next source covers all."""
+    def primary(symbols, start, end):
+        raise RuntimeError("rate limited")
+
+    def secondary(symbols, start, end):
+        assert list(symbols) == ["AAPL", "MSFT"]  # raiser covered nothing
+        return {s: [{"date": "2025-01-02", "close": 1.0}] for s in symbols}
+
+    out = fallback_fetch(primary, secondary)(["AAPL", "MSFT"], "2025-01-01", "2025-02-01")
+    assert set(out) == {"AAPL", "MSFT"}
+
+
+def test_fallback_fetch_stops_when_all_covered():
+    """A later source is not called once every symbol is satisfied."""
+    def primary(symbols, start, end):
+        return {"AAPL": [{"date": "2025-01-02", "close": 190.0}]}
+
+    def secondary(symbols, start, end):
+        raise AssertionError("secondary should not be called; primary covered all")
+
+    out = fallback_fetch(primary, secondary)(["AAPL"], "2025-01-01", "2025-02-01")
+    assert out["AAPL"][0]["close"] == 190.0
 
 
 def test_get_bars_cache_read_preserves_float_dtype(tmp_path):

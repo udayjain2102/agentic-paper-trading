@@ -9,6 +9,8 @@ mcp>=1.2
 # Backtesting: strategies + engine work on price DataFrames.
 pandas>=2.0
 numpy>=1.26
+# Fallback price source (no API key) when the RH MCP is throttled/unavailable.
+yfinance>=0.2.30
 
 # Dev
 pytest>=8.0

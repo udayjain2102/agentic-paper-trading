@@ -132,7 +132,7 @@ def test_two_symbols_equal_weight_returns(tmp_path):
 
 def test_entry_features_present_on_trades(tmp_path):
     _, trades = _run({"A": [0, 1, 0]}, {"A": [100.0, 110.0, 121.0]}, tmp_path)
-    assert set(trades[0]["entry_features"]) == {"vol20", "gap", "trend5", "dow", "dist_high20", "dist_low20", "ret1"}
+    assert set(trades[0]["entry_features"]) == {"vol20", "gap", "trend5", "dow", "dist_high20", "dist_low20", "ret1", "ret5", "ret20", "zscore20", "rsi14", "vol_ratio"}
 
 
 def test_empty_symbols_raises():

@@ -8,6 +8,7 @@ and confines the live-MCP shape to ``mcp_fetch`` (a thin integration point, like
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -36,7 +37,7 @@ def _read_csv(path: Path) -> pd.DataFrame:
 
 
 def get_bars(symbols, start, end, *, fetch=None, cache_dir="data") -> dict[str, pd.DataFrame]:
-    fetch = fetch or mcp_fetch
+    fetch = fetch or fallback_fetch(mcp_fetch, yf_fetch)
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -55,6 +56,82 @@ def get_bars(symbols, start, end, *, fetch=None, cache_dir="data") -> dict[str, 
             df = rows_to_df(rows)
             df.to_csv(cache_dir / f"{s}.csv")
             out[s] = df
+    return out
+
+
+def fallback_fetch(*fetchers):
+    """Chain price sources: try each fetcher in order, keep whatever it returns,
+    and pass only the still-missing symbols to the next one.
+
+    A fetcher that raises (rate-limited, no session, network error) or returns no
+    rows for a symbol is skipped for that symbol; the next source gets a shot.
+    This is what lets a throttled RH MCP degrade to Yahoo instead of failing the
+    whole run.
+
+    ponytail: linear try-in-order chain, no per-source health tracking or
+    backoff — add that only if one source starts flapping mid-run.
+    """
+
+    def _fetch(symbols, start, end) -> dict[str, list[dict]]:
+        remaining = list(symbols)
+        out: dict[str, list[dict]] = {}
+        for f in fetchers:
+            if not remaining:
+                break
+            try:
+                got = f(remaining, start, end) or {}
+            except Exception as e:  # noqa: BLE001 — any source failure falls through
+                print(
+                    f"!! data source {getattr(f, '__name__', f)!r} failed: {e}",
+                    file=sys.stderr,
+                )
+                continue
+            for s, rows in got.items():
+                if rows:
+                    out[s] = rows
+            remaining = [s for s in remaining if s not in out]
+        return out
+
+    return _fetch
+
+
+def yf_fetch(symbols, start, end) -> dict[str, list[dict]]:
+    """Daily bars from Yahoo Finance (yfinance). No API key. Second link in the
+    default fallback chain, used when the RH MCP is unavailable or throttled.
+    """
+    import yfinance as yf
+
+    data = yf.download(
+        list(symbols),
+        start=start,
+        end=end,
+        interval="1d",
+        auto_adjust=False,
+        progress=False,
+        group_by="ticker",
+        threads=False,
+    )
+    out: dict[str, list[dict]] = {}
+    multi = isinstance(data.columns, pd.MultiIndex)
+    for s in symbols:
+        try:
+            sub = data[s] if multi else data
+        except KeyError:
+            continue
+        sub = sub.dropna(subset=["Close"])
+        rows = [
+            {
+                "date": ts.strftime("%Y-%m-%d"),
+                "open": float(r["Open"]),
+                "high": float(r["High"]),
+                "low": float(r["Low"]),
+                "close": float(r["Close"]),
+                "volume": float(r["Volume"]),
+            }
+            for ts, r in sub.iterrows()
+        ]
+        if rows:
+            out[s] = rows
     return out
 
 
