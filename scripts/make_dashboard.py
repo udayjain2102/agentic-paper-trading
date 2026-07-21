@@ -811,6 +811,7 @@ _CONTROL_ROOM_TEMPLATE = r"""<!doctype html>
             <tbody id="cr-ledger"></tbody>
           </table>
         </div>
+        <div id="cr-ledgermore" style="margin-top:12px;text-align:center"></div>
       </div>
     </section>
 
@@ -848,7 +849,8 @@ _CONTROL_ROOM_TEMPLATE = r"""<!doctype html>
 const DATA = __DATA_JSON__;
 const ACTIONS_URL = DATA.actionsUrl;
 
-const ST = { chartMode: 'cum', hoverIdx: null, engine: 'all', runSort: 'id', runDir: -1, tradeFilter: 'all', copied: -1, selectedRun: null };
+const ST = { chartMode: 'cum', hoverIdx: null, engine: 'all', runSort: 'id', runDir: -1, tradeFilter: 'all', copied: -1, selectedRun: null, ledgerAll: false };
+const LEDGER_PREVIEW = 10;
 
 function money(x, dp = 2) { const s = x < 0 ? '-' : ''; return s + '$' + Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp }); }
 function pct(x, dp = 2) { return (x >= 0 ? '+' : '') + (x * 100).toFixed(dp) + '%'; }
@@ -1134,7 +1136,8 @@ function renderLedger() {
   document.getElementById('cr-ledgercount').textContent = `${S.won} wins · ${S.lost} losses · ${S.n} trades`;
   document.getElementById('cr-tradechips').innerHTML = [['all', 'all'], ['win', 'wins'], ['loss', 'losses']].map(([id, label]) => `
     <button class="cr-btn" data-tradefilter="${id}" style="padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600;background:${ST.tradeFilter === id ? 'var(--panel2)' : 'transparent'};color:${ST.tradeFilter === id ? 'var(--fg)' : 'var(--muted)'}">${esc(label)}</button>`).join('');
-  const trades = DATA.winTrades.filter(t => ST.tradeFilter === 'all' || t.oc === ST.tradeFilter);
+  const all = DATA.winTrades.filter(t => ST.tradeFilter === 'all' || t.oc === ST.tradeFilter);
+  const trades = ST.ledgerAll ? all : all.slice(0, LEDGER_PREVIEW);
   const maxAbsPnl = Math.max(...DATA.winTrades.map(t => Math.abs(t.pnl)), 1);
   document.getElementById('cr-ledger').innerHTML = trades.map(t => {
     const w = Math.abs(t.pnl) / maxAbsPnl * 100;
@@ -1151,6 +1154,10 @@ function renderLedger() {
       </td>
     </tr>`;
   }).join('');
+  const more = document.getElementById('cr-ledgermore');
+  more.innerHTML = all.length > LEDGER_PREVIEW
+    ? `<button class="cr-btn" data-ledgertoggle="1" style="padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;background:var(--panel2);color:var(--fg)">${ST.ledgerAll ? 'show fewer' : `show all ${all.length} trades`}</button>`
+    : '';
 }
 
 async function triggerResearchRun() {
@@ -1280,7 +1287,7 @@ function renderAll() {
 }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-chartmode],[data-engine],[data-sort],[data-open],[data-tradefilter],[data-copy],[data-close-drawer],#cr-trigger-btn');
+  const t = e.target.closest('[data-chartmode],[data-engine],[data-sort],[data-open],[data-tradefilter],[data-ledgertoggle],[data-copy],[data-close-drawer],#cr-trigger-btn');
   if (!t) return;
   if (t.dataset.chartmode) { ST.chartMode = t.dataset.chartmode; renderChart(); }
   else if (t.dataset.engine) { ST.engine = t.dataset.engine; renderRuns(); }
@@ -1289,7 +1296,8 @@ document.addEventListener('click', e => {
     else { ST.runSort = t.dataset.sort; ST.runDir = ['id', 'engine', 'overlay'].includes(t.dataset.sort) ? 1 : -1; }
     renderRuns();
   } else if (t.dataset.open) { ST.selectedRun = t.dataset.open; renderDrawer(); }
-  else if (t.dataset.tradefilter) { ST.tradeFilter = t.dataset.tradefilter; renderLedger(); }
+  else if (t.dataset.tradefilter) { ST.tradeFilter = t.dataset.tradefilter; ST.ledgerAll = false; renderLedger(); }
+  else if (t.dataset.ledgertoggle) { ST.ledgerAll = !ST.ledgerAll; renderLedger(); }
   else if (t.id === 'cr-trigger-btn') { triggerResearchRun(); }
   else if (t.dataset.copy != null) {
     const i = Number(t.dataset.copy);
