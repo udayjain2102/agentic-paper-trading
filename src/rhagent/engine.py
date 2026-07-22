@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import re
-import time
 from dataclasses import dataclass
 from typing import Callable, Protocol
 
@@ -18,34 +17,30 @@ import pandas as pd
 
 from .strategies.base import Strategy
 
-# 4s/call x 65 symbols = ~4.3 min of pure pacing per tick, before model latency.
-_MIN_CALL_INTERVAL = 4.0  # seconds; NVIDIA's ~18 req/min bucket -- pace under it
-_RATE_LIMIT_RETRIES = 3   # extra attempts after a 429, each with doubling backoff
 
-
-def nvidia_complete(max_tokens: int = 256, model: str = "") -> Callable[[str], str]:
+def nvidia_complete(max_tokens: int | None = None, model: str = "") -> Callable[[str], str]:
     """Build an NVIDIA OpenAI-compatible `complete(prompt) -> text` callable.
 
     Shared client-building seam: AgentEngine's decision calls and memory.reflect's
     reflection call both need "detailed thinking off" + a token cap to keep
     nemotron-super's chain-of-thought from ballooning latency (see AgentEngine
-    docstring for why).
+    docstring for why). max_tokens=None (like model="") defers to cfg.agent so
+    config.yaml's value actually reaches the API call instead of a hardcoded default.
     """
     from openai import OpenAI
 
     from .config import load
 
     cfg = load()
-    # max_retries=0: AgentEngine._call_model is the one retry authority for
-    # rate limits (paced, backed off, tested). Letting the SDK also retry
-    # here would multiply attempts -- each of our retries would silently
-    # trigger another round of SDK-internal retries underneath it -- which
-    # is exactly the pile-on that gets a burst of calls rate-limited harder.
+    # No custom retry layer here (a 65-symbol live tick logged 0 rate-limited
+    # vs 4 timeouts out of 65 calls -- see decisions.jsonl, 2026-07-21): the
+    # SDK's own default retries (max_retries, unset here) already back off on
+    # 429/5xx/timeout, so there is nothing for a hand-rolled layer to add.
     client = OpenAI(
-        api_key=cfg.nvidia_api_key, base_url=cfg.nvidia_base_url,
-        timeout=45, max_retries=0,
+        api_key=cfg.nvidia_api_key, base_url=cfg.nvidia_base_url, timeout=45,
     )
     model = model or cfg.agent.model
+    max_tokens = max_tokens or cfg.agent.max_tokens
 
     def complete(prompt: str) -> str:
         resp = client.chat.completions.create(
@@ -103,8 +98,7 @@ class AgentEngine:
     StrategyEngine: one JSON verdict per bar from a compact, lookahead-free
     prompt. `complete(prompt) -> raw_text` is the model seam (injected in
     tests); when None it lazily builds an NVIDIA OpenAI client on first use.
-    Calls through that seam are paced and retried on rate-limit errors (see
-    `_call_model`); `sleep` is injectable so tests never actually wait."""
+    Retries on rate-limit/timeout/5xx are the SDK's own (see nvidia_complete)."""
 
     def __init__(
         self,
@@ -114,8 +108,7 @@ class AgentEngine:
         lessons: str = "",
         name: str = "agent",
         allow_short: bool = False,
-        max_tokens: int = 256,
-        sleep: Callable[[float], None] = time.sleep,
+        max_tokens: int | None = None,
     ) -> None:
         self.complete = complete
         self.model = model
@@ -123,17 +116,17 @@ class AgentEngine:
         self.name = name
         self.allow_short = allow_short
         self.max_tokens = max_tokens
-        self.sleep = sleep
-        self._last_call = 0.0
 
     def _default_complete(self) -> Callable[[str], str]:
         """Lazy NVIDIA OpenAI client — built once, on first decide().
 
         One bar-decision is a two-field JSON, not an essay. nemotron-super is a
         hybrid reasoning model that dumps a long chain-of-thought by default
-        (60-120s/call at cfg.agent.max_tokens=16000); the "detailed thinking
-        off" system directive plus a small token cap keeps each call ~2s while
-        still returning a reasoned verdict.
+        (60-120s/call at a 16000-token budget); the "detailed thinking off"
+        system directive plus a token cap keeps each call bounded while still
+        returning a reasoned verdict. self.max_tokens=None (the default) defers
+        to cfg.agent.max_tokens rather than silently capping lower -- tune the
+        budget there, not here.
         """
         return nvidia_complete(max_tokens=self.max_tokens, model=self.model)
 
@@ -159,36 +152,6 @@ class AgentEngine:
             "(-1 short, 0 flat, 1 long)."
         )
 
-    def _call_model(self, prompt: str) -> str:
-        """Call self.complete, paced ~_MIN_CALL_INTERVAL apart and retried
-        with doubling backoff on a rate-limit error. The only retry authority
-        here (nvidia_complete's client disables its own) so the numbers below
-        are the whole story, not one layer of several.
-
-        A 65-symbol tick calling self.complete back-to-back blows straight
-        through NVIDIA's burst-then-~18/min bucket; pacing keeps steady state
-        under it, and the retry rides out whatever still slips through.
-        ponytail: fixed interval/attempt count, not a general limiter --
-        revisit if a second model provider needs different numbers.
-        """
-        from openai import RateLimitError
-
-        wait = _MIN_CALL_INTERVAL - (time.monotonic() - self._last_call)
-        if wait > 0:
-            self.sleep(wait)
-        delay = 2.0
-        last_err: RateLimitError | None = None
-        for attempt in range(_RATE_LIMIT_RETRIES + 1):
-            self._last_call = time.monotonic()
-            try:
-                return self.complete(prompt)
-            except RateLimitError as e:
-                last_err = e
-                if attempt < _RATE_LIMIT_RETRIES:
-                    self.sleep(delay)
-                    delay *= 2
-        raise last_err
-
     def decide(
         self, symbol: str, history: pd.DataFrame, current_pos: float
     ) -> Decision:
@@ -198,8 +161,15 @@ class AgentEngine:
             self.complete = self._default_complete()
         prompt = self._prompt(symbol, history, current_pos)
         try:
-            raw = self._call_model(prompt)
-            obj = json.loads(re.search(r"\{.*\}", raw, re.DOTALL).group(0))
+            raw = self.complete(prompt)
+            # findall + last match, not a single greedy search: a reasoning model's
+            # chain-of-thought can echo the prompt's own example braces before the
+            # real answer, and a first-{-to-last-} greedy span would swallow the
+            # prose between them and fail json.loads.
+            matches = re.findall(r"\{[^{}]*\}", raw, re.DOTALL)
+            if not matches:
+                raise ValueError(f"no JSON object in model reply: {raw[:120]!r}")
+            obj = json.loads(matches[-1])
             target = float(int(obj["target"]))
             if target not in (-1.0, 0.0, 1.0):
                 raise ValueError("target out of range")

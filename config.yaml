@@ -23,7 +23,12 @@ limits:
 # Served by NVIDIA's OpenAI-compatible API (integrate.api.nvidia.com).
 agent:
   model: nvidia/llama-3.3-nemotron-super-49b-v1.5
-  max_tokens: 16000
+  # A bar decision is a two-field JSON, but nemotron-super is a reasoning
+  # model and emits a preamble first: at 256 it hit the cap before writing
+  # any JSON at all (46/65 decisions failed that way on 2026-07-21). 2000
+  # leaves room for the preamble without paying for the full 16000-token
+  # budget, which measured 60-120s/call -- over an hour for a 65-name tick.
+  max_tokens: 2000
 
 # Winning strategy. Chosen by the long-only paper-trade bake-off (2026-07-13/14),
 # ranked by risk-adjusted return with the robust evaluator (fold Sharpe +
