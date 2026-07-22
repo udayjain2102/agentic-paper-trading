@@ -2,9 +2,9 @@
   "cost_bps": 1.0,
   "end": "2026-07-20 00:00:00",
   "engine": "agent",
-  "memory_chars": 178,
+  "memory_chars": 1907,
   "notional": 10000.0,
-  "reflected": true,
+  "reflected": false,
   "run_id": "agent",
   "start": "2026-07-15 00:00:00",
   "symbols": [
