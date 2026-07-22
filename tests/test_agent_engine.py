@@ -66,7 +66,9 @@ def test_default_complete_uses_configured_max_tokens(monkeypatch):
         def create(self, **kwargs):
             captured.update(kwargs)
             msg = SimpleNamespace(content='{"target": 1, "reason": "ok"}')
-            return SimpleNamespace(choices=[SimpleNamespace(message=msg)])
+            choice = SimpleNamespace(message=msg, finish_reason="stop")
+            usage = SimpleNamespace(completion_tokens=42)
+            return SimpleNamespace(choices=[choice], usage=usage)
 
     class FakeClient:
         def __init__(self, **_kwargs):
@@ -79,6 +81,38 @@ def test_default_complete_uses_configured_max_tokens(monkeypatch):
 
     assert d.target == 1.0
     assert captured["max_tokens"] == load().agent.max_tokens  # not a hardcoded 256
+
+
+def test_truncated_response_is_distinguishable_not_parse_fail(monkeypatch):
+    """The production incident this guards against: finish_reason="length"
+    used to surface as content=None -> "no JSON object in model reply" ->
+    parse-fail, indistinguishable from a genuinely malformed answer. It must
+    instead surface as its own "truncated" reason, naming the budget hit and
+    the tokens actually used, with status == "failed"."""
+    import openai
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            msg = SimpleNamespace(content=None)
+            choice = SimpleNamespace(message=msg, finish_reason="length")
+            usage = SimpleNamespace(completion_tokens=256)
+            return SimpleNamespace(choices=[choice], usage=usage)
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setattr(openai, "OpenAI", FakeClient)
+
+    hist = _hist([10, 11, 12])
+    d = AgentEngine(max_tokens=256).decide("X", hist, 1.0)  # complete=None -> lazy nvidia client
+
+    assert d.target == 1.0  # falls back to holding current_pos
+    assert d.status == "failed"
+    assert "truncated" in d.reason
+    assert "parse-fail" not in d.reason
+    assert "max_tokens=256" in d.reason
+    assert "completion_tokens=256" in d.reason
 
 
 def test_json_extraction_prefers_last_brace_span():

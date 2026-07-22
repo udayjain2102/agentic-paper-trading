@@ -18,6 +18,15 @@ import pandas as pd
 from .strategies.base import Strategy
 
 
+class TruncatedResponse(Exception):
+    """Raised when the model hit max_tokens before finishing its answer.
+
+    Distinct from ValueError so decide()'s except-chain can't mistake a
+    budget cutoff for a malformed reply (see engine.py module docstring /
+    the incident that motivated this: a 256-token cap silently produced
+    content=None, logged as parse-fail, for 109 of 130 bad decisions)."""
+
+
 def nvidia_complete(max_tokens: int | None = None, model: str = "") -> Callable[[str], str]:
     """Build an NVIDIA OpenAI-compatible `complete(prompt) -> text` callable.
 
@@ -52,7 +61,14 @@ def nvidia_complete(max_tokens: int | None = None, model: str = "") -> Callable[
                 {"role": "user", "content": prompt},
             ],
         )
-        return resp.choices[0].message.content or ""
+        choice = resp.choices[0]
+        if choice.finish_reason == "length":
+            raise TruncatedResponse(
+                f"hit max_tokens={max_tokens} (completion_tokens="
+                f"{resp.usage.completion_tokens}) before finishing -- raise "
+                "cfg.agent.max_tokens"
+            )
+        return choice.message.content or ""
 
     return complete
 
@@ -191,7 +207,12 @@ class AgentEngine:
             target = float(current_pos)
             # Distinguish failure classes so decisions.jsonl says what actually
             # happened instead of collapsing everything into "parse-fail".
-            if isinstance(e, (json.JSONDecodeError, KeyError, ValueError, AttributeError)):
+            if isinstance(e, TruncatedResponse):
+                # Must precede the ValueError branch: budget exhaustion is not
+                # a parse failure, and TruncatedResponse deliberately isn't a
+                # ValueError subclass so it can't fall into that branch anyway.
+                reason = f"truncated: {e}"
+            elif isinstance(e, (json.JSONDecodeError, KeyError, ValueError, AttributeError)):
                 reason = f"parse-fail: {type(e).__name__}: {e}"
             elif isinstance(e, RateLimitError):
                 reason = f"rate-limited: {e}"
