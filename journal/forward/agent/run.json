@@ -1,0 +1,12 @@
+{
+  "cost_bps": 1.0,
+  "end": "2026-07-09 00:00:00",
+  "engine": "agent",
+  "notional": 10000.0,
+  "run_id": "agent",
+  "start": "2026-07-09 00:00:00",
+  "symbols": [
+    "NVDA",
+    "SPY"
+  ]
+}
