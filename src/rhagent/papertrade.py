@@ -294,7 +294,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="rhagent.papertrade")
     p.add_argument("--engine", required=True, choices=[*sorted(REGISTRY), "agent"])
     p.add_argument("--symbols", required=True,
-                   help="comma-separated (NVDA,SPY) or 'all' for every cached symbol")
+                   help="comma-separated (NVDA,SPY) or 'all' for the config universe")
     p.add_argument("--days", type=int, default=400)
     p.add_argument("--cost-bps", type=float, default=1.0)
     p.add_argument("--out-dir", default="journal/papertrade")
@@ -308,7 +308,13 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     if args.symbols.strip().lower() == "all":
-        symbols = sorted(p.stem.upper() for p in Path(args.cache_dir).glob("*.csv"))
+        # The config universe, not a glob of the cache dir: a stray CSV left in
+        # data/ (an orphan backfill, a symbol dropped from the universe) is
+        # never refreshed, and bars() intersects every index to the common
+        # dates -- so one stale file silently clips the whole run's window.
+        from .config import load
+
+        symbols = sorted(load().strategy.universe)
     else:
         symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     if not symbols:
