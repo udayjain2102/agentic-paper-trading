@@ -26,6 +26,8 @@ class StrategyConfig:
     params: dict
     universe: list
     overlay: str = "none"  # decision overlay for the paper-trade eval path
+    cost_bps: float = 7.0  # per-side execution cost, in bps
+    fill_mode: str = "close"  # "close" (historical default) or "next_open"
 
 
 @dataclass(frozen=True)

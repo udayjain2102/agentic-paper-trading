@@ -28,6 +28,7 @@ def test_targets_and_reason_carried():
         assert isinstance(d, Decision)
         assert d.target == float(tgt)
         assert f"go {tgt}" in d.reason
+        assert d.status == "ok"
 
 
 def test_allow_short_clamps():
@@ -43,6 +44,11 @@ def test_parse_fail_holds_current_pos():
     assert d.target == 1.0
     assert "parse-fail" in d.reason
     assert "ValueError" in d.reason  # names the real exception, not just "parse-fail"
+    assert "not json at all" in d.reason  # raw reply kept, not a bare crash message
+    # A malformed reply must not be silently recorded as a real trading
+    # decision: status distinguishes it so agent performance metrics can
+    # exclude it instead of counting a forced hold as a genuine flat call.
+    assert d.status == "failed"
 
 
 def test_default_complete_uses_configured_max_tokens(monkeypatch):
@@ -102,6 +108,7 @@ def test_rate_limit_is_distinguishable_and_holds():
     d = AgentEngine(complete=always_429).decide("X", hist, 1.0)
     assert d.target == 1.0          # falls back to holding current_pos
     assert "rate-limited" in d.reason
+    assert d.status == "failed"
 
 
 def test_timeout_is_distinguishable():
@@ -115,6 +122,7 @@ def test_timeout_is_distinguishable():
     d = AgentEngine(complete=times_out).decide("X", hist, 1.0)
     assert d.target == 1.0
     assert "timeout" in d.reason
+    assert d.status == "failed"
 
 
 class _Source:

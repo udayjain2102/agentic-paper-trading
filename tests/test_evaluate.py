@@ -10,6 +10,7 @@ from rhagent.evaluate import (
     compare_runs,
     failure_buckets,
     load_run,
+    spy_benchmark,
 )
 
 
@@ -158,3 +159,34 @@ def test_bucket_labels_skips_dow_and_near_high_when_missing(run_dir):
 def test_load_run_missing_files_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         load_run(tmp_path / "nope")
+
+
+def test_spy_benchmark_matches_strategy_window(tmp_path):
+    # SPY cache spans more days than the strategy window; the benchmark must
+    # be computed only over the strategy's own date range, not the full cache.
+    dates = pd.date_range("2026-01-01", periods=10, freq="D")
+    closes = [100.0 + i for i in range(10)]
+    pd.DataFrame({"date": dates, "close": closes}).to_csv(tmp_path / "SPY.csv", index=False)
+
+    strat_dates = dates[2:6]  # 2026-01-03 .. 2026-01-06, a strict subset
+    out = spy_benchmark(strat_dates, cache_dir=tmp_path)
+
+    assert out["start"] == str(strat_dates.min().date())
+    assert out["end"] == str(strat_dates.max().date())
+    assert out["return"] == pytest.approx(105.0 / 102.0 - 1.0)
+
+
+def test_spy_benchmark_never_extends_past_available_cache(tmp_path):
+    # Off-by-window failure mode: if the SPY cache lags the strategy's
+    # window, the benchmark's reported end date must trail with it rather
+    # than silently comparing against a shorter (or wrong) SPY window.
+    cache_dates = pd.date_range("2026-01-01", periods=5, freq="D")
+    pd.DataFrame({"date": cache_dates, "close": [100.0, 101.0, 102.0, 103.0, 104.0]}).to_csv(
+        tmp_path / "SPY.csv", index=False
+    )
+
+    strat_dates = pd.date_range("2026-01-01", periods=8, freq="D")  # 3 days beyond the cache
+    out = spy_benchmark(strat_dates, cache_dir=tmp_path)
+
+    assert out["end"] == str(cache_dates.max().date())
+    assert pd.Timestamp(out["end"]) <= strat_dates.max()

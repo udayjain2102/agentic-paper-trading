@@ -184,6 +184,7 @@ def test_agent_positions_log_decisions_with_reason(tmp_path):
     assert lines and lines[-1]["symbol"] == "AAA"
     assert lines[-1]["target"] == 1.0
     assert lines[-1]["reason"] == "agent: dip buy"
+    assert lines[-1]["status"] == "ok"
     # second call: all bars cached, nothing new appended
     forward._agent_positions(tmp_path, "AAA", bars, FakeAgent())
     n2 = len((tmp_path / "decisions.jsonl").read_text().splitlines())

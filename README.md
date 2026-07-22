@@ -1,104 +1,50 @@
 # Robinhood Agentic Trading
 
-An autonomous US-equities trading agent. On a cron schedule, an LLM (Nemotron,
-served over NVIDIA's OpenAI-compatible API) reviews the account and market data
-through the Robinhood trading MCP, and decides whether to place trades — inside
-**hard, code-enforced safety rails**. It defaults to **paper (dry-run) mode**
-and only places real orders when you explicitly switch it to live.
+A US-equities **strategy research system**. It runs an unattended paper-trade
+loop (GitHub Actions, Mon-Fri) that ticks rule-based strategies and an LLM agent
+(Nemotron, via NVIDIA's OpenAI-compatible API) forward one day at a time against
+real prices, and scores the resulting track record.
 
-> ⚠️ This trades real money when live. Read [Safety](#safety) before enabling it.
-> The author of this software does not run it or place trades for you — funding
-> the account and flipping `LIVE=true` is your decision, and PDT rules, taxes,
-> and Robinhood's API terms are your responsibility.
+> **It does not place orders.** There is no live order path in this repo: the
+> runner/executor stack that once funnelled orders through the guardrails was
+> removed as dead code (nothing scheduled ever invoked it). `LIVE=true` no
+> longer causes anything to trade, and `guardrails.validate_order` /
+> `check_halted` currently have no production callers — they are retained,
+> tested, and ready for a future order path, not guarding a live one today.
+> Everything this repo does is read-only against market data.
 
-## How it works
+## How it actually runs
 
-One cron tick = one run:
+The scheduled path is a GitHub Actions cron (`.github/workflows/daily-paper-run.yml`,
+Mon-Fri) that runs `scripts/paper_cron.sh`: it refreshes the price cache
+(Yahoo's keyless chart API by default; the Robinhood MCP only if
+`ROBINHOOD_MCP_URL`/`ROBINHOOD_MCP_TOKEN` secrets are set), ticks the forward
+paper-trade record (`rhagent.forward`), and — only if `NVIDIA_API_KEY` is
+set — runs one LLM-agent tick. Nothing here places a real order; this is a
+paper/dry-run system end to end unless you flip `LIVE=true` yourself.
 
-```
-cron → python -m rhagent.runner
-        ├─ load config + guardrail limits
-        ├─ check HALT file + daily-loss kill-switch → abort if tripped
-        ├─ the LLM reasons over account + quotes (read via the RH MCP)
-        │     and proposes orders by calling place_order
-        ├─ every proposed order is validated in code (guardrails.py)
-        ├─ DRY-RUN: log the intended order, place nothing
-        │  LIVE:    place via the broker, record the fill
-        └─ append every decision to journal/runs.jsonl
-```
-
-**The agent never calls the broker's order API directly.** Its `place_order`
-tool is dispatched to `OrderExecutor`, which runs the guardrails first. The
-model cannot talk its way past a hard cap — the cap is enforced in code.
 
 ## Layout
 
 | File | Role |
 |------|------|
-| `src/rhagent/guardrails.py` | Pure, exhaustively-tested safety checks. The core. |
-| `src/rhagent/executor.py` | The single funnel every order passes through. |
+| `scripts/paper_cron.sh` | **The real scheduled entry point** — refresh, forward tick, optional agent tick. |
+| `src/rhagent/refresh.py` | Historical bars: Yahoo by default, RH MCP if secrets are set. Cached to `data/*.csv`. |
+| `src/rhagent/forward.py` | Ticks the forward paper-trade record the scheduled run and dashboard read from. |
+| `src/rhagent/guardrails.py` | Pure, exhaustively-tested safety checks. |
 | `src/rhagent/broker.py` | The only code that touches the broker (`MockBroker` / `McpBroker`). |
 | `src/rhagent/mcp_session.py` | Connects to the Robinhood MCP (streamable HTTP). |
-| `src/rhagent/agent.py` | The LLM decision loop (manual agentic loop, Nemotron via NVIDIA's API). |
-| `src/rhagent/runner.py` | Orchestrates one cron tick. |
-| `src/rhagent/journal.py` | Append-only JSONL audit trail. |
 | `config.yaml` | Guardrail limits + model config. |
 | `src/rhagent/strategies/` | Rule-based strategies (mean-reversion, momentum, linreg). |
 | `src/rhagent/backtest.py` | Offline backtest engine (equity curve + metrics). |
-| `src/rhagent/data.py` | Historical bars via the RH MCP, cached to `data/*.csv`. |
-| `src/rhagent/compare.py` | Rank all strategies by total return, pick the winner. |
-| `src/rhagent/strategy_runner.py` | Turns a strategy's target positions into orders. |
 
 ## Setup
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-cp .env.example .env   # then fill in ANTHROPIC_API_KEY
+cp .env.example .env   # then fill in NVIDIA_API_KEY (needed for the LLM agent path)
 ```
-
-## Running
-
-```bash
-# Dry-run (default). With no Robinhood MCP token set, uses a simulated account.
-.venv/bin/python -m rhagent.runner
-```
-
-Schedule it (example: every 30 min during market hours, Mon–Fri):
-
-```cron
-*/30 13-20 * * 1-5  cd /path/to/project && .venv/bin/python -m rhagent.runner >> cron.log 2>&1
-```
-
-### Going live
-
-1. **Authenticate the Robinhood MCP.** In an interactive `claude` session in
-   this directory, run `/mcp`, pick `robinhood-trading`, and complete the OAuth
-   flow. Then put the resulting bearer token in `.env` as `ROBINHOOD_MCP_TOKEN`.
-   (Confirm the MCP's actual read/order tool names against its `list_tools` and
-   adjust the mapping in `broker.py` if they differ from the placeholders.)
-2. **Watch it on paper first.** Let it run in dry-run and review
-   `journal/runs.jsonl` until you trust its behavior.
-3. **Flip the switch.** Set `LIVE=true` in your environment. Only the literal
-   string `true` enables live trading; anything else stays paper.
-
-## Backtesting & strategy mode
-
-Rank the four strategies over ~1yr of daily bars and pick the best by total return:
-
-```bash
-.venv/bin/python -m rhagent.compare
-```
-
-It caches price data under `data/` (gitignored). Paste the printed `strategy:`
-block into `config.yaml`, then run the winner through the normal guardrails:
-
-```bash
-STRATEGY_MODE=true .venv/bin/python -m rhagent.runner
-```
-
-Strategy mode is dry-run unless `LIVE=true`, and every order it emits passes
-through the same `OrderExecutor`/guardrails as the LLM path.
 
 ## How a strategy is graded
 
@@ -117,13 +63,24 @@ not need to clear its gates to be promoted.
 
 ## Safety
 
-- **Dry-run by default.** `LIVE` must equal `true` to place real orders.
-- **Per-trade cap, total-deployed cap, max new positions/run, max orders/run** —
-  all in `config.yaml`, all enforced in `guardrails.py`.
-- **Daily realized-loss kill switch** halts trading for the day once breached.
-- **`HALT` file** — `touch HALT` in the project root to stop all trading
-  immediately on the next run.
-- **US equities only** — non-equity symbols are rejected.
+**The current safety property is that there is no order path at all.** Nothing
+in this repo can place a trade; the scheduled run only reads prices and appends
+to a paper record.
+
+The guardrail primitives below are implemented and exhaustively tested, but are
+**not currently wired to anything** — they were enforced by `executor.py` /
+`runner.py`, which were removed as dead code. Treat this list as the contract
+any future order path must satisfy, not as protection in force today:
+
+- Per-trade cap, total-deployed cap, max new positions/run, max orders/run —
+  defined in `config.yaml`, implemented in `guardrails.validate_order`.
+- Daily realized-loss kill switch and `HALT` file — implemented in
+  `guardrails.check_halted`, called by nothing.
+- US equities only — non-equity symbols are rejected.
+
+If you reintroduce order placement, route it through `guardrails.validate_order`
+before `broker.place_order` and re-verify the caps end to end. Do not assume the
+`LIVE` flag still gates anything — it does not.
 
 ## Tests
 
@@ -131,8 +88,11 @@ not need to clear its gates to be promoted.
 .venv/bin/python -m pytest
 ```
 
-The guardrails are covered exhaustively (every rejection path), the broker is
-mocked, and an end-to-end dry-run smoke test asserts zero orders are placed.
+The guardrails are still covered exhaustively (every rejection path) and the
+broker is mocked, even though neither is on a live path today. The dry-run
+smoke test was removed along with the runner it exercised.
+CI (`.github/workflows/tests.yml`) runs this suite on every push and PR; the
+daily paper run also runs it first and fails fast if it doesn't pass.
 
 ## Out of scope (v1)
 

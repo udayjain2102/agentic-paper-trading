@@ -62,6 +62,14 @@ class Decision:
     target: float  # desired position in {-1, 0, +1}
     reason: str    # human-readable why
     conviction: float | None = None  # per-bar signal strength, if the strategy has one
+    # "ok": a genuine model/strategy verdict. "failed": decide() couldn't get
+    # one (parse failure, timeout, rate limit, API error) and fell back to
+    # holding current_pos. Default "ok" so every non-agent caller (and every
+    # pre-existing positional/keyword construction) is unaffected; only
+    # AgentEngine's except branch sets "failed". Consumers that compute
+    # agent performance/hit-rate should filter on status == "ok" -- a failed
+    # tick is not a trading decision, just a forced hold.
+    status: str = "ok"
 
 
 class DecisionEngine(Protocol):
@@ -147,9 +155,10 @@ class AgentEngine:
             f"last_close={last:.2f} momentum_5d={mom5:+.4f} "
             f"vol_20d={vol20:.4f} current_pos={current_pos:+.0f}\n"
             f"{lessons}"
-            'Reply with STRICT JSON only: {"target": -1 | 0 | 1, '
-            '"reason": "<=15 words"} where target is the desired position '
-            "(-1 short, 0 flat, 1 long)."
+            "Respond with ONLY this JSON object and nothing else -- no "
+            "reasoning, no markdown fences, no text before or after it: "
+            '{"target": -1 | 0 | 1, "reason": "<=15 words"} where target is '
+            "the desired position (-1 short, 0 flat, 1 long)."
         )
 
     def decide(
@@ -160,6 +169,7 @@ class AgentEngine:
         if self.complete is None:
             self.complete = self._default_complete()
         prompt = self._prompt(symbol, history, current_pos)
+        status = "ok"
         try:
             raw = self.complete(prompt)
             # findall + last match, not a single greedy search: a reasoning model's
@@ -177,6 +187,7 @@ class AgentEngine:
                 target = 0.0
             reason = str(obj.get("reason", ""))
         except Exception as e:
+            status = "failed"
             target = float(current_pos)
             # Distinguish failure classes so decisions.jsonl says what actually
             # happened instead of collapsing everything into "parse-fail".
@@ -191,4 +202,4 @@ class AgentEngine:
             else:
                 reason = f"error: {type(e).__name__}: {e}"
             reason = reason[:180]
-        return Decision(target=target, reason=f"agent: {reason}")
+        return Decision(target=target, reason=f"agent: {reason}", status=status)

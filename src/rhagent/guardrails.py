@@ -1,8 +1,11 @@
 """Pure, side-effect-free safety checks.
 
-This module is the heart of the system's safety. It performs no I/O, talks to no
-network, and holds no state of its own — every input is passed in, every output
-is a decision. That makes it trivially testable and impossible to surprise.
+This module is the safety core of the manual-invocation agent path
+(runner.py / agent.py / executor.py) — it is not on the scheduled paper-run
+path (scripts/paper_cron.sh), which never calls the LLM order-placement loop.
+It performs no I/O, talks to no network, and holds no state of its own —
+every input is passed in, every output is a decision. That makes it trivially
+testable and impossible to surprise.
 
 The agent never calls the broker's order API directly; every proposed order
 flows through ``validate_order`` first (see ``executor.py``). The model cannot

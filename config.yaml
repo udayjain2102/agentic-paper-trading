@@ -50,6 +50,16 @@ strategy:
   name: mean_reversion
   params: {}
   overlay: conviction
+  # Per-side execution cost, in bps. 1bp badly understates real cost for this
+  # universe; 5-10bp all-in (commission + spread + slippage) is more realistic.
+  cost_bps: 7.0
+  # 'close' fills a target change at the same bar's close the signal was
+  # decided from -- the historical default, but you can't observe a close and
+  # trade at it (flatters strategies like mean-reversion that buy dips at the
+  # dip's own close). 'next_open' fills at the following bar's open instead.
+  # Kept at 'close' here so existing runs stay comparable; pass
+  # --fill-mode next_open (papertrade CLI) to opt into the realistic fill.
+  fill_mode: close
   universe: [AAPL, ABBV, ABT, ADBE, AMD, AMGN, AMZN, AVGO, AXP, BA, BAC, BLK, BMY,
     C, CAT, CMCSA, COST, CRM, CSCO, CVX, DHR, DIS, GE, GILD, GOOGL, GS, HD, HON,
     IBM, INTC, JNJ, JPM, KO, LIN, LLY, LOW, MA, MCD, MDT, META, MRK, MS, MSFT,

@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from rhagent.engine import Decision
-from rhagent.papertrade import PaperTrader
+from rhagent.papertrade import NextOpenFill, PaperTrader
 
 
 def _bars(closes):
@@ -145,6 +145,34 @@ def test_diverging_symbol_indices_raise():
     script = {"A": [0, 1, 1, 0], "B": [0, 1, 0]}
     with pytest.raises(ValueError, match="indices differ"):
         PaperTrader(engine=ScriptedEngine(script), source=FakeSource(frames)).run()
+
+
+def test_next_open_fill_uses_t_plus_1_open_not_t_close(tmp_path):
+    # closes and opens deliberately diverge so a same-close fill is
+    # distinguishable from a next-bar-open fill.
+    closes = [100.0, 110.0, 121.0, 133.1]
+    opens = [99.0, 108.0, 118.0, 130.0]
+    idx = pd.date_range("2026-01-01", periods=4, freq="D", name="date")
+    df = pd.DataFrame(
+        {"open": opens, "high": closes, "low": closes, "close": closes,
+         "volume": [1e6] * 4},
+        index=idx,
+    )
+    trader = PaperTrader(
+        engine=ScriptedEngine({"A": [0, 1, 1, 0]}),
+        source=FakeSource({"A": df}),
+        fill=NextOpenFill(),
+        cost_bps=0.0,
+        out_dir=tmp_path,
+        run_id="2026-07-11T00-00-00Z-deadbeef",
+    )
+    run_dir = trader.run()
+    trades = [json.loads(l) for l in (run_dir / "trades.jsonl").read_text().splitlines()]
+    t = trades[0]
+    # target flips 0->1 on bar 1 (decided from bar 1's close, 110); the fill
+    # must land on bar 2's open (118), never bar 1's own close (110).
+    assert t["entry_price"] == opens[2]
+    assert t["entry_price"] != closes[1]
 
 
 def test_determinism_same_inputs_same_ledger(tmp_path):

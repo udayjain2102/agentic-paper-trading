@@ -58,11 +58,16 @@ def _agent_positions(eval_dir: Path, symbol: str, bars: pd.DataFrame,
         pos = d.target
         decided[ts] = pos
         new_rows.append({"date": str(ts.date()), "symbol": symbol,
-                         "target": pos, "reason": d.reason})
+                         "target": pos, "reason": d.reason,
+                         "status": getattr(d, "status", "ok")})
     out = pd.Series(decided).reindex(bars.index).astype(float)
     out.rename_axis("date").rename("pos").to_csv(cache)
-    # Append-only decisions log: without the reason, a deliberate flat is
-    # indistinguishable from a "parse-fail: held" API failure after the fact.
+    # Append-only decisions log. `status` ("ok" vs "failed") makes a genuine
+    # verdict distinguishable from a parse-fail/timeout/API-error fallback
+    # without sniffing the reason string; agent performance metrics should
+    # filter to status == "ok" rather than counting a failed tick as a real
+    # flat decision. Rows written before this field existed have no "status"
+    # key -- readers should treat a missing key as unknown/legacy, not "ok".
     if new_rows:
         with (eval_dir / "decisions.jsonl").open("a") as f:
             for r in new_rows:
@@ -221,6 +226,40 @@ def _report(eval_dir: Path) -> None:
     print(f"  total_return   {a['total_return']:+.2%}")
     print(f"  sharpe         {a['sharpe']:.2f}")
     print(f"  max_drawdown   {a['max_drawdown']:.2%}")
+    _report_decision_quality(eval_dir)
+
+
+def _report_decision_quality(eval_dir: Path) -> None:
+    """Print the share of ticks that were API/parse failures, not verdicts.
+
+    A failed tick holds the prior position, so its day still lands in the
+    return series -- the P&L is real, but it is the P&L of an outage, not of a
+    decision. Printing the failure rate next to the return keeps the headline
+    from being read as "the agent chose flat" when it means "the agent never
+    answered". Rows predating the `status` field are counted as unknown.
+    """
+    log = eval_dir / "decisions.jsonl"
+    if not log.exists():
+        return
+    ok = failed = unknown = 0
+    for line in log.read_text().splitlines():
+        if not line.strip():
+            continue
+        status = json.loads(line).get("status")
+        if status == "ok":
+            ok += 1
+        elif status is None:
+            unknown += 1
+        else:
+            failed += 1
+    total = ok + failed + unknown
+    if not total:
+        return
+    print(f"  decisions      {ok}/{total} genuine verdicts"
+          f"  ({failed} failed, {unknown} legacy/unknown)")
+    if ok < total:
+        print(f"  !! {(total - ok) / total:.0%} of ticks were not real decisions -- "
+              f"returns above include days the model never answered")
 
 
 def main(argv: list[str] | None = None) -> int:

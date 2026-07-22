@@ -35,6 +35,11 @@ jobs:
 
       - run: pip install -r requirements.txt
 
+      - name: run tests (fail fast, don't ship a regression)
+        env:
+          PYTHONPATH: src
+        run: python -m pytest -q
+
       - name: refresh + tick + persist
         env:
           ROBINHOOD_MCP_URL: ${{ secrets.ROBINHOOD_MCP_URL }}

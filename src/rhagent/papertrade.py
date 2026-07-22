@@ -31,7 +31,10 @@ class MarketSource(Protocol):
 
 
 class FillModel(Protocol):
-    def fill(self, symbol: str, delta: float, bar: pd.Series) -> float: ...
+    name: str
+    def fill(
+        self, symbol: str, delta: float, bar: pd.Series, next_bar: pd.Series | None = None
+    ) -> float: ...
 
 
 class HistoricalSource:
@@ -72,10 +75,31 @@ class HistoricalSource:
 
 
 class CloseFill:
-    """Perfect fill at the bar's close. cost_bps is charged by the loop."""
+    """Perfect fill at the bar's close -- the same close the signal was decided
+    from. cost_bps is charged by the loop. Unrealistic (you can't observe a
+    close and trade at it) but kept as the historical default so old runs stay
+    comparable; use NextOpenFill for an executable fill assumption."""
 
-    def fill(self, symbol: str, delta: float, bar: pd.Series) -> float:
+    name = "close"
+
+    def fill(self, symbol: str, delta: float, bar: pd.Series, next_bar: pd.Series | None = None) -> float:
         return float(bar["close"])
+
+
+class NextOpenFill:
+    """Fill at the *next* bar's open -- the earliest price actually tradable
+    after a signal computed from this bar's close. Falls back to this bar's
+    close only at the true end of history, where no next bar exists (matches
+    the loop's own end-of-data force-close)."""
+
+    name = "next_open"
+
+    def fill(self, symbol: str, delta: float, bar: pd.Series, next_bar: pd.Series | None = None) -> float:
+        if next_bar is None:
+            return float(bar["close"])
+        if "open" not in next_bar.index:
+            raise ValueError(f"fill_mode=next_open requires an 'open' column; missing for {symbol}")
+        return float(next_bar["open"])
 
 
 def new_run_id(now: datetime | None = None, suffix: str | None = None) -> str:
@@ -97,7 +121,7 @@ class PaperTrader:
         engine: StrategyEngine,
         source: MarketSource,
         fill: FillModel | None = None,
-        cost_bps: float = 1.0,
+        cost_bps: float = 7.0,
         notional: float = 10_000.0,
         out_dir: str | Path = "journal/papertrade",
         run_id: str | None = None,
@@ -107,6 +131,9 @@ class PaperTrader:
         self.engine = engine
         self.source = source
         self.fill = fill or CloseFill()
+        # Whether a position just entered under this fill model must skip the
+        # close[t]->open[t+1] gap in its first day's return (see run()).
+        self._next_open = isinstance(self.fill, NextOpenFill)
         self.cost_bps = cost_bps
         self.notional = notional
         self.out_dir = Path(out_dir)
@@ -121,6 +148,8 @@ class PaperTrader:
         for s, df in frames.items():
             if len(df) < 2:
                 raise ValueError(f"history too short for {s}: {len(df)} bars")
+            if self._next_open and "open" not in df.columns:
+                raise ValueError(f"fill_mode=next_open requires an 'open' column; missing for {s}")
 
         symbols = sorted(frames)
         index = frames[symbols[0]].index
@@ -131,6 +160,10 @@ class PaperTrader:
                     "align/intersect the cached ranges before running"
                 )
         pos: dict[str, float] = {s: 0.0 for s in symbols}
+        # True for a symbol whose position was entered on the immediately
+        # preceding bar under next-open fill: this bar's return must start
+        # from today's open (the actual fill), not yesterday's close.
+        fresh: dict[str, bool] = {s: False for s in symbols}
         open_trades: dict[str, dict] = {}
         trades: list[dict] = []
         daily_net: list[float] = []
@@ -183,12 +216,14 @@ class PaperTrader:
                 if target != 0.0 and prev == 0.0 and i == len(index) - 1:
                     target = prev
 
-                # accrue yesterday's position over today's move
+                # accrue yesterday's position over today's move. Under
+                # next-open fill, a position entered on the previous bar
+                # wasn't tradable until today's open, so it skips the
+                # close[t-1]->open[t] gap and starts from today's open instead.
                 ret = 0.0
                 if i > 0:
-                    ret = prev * (
-                        float(bar["close"]) / float(bars["close"].iloc[i - 1]) - 1.0
-                    )
+                    base = float(bar["open"]) if fresh[sym] else float(bars["close"].iloc[i - 1])
+                    ret = prev * (float(bar["close"]) / base - 1.0)
                 # Unlike backtest.net_returns (which drops the final row and its
                 # cost), this loop charges turnover on every bar including the
                 # last, so total_return can differ slightly when the position
@@ -197,7 +232,9 @@ class PaperTrader:
                 net_today.append(ret - turnover * self.cost_bps / 1e4)
 
                 if target != prev:
-                    price = self.fill.fill(sym, target - prev, bar)
+                    next_bar = bars.iloc[i + 1] if i + 1 < len(bars) else None
+                    price = self.fill.fill(sym, target - prev, bar, next_bar)
+                    fresh[sym] = self._next_open
                     if prev != 0.0:
                         close_trade(sym, ts, price, d.reason, i)
                     if target != 0.0:
@@ -215,6 +252,8 @@ class PaperTrader:
                             "_entry_i": i,
                         }
                     pos[sym] = target
+                else:
+                    fresh[sym] = False
             daily_net.append(sum(net_today) / len(symbols))
 
         # force-close whatever is still open at the last bar
@@ -236,6 +275,7 @@ class PaperTrader:
             "start": str(index[0]),
             "end": str(index[-1]),
             "cost_bps": self.cost_bps,
+            "fill_mode": self.fill.name,
             "notional": self.notional,
             "overlay": self.overlay.name,
             "created_ts": datetime.now(timezone.utc).isoformat(),
@@ -296,7 +336,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--symbols", required=True,
                    help="comma-separated (NVDA,SPY) or 'all' for the config universe")
     p.add_argument("--days", type=int, default=400)
-    p.add_argument("--cost-bps", type=float, default=1.0)
+    p.add_argument("--cost-bps", type=float, default=None,
+                   help="per-side cost in bps (default: config.yaml strategy.cost_bps)")
+    p.add_argument("--fill-mode", default=None, choices=["close", "next_open"],
+                   help="'close' fills at the same bar's close the signal was decided "
+                        "from (historical default -- not really tradable); 'next_open' "
+                        "fills at the following bar's open instead (default: config.yaml "
+                        "strategy.fill_mode)")
     p.add_argument("--out-dir", default="journal/papertrade")
     p.add_argument("--cache-dir", default="data")
     p.add_argument("--no-lessons", action="store_true",
@@ -307,14 +353,15 @@ def main(argv: list[str] | None = None) -> int:
                         "locked-in conviction gate; pass 'none' for the raw strategy)")
     args = p.parse_args(argv)
 
-    if args.symbols.strip().lower() == "all":
-        # The config universe, not a glob of the cache dir: a stray CSV left in
-        # data/ (an orphan backfill, a symbol dropped from the universe) is
-        # never refreshed, and bars() intersects every index to the common
-        # dates -- so one stale file silently clips the whole run's window.
-        from .config import load
+    # The config universe, not a glob of the cache dir: a stray CSV left in
+    # data/ (an orphan backfill, a symbol dropped from the universe) is
+    # never refreshed, and bars() intersects every index to the common
+    # dates -- so one stale file silently clips the whole run's window.
+    from .config import load
 
-        symbols = sorted(load().strategy.universe)
+    cfg_strategy = load().strategy
+    if args.symbols.strip().lower() == "all":
+        symbols = sorted(cfg_strategy.universe)
     else:
         symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     if not symbols:
@@ -334,9 +381,15 @@ def main(argv: list[str] | None = None) -> int:
     else:
         engine = StrategyEngine(build(args.engine, {}))  # long-only (shorting disabled)
 
+    cost_bps = args.cost_bps if args.cost_bps is not None else (
+        cfg_strategy.cost_bps if cfg_strategy else 7.0
+    )
+    fill_mode = args.fill_mode or (cfg_strategy.fill_mode if cfg_strategy else "close")
+    fill = NextOpenFill() if fill_mode == "next_open" else CloseFill()
+
     overlay = build_overlay(args.overlay)
     trader = PaperTrader(
-        engine=engine, source=source, cost_bps=args.cost_bps,
+        engine=engine, source=source, fill=fill, cost_bps=cost_bps,
         out_dir=args.out_dir, overlay=overlay, lessons=lessons,
     )
     run_dir = trader.run()

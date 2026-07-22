@@ -36,6 +36,7 @@ from rhagent.evaluate import (  # noqa: E402
     compare_runs,
     failure_buckets,
     load_run,
+    spy_benchmark,
 )
 from rhagent.evaluate_robust import robust_table  # noqa: E402
 from rhagent.features import flatten_trades  # noqa: E402
@@ -166,7 +167,18 @@ def _equity_svg(net: pd.Series, width: int = 900, height: int = 300) -> str:
 
 # ── HTML fragments (single-run detail page) ─────────────────────────────────
 
-def _scorecard(a: dict, trades: pd.DataFrame, notional: float) -> str:
+def _spy_caveat(spy: dict) -> str:
+    if not spy.get("start"):
+        return "<p class='muted'>SPY buy-and-hold benchmark unavailable for this window (price cache does not cover it).</p>"
+    return (
+        f"<p class='muted'>SPY buy-and-hold over the same window ({spy['start']} → {spy['end']}): "
+        f"<b>{_pct(spy['return'])}</b>. The strategy is not always fully invested, so this isn't "
+        "apples-to-apples on exposure. This run's return/Sharpe is measured over the same window the "
+        "strategy was selected on — in-sample, selection-biased.</p>"
+    )
+
+
+def _scorecard(a: dict, trades: pd.DataFrame, notional: float, spy: dict | None = None) -> str:
     def tile(label: str, value: str, cls: str = "", sub: str = "") -> str:
         subhtml = f"<div class='tile-s'>{sub}</div>" if sub else ""
         return (
@@ -183,7 +195,7 @@ def _scorecard(a: dict, trades: pd.DataFrame, notional: float) -> str:
 
     ret_cls = "up" if a["total_return"] >= 0 else "down"
     pf_cls = "up" if a["profit_factor"] >= 1 else "down"
-    return "<div class='tiles'>" + "".join([
+    tiles = [
         tile("current balance", _money(balance), bal_cls,
              sub=f"start {_money(notional)} · net {'+' if net_pl >= 0 else ''}{_money(net_pl)}"),
         tile("gross trade wins", _money(winnings), "up"),
@@ -197,7 +209,11 @@ def _scorecard(a: dict, trades: pd.DataFrame, notional: float) -> str:
         tile("sharpe", _num(a["sharpe"])),
         tile("max drawdown", _pct(a["max_drawdown"]), "down"),
         tile("avg holding", f"{a['avg_holding_bars']:.2f} bars"),
-    ]) + "</div>"
+    ]
+    if spy is not None:
+        tiles.append(tile("SPY buy & hold", _pct(spy["return"]) if spy.get("start") else "n/a"))
+    caveat = _spy_caveat(spy) if spy is not None else ""
+    return "<div class='tiles'>" + "".join(tiles) + "</div>" + caveat
 
 
 def _trades_table(trades: pd.DataFrame) -> str:
@@ -376,6 +392,7 @@ def _run_section(run_dir: Path, anchored: bool = False) -> str:
     meta, trades, net = load_run(run_dir)
     a = aggregate(trades, net)
     buckets = failure_buckets(trades)
+    spy = spy_benchmark(net.index)
     rid = meta["run_id"]
 
     chips = "".join(
@@ -396,7 +413,7 @@ def _run_section(run_dir: Path, anchored: bool = False) -> str:
   <div class="meta">{chips}</div>
 
   <h3>Scorecard</h3>
-  {_scorecard(a, trades, meta["notional"])}
+  {_scorecard(a, trades, meta["notional"], spy)}
 
   <h3>Equity curve</h3>
   {_equity_svg(net)}
@@ -444,10 +461,12 @@ def render(run_dir: Path, base_dir: Path) -> str:
 # filter, trade filter, and a per-run detail drawer. No React, no build step.
 
 def _forward_leg(eval_dir: Path) -> dict:
+    empty_spy = {"return": 0.0, "start": None, "end": None, "n_days": 0}
     if not (eval_dir / "run.json").exists():
         return {
             "engine": "", "symbols": [], "start": "", "end": "", "days": 0,
             "ret": 0.0, "pnl": 0.0, "notional": 10_000.0, "sharpe": 0.0, "dd": 0.0,
+            "spy": empty_spy,
         }
     meta, trades, net = load_run(eval_dir)
     a = aggregate(trades, net)
@@ -458,6 +477,7 @@ def _forward_leg(eval_dir: Path) -> dict:
         "days": len(net), "ret": a["total_return"],
         "pnl": _return_pnl(a["total_return"], notional),
         "notional": notional, "sharpe": a["sharpe"], "dd": a["max_drawdown"],
+        "spy": spy_benchmark(net.index),
     }
 
 
@@ -514,6 +534,7 @@ def _win_score(run_dir: Path) -> dict:
         "n": a["n_trades"], "won": won, "lost": lost, "wr": a["win_rate"], "pf": a["profit_factor"],
         "avgWin": a["avg_win"], "avgLoss": a["avg_loss"], "sharpe": a["sharpe"], "dd": a["max_drawdown"],
         "avgHold": a["avg_holding_bars"], "gw": gw, "gl": gl,
+        "spy": spy_benchmark(net.index),
     }
 
 
@@ -767,8 +788,11 @@ _CONTROL_ROOM_TEMPLATE = r"""<!doctype html>
         <h3 style="margin:0;font-size:15px;font-weight:600">Locked-config scorecard</h3>
         <span id="cr-winid" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)"></span>
         <span style="padding:2px 9px;border-radius:6px;background:rgba(5,196,107,.14);color:var(--up);font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace">FORWARD CANDIDATE</span>
+        <span style="padding:2px 9px;border-radius:6px;background:rgba(255,176,32,.14);color:var(--warn);font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace">IN-SAMPLE</span>
       </div>
+      <div style="font-size:11.5px;color:var(--muted);margin:-8px 0 14px">This return/Sharpe is measured over the same window the strategy was selected on — selection-biased, not out-of-sample evidence.</div>
       <div id="cr-scoretiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:11px"></div>
+      <div id="cr-scorespy" style="margin-top:12px;font-size:11.5px;color:var(--muted)"></div>
     </section>
 
     <section style="margin-top:30px;display:grid;grid-template-columns:minmax(0,0.85fr) minmax(0,1.15fr);gap:20px;align-items:stretch">
@@ -879,12 +903,16 @@ function renderVerdict() {
     else { badge = 'TIED'; note = 'Agent and baseline forward P&L are tied so far.'; }
   }
   const sub = leg => `${leg.days} day${leg.days === 1 ? '' : 's'} · ${(leg.symbols || []).join(', ') || '—'} · ${leg.ret >= 0 ? 'up' : 'down'}`;
+  const spyLine = leg => leg.spy && leg.spy.start
+    ? `SPY buy&amp;hold ${leg.spy.start}→${leg.spy.end}: <b style="color:var(--fg)">${pct(leg.spy.return)}</b>`
+    : 'SPY buy&amp;hold: not enough tracked days yet';
   document.getElementById('cr-verdict').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:0;align-items:stretch;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden">
       <div style="padding:22px 26px;display:flex;flex-direction:column;gap:6px">
         <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600">LLM Agent</div>
         <div style="font-size:34px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em">${money(agent.pnl)}</div>
         <div style="font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${sub(agent)}</div>
+        <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${spyLine(agent)}</div>
       </div>
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:22px 30px;background:var(--panel2);border-left:1px solid var(--line);border-right:1px solid var(--line);min-width:220px">
         <div style="padding:6px 16px;border-radius:999px;background:rgba(255,176,32,.12);border:1px solid rgba(255,176,32,.35);color:var(--warn);font-weight:700;font-size:13px;letter-spacing:.03em">${badge}</div>
@@ -894,19 +922,21 @@ function renderVerdict() {
         <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--purple);font-weight:600">Mean-Reversion Baseline</div>
         <div style="font-size:34px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em">${money(base.pnl)}</div>
         <div style="font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${sub(base)}</div>
+        <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${spyLine(base)}</div>
       </div>
     </div>
     <div style="margin-top:10px;display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(5,196,107,.06);border:1px solid rgba(5,196,107,.22);border-radius:12px">
       <span style="width:8px;height:8px;border-radius:50%;background:var(--up);flex:none;box-shadow:0 0 0 4px rgba(5,196,107,.15)"></span>
       <div style="font-size:13px;color:var(--fg)"><b style="color:var(--up)">Research winner locked:</b> ${esc(DATA.lockedEngine)}, gated by the <b>${esc(DATA.lockedOverlay || 'no')}</b> overlay. This is the config the forward track is now paper-trading.</div>
-    </div>`;
+    </div>
+    <div style="margin-top:8px;font-size:11px;color:var(--muted)">SPY benchmark is buy-and-hold over each leg's own tracked window; the strategy is not always fully invested, so this isn't an apples-to-apples exposure comparison.</div>`;
 }
 
 function renderKpis() {
   const S = DATA.winScore, f = DATA.forward.agent;
   const kpis = [
     { label: 'Forward balance', value: money(f.notional + f.pnl), color: 'var(--fg)', bar: 'var(--accent)', sub: `${f.days} day(s) tracked · net ${pct(f.ret)}` },
-    { label: 'Locked-config return', value: pct(S.ret), color: 'var(--up)', bar: 'var(--up)', sub: `${esc(DATA.lockedEngine)} + ${esc(DATA.lockedOverlay)}` },
+    { label: 'Locked-config return', value: pct(S.ret), color: 'var(--up)', bar: 'var(--up)', sub: `${esc(DATA.lockedEngine)} + ${esc(DATA.lockedOverlay)} · in-sample` },
     { label: 'Win rate', value: pctAbs(S.wr, 1), color: 'var(--up)', bar: 'var(--up)', sub: `${S.won}W / ${S.lost}L` },
     { label: 'Profit factor', value: S.pf.toFixed(2), color: 'var(--up)', bar: 'var(--up)', sub: `${money(S.gw, 0)} / ${money(S.gl, 0)}` },
     { label: 'Max drawdown', value: pctAbs(S.dd, 2), color: 'var(--down)', bar: 'var(--down)', sub: `${S.avgHold.toFixed(1)} bar avg hold` },
@@ -1103,6 +1133,10 @@ function renderScorecard() {
       <div style="font-size:20px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:${t.color};letter-spacing:-.01em">${esc(t.value)}</div>
       <div style="font-size:11px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.04em">${esc(t.label)}</div>
     </div>`).join('');
+  const spy = S.spy;
+  document.getElementById('cr-scorespy').textContent = spy && spy.start
+    ? `SPY buy-and-hold over the same window (${spy.start} → ${spy.end}): ${pct(spy.return)} — vs strategy total return ${pct(S.ret)}. The strategy is not always fully invested, so this isn't apples-to-apples on exposure.`
+    : 'SPY buy-and-hold benchmark unavailable for this window (price cache does not cover it).';
 }
 
 function renderBuckets() {

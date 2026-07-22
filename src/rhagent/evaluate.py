@@ -135,6 +135,33 @@ def failure_buckets(trades: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def spy_benchmark(dates: pd.DatetimeIndex, cache_dir: str | Path = "data") -> dict:
+    """SPY buy-and-hold return over the same window as `dates` (a strategy's
+    return-series index).
+
+    Windowed to whatever SPY.csv rows fall inside [dates.min(), dates.max()]
+    -- if the price cache lags the strategy's window, the reported end date
+    trails it too. The window actually used is always returned alongside the
+    return so a stale cache can't quietly be read as covering the full
+    strategy window.
+    """
+    empty = {"return": 0.0, "start": None, "end": None, "n_days": 0}
+    spy_path = Path(cache_dir) / "SPY.csv"
+    if len(dates) == 0 or not spy_path.exists():
+        return empty
+    spy = pd.read_csv(spy_path, parse_dates=["date"]).set_index("date")["close"].sort_index()
+    start, end = pd.Timestamp(dates.min()), pd.Timestamp(dates.max())
+    window = spy[(spy.index >= start) & (spy.index <= end)]
+    if len(window) < 2:
+        return empty
+    return {
+        "return": float(window.iloc[-1] / window.iloc[0] - 1.0),
+        "start": str(window.index[0].date()),
+        "end": str(window.index[-1].date()),
+        "n_days": int(len(window)),
+    }
+
+
 def compare_runs(base_dir: str | Path) -> pd.DataFrame:
     base_dir = Path(base_dir)
     rows = []

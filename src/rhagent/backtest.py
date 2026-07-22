@@ -30,15 +30,35 @@ class BacktestResult:
     n_days: int
 
 
-def net_returns(bars: pd.DataFrame, positions: pd.Series, cost_bps: float = 1.0) -> pd.Series:
+def net_returns(
+    bars: pd.DataFrame, positions: pd.Series, cost_bps: float = 7.0, fill: str = "close"
+) -> pd.Series:
+    """fill='close' (default): position pos[t] (decided from data through close[t])
+    earns close[t]->close[t+1] -- i.e. it assumes you can trade at the very close
+    that produced the signal. fill='next_open': on any day the position changes,
+    it instead earns open[t+1]->close[t+1], skipping the close[t]->open[t+1] gap
+    it couldn't have traded during (a day of unchanged position still earns the
+    plain close-to-close move -- there was no re-entry to delay).
+    """
     close = bars["close"].astype(float)
-    fwd = close.pct_change().shift(-1)  # return from t to t+1, indexed at t
     pos = positions.reindex(close.index).fillna(0).astype(float)
 
     turnover = pos.diff().abs()
     if len(pos):
         turnover.iloc[0] = abs(pos.iloc[0])
     cost = turnover * (cost_bps / 1e4)
+
+    if fill == "close":
+        fwd = close.pct_change().shift(-1)  # return from t to t+1, indexed at t
+    elif fill == "next_open":
+        if "open" not in bars.columns:
+            raise ValueError("fill='next_open' requires an 'open' column in bars")
+        open_ = bars["open"].astype(float).reindex(close.index)
+        fwd_held = close.pct_change().shift(-1)
+        fwd_entered = close.shift(-1) / open_.shift(-1) - 1.0
+        fwd = fwd_held.where(turnover == 0, fwd_entered)
+    else:
+        raise ValueError(f"unknown fill mode: {fill!r}")
 
     net = pos * fwd - cost
     return net[fwd.notna()].fillna(0.0)
@@ -76,5 +96,7 @@ def result_from_returns(net: pd.Series) -> BacktestResult:
     )
 
 
-def run(bars: pd.DataFrame, positions: pd.Series, cost_bps: float = 1.0) -> BacktestResult:
-    return result_from_returns(net_returns(bars, positions, cost_bps))
+def run(
+    bars: pd.DataFrame, positions: pd.Series, cost_bps: float = 7.0, fill: str = "close"
+) -> BacktestResult:
+    return result_from_returns(net_returns(bars, positions, cost_bps, fill))
