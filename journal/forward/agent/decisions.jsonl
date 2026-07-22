@@ -63,3 +63,68 @@
 {"date": "2026-07-20", "symbol": "VZ", "target": 0.0, "reason": "agent: parse-fail: held"}
 {"date": "2026-07-20", "symbol": "WFC", "target": 0.0, "reason": "agent: parse-fail: held"}
 {"date": "2026-07-20", "symbol": "WMT", "target": 0.0, "reason": "agent: parse-fail: held"}
+{"date": "2026-07-21", "symbol": "AAPL", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "ABBV", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "ABT", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "ADBE", "target": 0.0, "reason": "agent: High volatility and gap-down setups historically underperform."}
+{"date": "2026-07-21", "symbol": "AMD", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "AMGN", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "AMZN", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "AVGO", "target": 0.0, "reason": "agent: timeout: Request timed out."}
+{"date": "2026-07-21", "symbol": "AXP", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "BA", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "BAC", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "BLK", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "BMY", "target": 0.0, "reason": "agent: High volatility and gap-down risk suggest avoiding position."}
+{"date": "2026-07-21", "symbol": "C", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "CAT", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "CMCSA", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "COST", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "CRM", "target": 0.0, "reason": "agent: High volatility and negative gap setups historically underperform."}
+{"date": "2026-07-21", "symbol": "CSCO", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "CVX", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "DHR", "target": 0.0, "reason": "agent: Negative momentum and high volatility suggest avoiding exposure."}
+{"date": "2026-07-21", "symbol": "DIS", "target": 0.0, "reason": "agent: High volatility and mixed momentum suggest caution."}
+{"date": "2026-07-21", "symbol": "GE", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "GILD", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "GOOGL", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "GS", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "HD", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "HON", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "IBM", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "INTC", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "JNJ", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "JPM", "target": 0.0, "reason": "agent: High volatility and gap-down risk suggest avoiding exposure."}
+{"date": "2026-07-21", "symbol": "KO", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "LIN", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "LLY", "target": 0.0, "reason": "agent: High volatility and gap-down risk suggest avoiding exposure."}
+{"date": "2026-07-21", "symbol": "LOW", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "MA", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "MCD", "target": 0.0, "reason": "agent: Negative momentum and high volatility suggest avoiding exposure."}
+{"date": "2026-07-21", "symbol": "MDT", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "META", "target": 0.0, "reason": "agent: Negative momentum and high volatility suggest avoiding exposure."}
+{"date": "2026-07-21", "symbol": "MRK", "target": 0.0, "reason": "agent: High volatility and gap-down risk suggest avoiding exposure."}
+{"date": "2026-07-21", "symbol": "MS", "target": 0.0, "reason": "agent: Negative momentum and high volatility suggest short position."}
+{"date": "2026-07-21", "symbol": "MSFT", "target": 0.0, "reason": "agent: timeout: Request timed out."}
+{"date": "2026-07-21", "symbol": "NFLX", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "NKE", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "NOW", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "NVDA", "target": 0.0, "reason": "agent: Negative momentum and high volatility suggest avoiding exposure."}
+{"date": "2026-07-21", "symbol": "ORCL", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "PEP", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "PFE", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "PG", "target": 0.0, "reason": "agent: High volatility and mixed momentum suggest caution."}
+{"date": "2026-07-21", "symbol": "PM", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "QCOM", "target": 0.0, "reason": "agent: timeout: Request timed out."}
+{"date": "2026-07-21", "symbol": "SBUX", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "SPY", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "T", "target": 0.0, "reason": "agent: timeout: Request timed out."}
+{"date": "2026-07-21", "symbol": "TMO", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "TSLA", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "TXN", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "UNH", "target": 0.0, "reason": "agent: High volatility and gap-down risk suggest avoiding exposure."}
+{"date": "2026-07-21", "symbol": "UNP", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "V", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "VZ", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-21", "symbol": "WFC", "target": 0.0, "reason": "agent: High volatility and gap-down setups historically underperform."}
+{"date": "2026-07-21", "symbol": "WMT", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
