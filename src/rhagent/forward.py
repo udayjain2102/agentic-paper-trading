@@ -108,7 +108,7 @@ def _positions(cfg, engine: str, bars: dict[str, pd.DataFrame],
 
 
 def _net_series(cfg, engine: str, bars: dict[str, pd.DataFrame], cost_bps: float,
-                eval_dir: Path, agent=None) -> pd.Series:
+                eval_dir: Path, agent=None, fill: str = "close") -> pd.Series:
     """Fully-realized daily net-return series for the chosen engine.
 
     net_returns records a day's return at its *entry* date, so a day is only
@@ -121,22 +121,33 @@ def _net_series(cfg, engine: str, bars: dict[str, pd.DataFrame], cost_bps: float
     names from the universe or switching to a coverage threshold.
     """
     pos = _positions(cfg, engine, bars, eval_dir, agent)
-    legs = {s: net_returns(bars[s], pos[s], cost_bps) for s in pos}
+    legs = {s: net_returns(bars[s], pos[s], cost_bps, fill) for s in pos}
     df = pd.concat(legs, axis=1)
     full = df.notna().sum(axis=1) == len(df.columns)
     return df[full].mean(axis=1)
 
 
-def tick(cfg, eval_dir: Path, cost_bps: float = 1.0, *, engine: str | None = None,
-         fetch=None, today=None, cache_dir="data", agent=None) -> dict:
-    """Append newly-realized days to eval_dir/returns.csv. Returns the meta dict."""
+def tick(cfg, eval_dir: Path, cost_bps: float | None = None, *, engine: str | None = None,
+         fill: str | None = None, fetch=None, today=None, cache_dir="data",
+         agent=None) -> dict:
+    """Append newly-realized days to eval_dir/returns.csv. Returns the meta dict.
+
+    cost_bps/fill default to cfg.strategy's fields (an explicit argument, e.g.
+    from --cost-bps/--fill-mode, wins). getattr fallbacks (1.0/"close") keep
+    lightweight test configs -- a bare SimpleNamespace with no cost_bps/fill_mode
+    -- working unchanged.
+    """
     eval_dir.mkdir(parents=True, exist_ok=True)
     engine = engine or cfg.strategy.name
+    if cost_bps is None:
+        cost_bps = getattr(cfg.strategy, "cost_bps", 1.0)
+    if fill is None:
+        fill = getattr(cfg.strategy, "fill_mode", "close")
     today = today or date.today()
     start = (today - timedelta(days=400)).isoformat()
     bars = get_bars(cfg.strategy.universe, start, today.isoformat(), fetch=fetch,
                     cache_dir=cache_dir)
-    net = _net_series(cfg, engine, bars, cost_bps, eval_dir, agent)
+    net = _net_series(cfg, engine, bars, cost_bps, eval_dir, agent, fill)
 
     ret_path = eval_dir / "returns.csv"
     if ret_path.exists():
@@ -159,6 +170,7 @@ def tick(cfg, eval_dir: Path, cost_bps: float = 1.0, *, engine: str | None = Non
         "engine": engine,
         "symbols": list(cfg.strategy.universe),
         "cost_bps": cost_bps,
+        "fill_mode": fill,
         "notional": 10_000.0,
         "start": str(combined["date"].iloc[0]) if len(combined) else "",
         "end": str(combined["date"].iloc[-1]) if len(combined) else "",
@@ -168,7 +180,8 @@ def tick(cfg, eval_dir: Path, cost_bps: float = 1.0, *, engine: str | None = Non
     return {"meta": meta, "appended": len(rows), "total_days": len(combined)}
 
 
-def tick_and_reflect(cfg, eval_dir: Path, cost_bps: float = 1.0, *, engine: str | None = None,
+def tick_and_reflect(cfg, eval_dir: Path, cost_bps: float | None = None, *,
+                     engine: str | None = None, fill: str | None = None,
                      fetch=None, today=None, cache_dir="data", agent=None,
                      reflect_complete=None,
                      memory_path: str = "journal/agent_memory.md") -> dict:
@@ -182,7 +195,7 @@ def tick_and_reflect(cfg, eval_dir: Path, cost_bps: float = 1.0, *, engine: str 
     """
     engine = engine or cfg.strategy.name
     if engine != "agent":
-        return tick(cfg, eval_dir, cost_bps, engine=engine, fetch=fetch,
+        return tick(cfg, eval_dir, cost_bps, engine=engine, fill=fill, fetch=fetch,
                     today=today, cache_dir=cache_dir, agent=agent)
 
     from .engine import AgentEngine, nvidia_complete
@@ -193,8 +206,8 @@ def tick_and_reflect(cfg, eval_dir: Path, cost_bps: float = 1.0, *, engine: str 
     if agent is None:
         agent = AgentEngine(lessons=memory_text + "\n" + lessons_from_runs())
 
-    res = tick(cfg, eval_dir, cost_bps, engine=engine, fetch=fetch, today=today,
-              cache_dir=cache_dir, agent=agent)
+    res = tick(cfg, eval_dir, cost_bps, engine=engine, fill=fill, fetch=fetch,
+              today=today, cache_dir=cache_dir, agent=agent)
 
     reflected = False
     if res["appended"] >= 1:
@@ -268,7 +281,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--eval-id", help="record dir name (default: engine name)")
     p.add_argument("--engine", help="momentum|linreg|mean_reversion|agent "
                                     "(default: config strategy)")
-    p.add_argument("--cost-bps", type=float, default=1.0)
+    p.add_argument("--cost-bps", type=float, default=None,
+                   help="per-side cost in bps (default: config.yaml strategy.cost_bps)")
+    p.add_argument("--fill-mode", default=None, choices=["close", "next_open"],
+                   help="'close' fills at the same bar's close the signal was decided "
+                        "from (not really tradable); 'next_open' fills at the following "
+                        "bar's open instead (default: config.yaml strategy.fill_mode)")
     p.add_argument("--report", action="store_true", help="report only, no tick")
     args = p.parse_args(sys.argv[1:] if argv is None else argv)
 
@@ -278,7 +296,8 @@ def main(argv: list[str] | None = None) -> int:
     engine = args.engine or cfg.strategy.name
     eval_dir = Path(args.out_dir) / (args.eval_id or engine)
     if not args.report:
-        res = tick_and_reflect(cfg, eval_dir, args.cost_bps, engine=engine)
+        res = tick_and_reflect(cfg, eval_dir, args.cost_bps, engine=engine,
+                               fill=args.fill_mode)
         print(f"tick: appended {res['appended']} day(s), {res['total_days']} total")
     _report(eval_dir)
     return 0

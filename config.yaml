@@ -54,12 +54,18 @@ strategy:
   # universe; 5-10bp all-in (commission + spread + slippage) is more realistic.
   cost_bps: 7.0
   # 'close' fills a target change at the same bar's close the signal was
-  # decided from -- the historical default, but you can't observe a close and
-  # trade at it (flatters strategies like mean-reversion that buy dips at the
-  # dip's own close). 'next_open' fills at the following bar's open instead.
-  # Kept at 'close' here so existing runs stay comparable; pass
-  # --fill-mode next_open (papertrade CLI) to opt into the realistic fill.
-  fill_mode: close
+  # decided from -- you can't actually observe a close and trade at it
+  # (flatters strategies like mean-reversion that buy dips at the dip's own
+  # close). 'next_open' fills at the following bar's open instead, which you
+  # genuinely can trade at. This config block is meant to be the realistic
+  # basis (paired with cost_bps above), so it's next_open, not close -- pass
+  # --fill-mode close explicitly if you need the old flattering comparison.
+  # Exception: the original `mean_reversion` forward record (journal/forward/
+  # mean_reversion/) was seeded at cost_bps=1/fill_mode=close and must stay on
+  # that basis for its own life -- scripts/paper_cron.sh pins it with explicit
+  # flags rather than letting it drift onto these (now more realistic) config
+  # defaults. The honest go-forward number is the mean_reversion_real record.
+  fill_mode: next_open
   universe: [AAPL, ABBV, ABT, ADBE, AMD, AMGN, AMZN, AVGO, AXP, BA, BAC, BLK, BMY,
     C, CAT, CMCSA, COST, CRM, CSCO, CVX, DHR, DIS, GE, GILD, GOOGL, GS, HD, HON,
     IBM, INTC, JNJ, JPM, KO, LIN, LLY, LOW, MA, MCD, MDT, META, MRK, MS, MSFT,

@@ -32,7 +32,18 @@ echo "== refresh cache (last ${REFRESH_DAYS} days) =="
 python -m rhagent.refresh --fetch --cache-dir data --days "${REFRESH_DAYS}"
 
 echo "== tick forward record =="
-python -m rhagent.forward
+# Pinned to its original basis (cost_bps=1, fill=close) -- do not let this
+# drift onto config.yaml's now-more-realistic defaults, or the curve gets a
+# silent discontinuity. See config.yaml's fill_mode comment.
+python -m rhagent.forward --cost-bps 1 --fill-mode close
+
+echo "== tick forward record (realistic fills) =="
+# Second, honest record: real per-trade cost and a fill you could actually
+# get. Own record dir so it never mixes cost bases with the record above.
+# Non-fatal like the agent tick below -- a new record failing must never
+# kill the established one.
+python -m rhagent.forward --eval-id mean_reversion_real --cost-bps 7 --fill-mode next_open \
+  || echo "!! mean_reversion_real tick failed -- other records still persisted" >&2
 
 echo "== tick forward record (agent) =="
 # The agent tick needs NVIDIA_API_KEY (one LLM call per symbol per new bar).

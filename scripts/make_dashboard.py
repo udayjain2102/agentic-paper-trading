@@ -461,12 +461,15 @@ def render(run_dir: Path, base_dir: Path) -> str:
 # filter, trade filter, and a per-run detail drawer. No React, no build step.
 
 def _forward_leg(eval_dir: Path) -> dict:
+    # cost_bps/fill_mode: meta always has cost_bps; fill_mode is a newer field
+    # (added alongside the fill wiring) so older run.json files fall back to
+    # "close", the fill every record used before fill_mode was recorded.
     empty_spy = {"return": 0.0, "start": None, "end": None, "n_days": 0}
     if not (eval_dir / "run.json").exists():
         return {
             "engine": "", "symbols": [], "start": "", "end": "", "days": 0,
             "ret": 0.0, "pnl": 0.0, "notional": 10_000.0, "sharpe": 0.0, "dd": 0.0,
-            "spy": empty_spy,
+            "costBps": 0.0, "fillMode": "close", "spy": empty_spy,
         }
     meta, trades, net = load_run(eval_dir)
     a = aggregate(trades, net)
@@ -477,6 +480,7 @@ def _forward_leg(eval_dir: Path) -> dict:
         "days": len(net), "ret": a["total_return"],
         "pnl": _return_pnl(a["total_return"], notional),
         "notional": notional, "sharpe": a["sharpe"], "dd": a["max_drawdown"],
+        "costBps": float(meta.get("cost_bps", 0.0)), "fillMode": meta.get("fill_mode", "close"),
         "spy": spy_benchmark(net.index),
     }
 
@@ -642,7 +646,11 @@ def _build_control_room_data(base_dir: Path) -> dict:
             "daily_loss_limit_usd": g.daily_loss_limit_usd, "live": not cfg.dry_run,
             "halt": HALT_FILE.exists(), "model": cfg.agent.model,
         },
-        "forward": {"agent": _forward_leg(forward_dir / "agent"), "baseline": _forward_leg(forward_dir / "mean_reversion")},
+        "forward": {
+            "agent": _forward_leg(forward_dir / "agent"),
+            "baseline": _forward_leg(forward_dir / "mean_reversion"),
+            "real": _forward_leg(forward_dir / "mean_reversion_real"),
+        },
         "bakeoff": _bakeoff_data(base_dir, cfg.strategy.name if cfg.strategy else ""),
         "curveDaily": curve_vals, "curveDates": curve_dates,
         "runs": _runs_data(base_dir),
@@ -894,7 +902,7 @@ function renderHeaderPills() {
 }
 
 function renderVerdict() {
-  const f = DATA.forward, agent = f.agent, base = f.baseline;
+  const f = DATA.forward, agent = f.agent, base = f.baseline, real = f.real;
   const days = agent.days || base.days || 0;
   let badge = 'TOO EARLY TO CALL', note = `Forward track has ${days} day(s) logged. Verdict needs weeks of OOS data.`;
   if (days >= 5) {
@@ -902,7 +910,8 @@ function renderVerdict() {
     else if (base.pnl > agent.pnl) { badge = 'BASELINE LEADS'; note = 'Baseline forward P&L ahead of the agent over the tracked window.'; }
     else { badge = 'TIED'; note = 'Agent and baseline forward P&L are tied so far.'; }
   }
-  const sub = leg => `${leg.days} day${leg.days === 1 ? '' : 's'} · ${(leg.symbols || []).join(', ') || '—'} · ${leg.ret >= 0 ? 'up' : 'down'}`;
+  const fillLabel = leg => `${leg.fillMode === 'next_open' ? 'next-open' : 'same-close'} fill @ ${leg.costBps}bp`;
+  const sub = leg => `${leg.days} day${leg.days === 1 ? '' : 's'} · ${(leg.symbols || []).join(', ') || '—'} · ${leg.ret >= 0 ? 'up' : 'down'} · ${fillLabel(leg)}`;
   const spyLine = leg => leg.spy && leg.spy.start
     ? `SPY buy&amp;hold ${leg.spy.start}→${leg.spy.end}: <b style="color:var(--fg)">${pct(leg.spy.return)}</b>`
     : 'SPY buy&amp;hold: not enough tracked days yet';
@@ -929,6 +938,10 @@ function renderVerdict() {
       <span style="width:8px;height:8px;border-radius:50%;background:var(--up);flex:none;box-shadow:0 0 0 4px rgba(5,196,107,.15)"></span>
       <div style="font-size:13px;color:var(--fg)"><b style="color:var(--up)">Research winner locked:</b> ${esc(DATA.lockedEngine)}, gated by the <b>${esc(DATA.lockedOverlay || 'no')}</b> overlay. This is the config the forward track is now paper-trading.</div>
     </div>
+    ${real.days ? `<div style="margin-top:8px;display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(77,184,255,.06);border:1px solid rgba(77,184,255,.22);border-radius:12px">
+      <span style="width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none"></span>
+      <div style="font-size:13px;color:var(--fg)"><b style="color:var(--accent)">Honest-fill record (mean_reversion_real):</b> ${money(real.pnl)} over ${sub(real)}. The baseline above is ${fillLabel(base)} -- flattering by comparison, kept only because its track record predates this fill.</div>
+    </div>` : ''}
     <div style="margin-top:8px;font-size:11px;color:var(--muted)">SPY benchmark is buy-and-hold over each leg's own tracked window; the strategy is not always fully invested, so this isn't an apples-to-apples exposure comparison.</div>`;
 }
 
