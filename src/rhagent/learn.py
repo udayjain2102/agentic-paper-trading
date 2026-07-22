@@ -22,18 +22,27 @@ def lessons_from_runs(out_dir: str | Path = "journal/papertrade", *,
     if not frames:
         return ""
     trades = pd.concat(frames, ignore_index=True)
+    n_runs, n_trades = len(frames), len(trades)
 
+    # ponytail: "side" is dropped outright -- the agent is long-only
+    # (AgentEngine.allow_short=False), so "side=long" is the only setup it
+    # can ever take, and "avoid side=long" is really "avoid trading". A
+    # bucket whose loss_share doesn't exceed its own share of all trades is
+    # dropped too: it's losing in proportion to its size, not more than its
+    # size, so it's the book average restated as a finding, not a lesson.
+    buckets = failure_buckets(trades)
+    buckets = buckets[buckets["dimension"] != "side"]
+    concentrated = buckets["loss_share"] > buckets["n_trades"] / n_trades
     worst = (
-        failure_buckets(trades)
+        buckets[concentrated]
         .query("n_trades >= @min_trades and loss_share > 0")
         .head(top_k)
     )
-    n_runs, n_trades = len(frames), len(trades)
     if len(worst) == 0:
         wr = float((trades["outcome"] == "win").mean())
         return (f"Lessons from {n_runs} prior paper-trades ({n_trades} trades). "
-                f"No setup cleared {min_trades} trades; overall win_rate "
-                f"{wr:.0%}.")
+                f"No setup cleared {min_trades} trades with disproportionate "
+                f"losses; overall win_rate {wr:.0%}.")
 
     parts = "; ".join(
         f"{r.dimension}={r.bucket} (loss_share {r.loss_share:.0%}, "

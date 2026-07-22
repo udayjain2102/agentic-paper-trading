@@ -52,5 +52,24 @@ def test_lessons_flags_high_vol(tmp_path):
     assert "high" in s
 
 
+def test_lessons_exclude_side_and_majority_bucket(tmp_path):
+    rid = "2026-07-11T00-00-00Z-bbbbbbbb"
+    # side/vol/gap/holding are identical for every trade here (as they are
+    # for a real long-only agent run) -- none of that is a lesson. Only the
+    # NVDA symbol bucket is a real minority loser and should surface.
+    trades = [
+        _trade(f"{rid}#0001", -100.0, "loss", vol=0.01, symbol="NVDA"),
+        _trade(f"{rid}#0002", -100.0, "loss", vol=0.01, symbol="NVDA"),
+        _trade(f"{rid}#0003", 50.0, "win", vol=0.01, symbol="A"),
+        _trade(f"{rid}#0004", 50.0, "win", vol=0.01, symbol="A"),
+        _trade(f"{rid}#0005", 50.0, "win", vol=0.01, symbol="A"),
+        _trade(f"{rid}#0006", 50.0, "win", vol=0.01, symbol="A"),
+    ]
+    _write_run(tmp_path / rid, trades)
+    s = lessons_from_runs(tmp_path, min_trades=2)
+    assert "side" not in s
+    assert "NVDA" in s
+
+
 def test_empty_dir_returns_blank(tmp_path):
     assert lessons_from_runs(tmp_path) == ""
