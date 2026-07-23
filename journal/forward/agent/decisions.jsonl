@@ -128,3 +128,68 @@
 {"date": "2026-07-21", "symbol": "VZ", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
 {"date": "2026-07-21", "symbol": "WFC", "target": 0.0, "reason": "agent: High volatility and gap-down setups historically underperform."}
 {"date": "2026-07-21", "symbol": "WMT", "target": 0.0, "reason": "agent: parse-fail: AttributeError: 'NoneType' object has no attribute 'group'"}
+{"date": "2026-07-22", "symbol": "AAPL", "target": 0.0, "reason": "agent: Negative momentum and high volatility suggest higher risk, avoid position.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "ABBV", "target": 0.0, "reason": "agent: Avoid long positions due to high loss share and high volatility.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "ABT", "target": 0.0, "reason": "agent: High volatility and past losses in long positions advise caution.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "ADBE", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-22", "symbol": "AMD", "target": 0.0, "reason": "agent: Positive momentum but high volatility and historical long losses suggest caution.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "AMGN", "target": 0.0, "reason": "agent: High volatility and historical long risks outweigh positive momentum.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "AMZN", "target": 0.0, "reason": "agent: Negative momentum and high volatility setups are loss-prone per past lessons.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "AVGO", "target": 0.0, "reason": "agent: High volatility and avoiding long holds per past lessons.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "AXP", "target": 0.0, "reason": "agent: High volatility and negative momentum align with past loss lessons, favoring flat position.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "BA", "target": 0.0, "reason": "agent: High volatility and negative momentum suggest avoiding exposure.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "BAC", "target": 0.0, "reason": "agent: High volatility and past losses in long positions advise caution.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "BLK", "target": 0.0, "reason": "agent: High volatility and negative momentum align with past loss setups.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "BMY", "target": 0.0, "reason": "agent: High volatility and past losses in long positions advise against entering a long position despite positive momentum.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "C", "target": 0.0, "reason": "agent: Negative momentum suggests bearish trend", "status": "ok"}
+{"date": "2026-07-22", "symbol": "CAT", "target": 0.0, "reason": "agent: High volatility and negative momentum suggest avoiding exposure.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "CMCSA", "target": 0.0, "reason": "agent: High volatility and past losses in long positions advise caution.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "COST", "target": 0.0, "reason": "agent: High volatility (0.0158) indicates elevated risk, aligning with past lessons to avoid such setups.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "CRM", "target": 0.0, "reason": "agent: High volatility setup, avoid per past lessons.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "CSCO", "target": 0.0, "reason": "agent: High vol and long position historically underperform", "status": "ok"}
+{"date": "2026-07-22", "symbol": "CVX", "target": 0.0, "reason": "agent: High volatility and prior long losses suggest avoiding position.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "DHR", "target": 0.0, "reason": "agent: High volatility and negative momentum indicate risk; avoid long per past lessons.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "DIS", "target": 0.0, "reason": "agent: Negative momentum and high volatility align with past loss setups.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "GE", "target": 0.0, "reason": "agent: Negative momentum and high volatility suggest avoiding positions.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "GILD", "target": 0.0, "reason": "agent: High volatility and negative momentum suggest avoiding positions per past lessons.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "GOOGL", "target": 0.0, "reason": "agent: High volatility and negative momentum indicate increased risk of loss.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "GS", "target": 0.0, "reason": "agent: High volatility and negative momentum indicate unfavorable conditions.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "HD", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-22", "symbol": "HON", "target": 0.0, "reason": "agent: High volatility and historical loss concentration in long positions advise caution.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "IBM", "target": 0.0, "reason": "agent: Negative momentum and high volatility indicate higher risk setups to avoid.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "INTC", "target": 0.0, "reason": "agent: High volatility and negative momentum suggest avoiding exposure.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "JNJ", "target": 0.0, "reason": "agent: High volatility and past long losses suggest caution.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "JPM", "target": 0.0, "reason": "agent: High loss share in long positions and high volatility setups.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "KO", "target": 0.0, "reason": "agent: High volatility and negative momentum suggest avoiding exposure.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "LIN", "target": 0.0, "reason": "agent: High volatility and negative momentum suggest avoiding exposure.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "LLY", "target": 1.0, "reason": "agent: Positive momentum and moderate volatility suggest long position.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "LOW", "target": 0.0, "reason": "agent: Negative momentum and high volatility indicate unfavorable conditions for entry.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "MA", "target": 0.0, "reason": "agent: High volatility and negative momentum indicate elevated risk.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "MCD", "target": 0.0, "reason": "agent: Negative momentum and high volatility suggest caution; avoid long setups with high loss history.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "MDT", "target": 0.0, "reason": "agent: High volatility and past losses in long positions advise caution.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "META", "target": 0.0, "reason": "agent: Negative momentum and high volatility indicate risk.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "MRK", "target": 0.0, "reason": "agent: High volatility and historical long losses outweigh positive momentum.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "MS", "target": 0.0, "reason": "agent: High volatility and negative momentum suggest avoiding positions.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "MSFT", "target": 0.0, "reason": "agent: Negative momentum and high volatility suggest avoiding long exposure per past lessons.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "NFLX", "target": 0.0, "reason": "agent: High volatility and negative momentum indicate avoidance per past lessons.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "NKE", "target": 0.0, "reason": "agent: Avoid high vol and negative momentum setups per past lessons.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "NOW", "target": 0.0, "reason": "agent: High volatility and negative momentum align with loss-prone setups.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "NVDA", "target": 0.0, "reason": "agent: Negative momentum and high volatility setups have high loss share in past trades.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "ORCL", "target": 0.0, "reason": "agent: High volatility and negative momentum suggest avoiding exposure.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "PEP", "target": 0.0, "reason": "agent: Low momentum and high volatility setups have high loss share historically.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "PFE", "target": 0.0, "reason": "agent: High volatility and flat momentum suggest avoiding exposure.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "PG", "target": 0.0, "reason": "agent: High volatility and historical losses in long positions.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "PM", "target": 0.0, "reason": "agent: High vol and long positions historically underperform", "status": "ok"}
+{"date": "2026-07-22", "symbol": "QCOM", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-22", "symbol": "SBUX", "target": 0.0, "reason": "agent: Negative momentum and high volatility suggest unfavorable conditions per past lessons.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "SPY", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-22", "symbol": "T", "target": 0.0, "reason": "agent: High volatility and prior losses in long holds suggest caution.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "TMO", "target": 0.0, "reason": "agent: Negative momentum and high volatility align with past loss setups; avoid exposure.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "TSLA", "target": 0.0, "reason": "agent: Negative momentum and high volatility indicate elevated risk.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "TXN", "target": 0.0, "reason": "agent: Avoid high vol and negative momentum setups per past lessons.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "UNH", "target": 0.0, "reason": "agent: High volatility and past long losses suggest caution despite positive momentum.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "UNP", "target": 0.0, "reason": "agent: High loss share in long positions and high volatility setups.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "V", "target": 0.0, "reason": "agent: Negative momentum and high volatility indicate unfavorable conditions.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "VZ", "target": 0.0, "reason": "agent: High volatility and long position risk per past lessons.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "WFC", "target": 0.0, "reason": "agent: High volatility and negative momentum suggest avoiding long exposure per past loss lessons.", "status": "ok"}
+{"date": "2026-07-22", "symbol": "WMT", "target": 0.0, "reason": "agent: High volatility and negative momentum indicate elevated risk per past lessons.", "status": "ok"}

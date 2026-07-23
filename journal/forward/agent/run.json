@@ -1,7 +1,8 @@
 {
-  "cost_bps": 1.0,
-  "end": "2026-07-20 00:00:00",
+  "cost_bps": 7.0,
+  "end": "2026-07-21 00:00:00",
   "engine": "agent",
+  "fill_mode": "next_open",
   "memory_chars": 1907,
   "notional": 10000.0,
   "reflected": false,
