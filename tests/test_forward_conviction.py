@@ -43,8 +43,8 @@ def test_forward_positions_applies_conviction():
         return SimpleNamespace(strategy=SimpleNamespace(
             name="mean_reversion", params={}, universe=["AAA"], overlay=ov))
 
-    p_conv = forward._positions(_cfg("conviction"), "mean_reversion", bars, Path("/tmp"))
-    p_none = forward._positions(_cfg("none"), "mean_reversion", bars, Path("/tmp"))
+    p_conv, _ = forward._positions(_cfg("conviction"), "mean_reversion", bars, Path("/tmp"))
+    p_none, _ = forward._positions(_cfg("none"), "mean_reversion", bars, Path("/tmp"))
 
     # the gate can only remove positions, never add them
     assert ((p_conv["AAA"] != 0) & (p_none["AAA"] == 0)).sum() == 0

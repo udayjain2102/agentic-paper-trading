@@ -38,6 +38,39 @@ def test_allow_short_clamps():
     assert AgentEngine(complete=fake, allow_short=True).decide("X", hist, 0.0).target == -1.0
 
 
+def test_decide_all_is_one_call_and_isolates_per_symbol_failures():
+    """The batched path: one prompt for the universe, decide()'s failure
+    semantics preserved per symbol."""
+    hists = {s: _hist([10, 11, 12, 13, 14, 15, 16]) for s in ("AAA", "BBB", "CCC")}
+    syms = list(hists)
+    cur = {"AAA": 0.0, "BBB": 1.0, "CCC": -1.0}
+    calls = []
+
+    def fake(prompt):
+        calls.append(prompt)
+        # BBB omitted, CCC out of range -> only those two fail
+        return 'here you go: {"AAA": -1, "CCC": 7}'
+
+    out = AgentEngine(complete=fake).decide_all(syms, hists, cur)
+    assert len(calls) == 1                      # ONE call for three symbols
+    assert all(s in calls[0] for s in syms)     # every symbol's features in it
+    assert out["AAA"].target == 0.0 and out["AAA"].status == "ok"  # -1 clamped
+    assert out["BBB"].target == 1.0 and out["BBB"].status == "failed"
+    assert out["CCC"].target == -1.0 and out["CCC"].status == "failed"
+
+    # allow_short leaves the short alone
+    assert AgentEngine(complete=fake, allow_short=True).decide_all(
+        syms, hists, cur)["AAA"].target == -1.0
+
+    # a failed call fails EVERY symbol, each holding its own current_pos
+    def boom(_p):
+        raise TimeoutError("model down")
+
+    out = AgentEngine(complete=boom).decide_all(syms, hists, cur)
+    assert {s: d.target for s, d in out.items()} == cur
+    assert all(d.status == "failed" for d in out.values())
+
+
 def test_parse_fail_holds_current_pos():
     hist = _hist([10, 11, 12])
     d = AgentEngine(complete=lambda p: "not json at all").decide("X", hist, 1.0)

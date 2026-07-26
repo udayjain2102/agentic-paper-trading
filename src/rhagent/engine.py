@@ -154,7 +154,9 @@ class AgentEngine:
         """
         return nvidia_complete(max_tokens=self.max_tokens, model=self.model)
 
-    def _prompt(self, symbol: str, history: pd.DataFrame, current_pos: float) -> str:
+    def _features(self, symbol: str, history: pd.DataFrame, current_pos: float) -> str:
+        """The one line of model input for a symbol. Shared by the single-symbol
+        and whole-universe prompts so both see identical features."""
         close = history["close"].astype(float)
         last = float(close.iloc[-1])
         # momentum over up to 5 prior bars; fall back to the whole window when
@@ -165,62 +167,119 @@ class AgentEngine:
         vol20 = float(rets.tail(20).std()) if len(rets) >= 2 else 0.0
         if pd.isna(vol20):
             vol20 = 0.0
-        lessons = f"\nPast-loss lessons to weigh:\n{self.lessons}\n" if self.lessons else ""
+        return (f"{symbol}: last_close={last:.2f} momentum_5d={mom5:+.4f} "
+                f"vol_20d={vol20:.4f} current_pos={current_pos:+.0f}")
+
+    def _lessons_block(self) -> str:
+        return f"\nPast-loss lessons to weigh:\n{self.lessons}\n" if self.lessons else ""
+
+    def _prompt(self, symbol: str, history: pd.DataFrame, current_pos: float) -> str:
         return (
             f"You are a trading agent deciding today's position in {symbol}.\n"
-            f"last_close={last:.2f} momentum_5d={mom5:+.4f} "
-            f"vol_20d={vol20:.4f} current_pos={current_pos:+.0f}\n"
-            f"{lessons}"
+            f"{self._features(symbol, history, current_pos)}\n"
+            f"{self._lessons_block()}"
             "Respond with ONLY this JSON object and nothing else -- no "
             "reasoning, no markdown fences, no text before or after it: "
             '{"target": -1 | 0 | 1, "reason": "<=15 words"} where target is '
             "the desired position (-1 short, 0 flat, 1 long)."
         )
 
+    def _prompt_all(self, symbols: list[str], histories: dict[str, pd.DataFrame],
+                    current_pos: dict[str, float]) -> str:
+        rows = "\n".join(self._features(s, histories[s], current_pos[s]) for s in symbols)
+        return (
+            f"You are a trading agent deciding today's position in {len(symbols)} "
+            "symbols at once. One line of features per symbol:\n"
+            f"{rows}\n"
+            f"{self._lessons_block()}"
+            "Respond with ONLY one flat JSON object and nothing else -- no "
+            "reasoning, no markdown fences, no nested objects, no text before or "
+            'after it: {"SYM": -1 | 0 | 1, ...} mapping every one of the '
+            f"{len(symbols)} symbols above to its desired position "
+            "(-1 short, 0 flat, 1 long)."
+        )
+
+    def _extract(self, raw: str) -> dict:
+        # findall + last match, not a single greedy search: a reasoning model's
+        # chain-of-thought can echo the prompt's own example braces before the
+        # real answer, and a first-{-to-last-} greedy span would swallow the
+        # prose between them and fail json.loads.
+        matches = re.findall(r"\{[^{}]*\}", raw, re.DOTALL)
+        if not matches:
+            raise ValueError(f"no JSON object in model reply: {raw[:120]!r}")
+        return json.loads(matches[-1])
+
+    def _target(self, raw_target) -> float:
+        target = float(int(raw_target))
+        if target not in (-1.0, 0.0, 1.0):
+            raise ValueError("target out of range")
+        if not self.allow_short and target == -1.0:
+            target = 0.0
+        return target
+
     def decide(
         self, symbol: str, history: pd.DataFrame, current_pos: float
     ) -> Decision:
-        from openai import APIStatusError, APITimeoutError, RateLimitError
-
         if self.complete is None:
             self.complete = self._default_complete()
-        prompt = self._prompt(symbol, history, current_pos)
         status = "ok"
         try:
-            raw = self.complete(prompt)
-            # findall + last match, not a single greedy search: a reasoning model's
-            # chain-of-thought can echo the prompt's own example braces before the
-            # real answer, and a first-{-to-last-} greedy span would swallow the
-            # prose between them and fail json.loads.
-            matches = re.findall(r"\{[^{}]*\}", raw, re.DOTALL)
-            if not matches:
-                raise ValueError(f"no JSON object in model reply: {raw[:120]!r}")
-            obj = json.loads(matches[-1])
-            target = float(int(obj["target"]))
-            if target not in (-1.0, 0.0, 1.0):
-                raise ValueError("target out of range")
-            if not self.allow_short and target == -1.0:
-                target = 0.0
+            obj = self._extract(self.complete(self._prompt(symbol, history, current_pos)))
+            target = self._target(obj["target"])
             reason = str(obj.get("reason", ""))
         except Exception as e:
             status = "failed"
             target = float(current_pos)
-            # Distinguish failure classes so decisions.jsonl says what actually
-            # happened instead of collapsing everything into "parse-fail".
-            if isinstance(e, TruncatedResponse):
-                # Must precede the ValueError branch: budget exhaustion is not
-                # a parse failure, and TruncatedResponse deliberately isn't a
-                # ValueError subclass so it can't fall into that branch anyway.
-                reason = f"truncated: {e}"
-            elif isinstance(e, (json.JSONDecodeError, KeyError, ValueError, AttributeError)):
-                reason = f"parse-fail: {type(e).__name__}: {e}"
-            elif isinstance(e, RateLimitError):
-                reason = f"rate-limited: {e}"
-            elif isinstance(e, APITimeoutError):
-                reason = f"timeout: {e}"
-            elif isinstance(e, APIStatusError):
-                reason = f"http-error {e.status_code}: {e}"
-            else:
-                reason = f"error: {type(e).__name__}: {e}"
-            reason = reason[:180]
+            reason = _fail_reason(e)
         return Decision(target=target, reason=f"agent: {reason}", status=status)
+
+    def decide_all(self, symbols: list[str], histories: dict[str, pd.DataFrame],
+                   current_pos: dict[str, float]) -> dict[str, Decision]:
+        """One model call for the whole universe, same semantics as decide().
+
+        65 sequential per-symbol calls per bar against NVIDIA's burst-then-~18/min
+        bucket is what produced the timeouts (and therefore the failed holds).
+        The features are one short line each, so the whole universe fits in one
+        prompt. Failure semantics are preserved exactly: if the call fails every
+        symbol is status="failed" holding current_pos; if the call answers but
+        omits or malforms one symbol, only that symbol fails.
+        """
+        if self.complete is None:
+            self.complete = self._default_complete()
+        try:
+            obj = self._extract(self.complete(self._prompt_all(symbols, histories, current_pos)))
+        except Exception as e:
+            reason = f"agent: {_fail_reason(e)}"
+            return {s: Decision(target=float(current_pos[s]), reason=reason,
+                                status="failed") for s in symbols}
+        out = {}
+        for s in symbols:
+            try:
+                out[s] = Decision(target=self._target(obj[s]), reason="agent: batch verdict")
+            except Exception as e:
+                out[s] = Decision(target=float(current_pos[s]),
+                                  reason=f"agent: {_fail_reason(e)}", status="failed")
+        return out
+
+
+def _fail_reason(e: Exception) -> str:
+    """Classify a failed model call so decisions.jsonl says what actually
+    happened instead of collapsing everything into "parse-fail"."""
+    from openai import APIStatusError, APITimeoutError, RateLimitError
+
+    if isinstance(e, TruncatedResponse):
+        # Must precede the ValueError branch: budget exhaustion is not a parse
+        # failure, and TruncatedResponse deliberately isn't a ValueError
+        # subclass so it can't fall into that branch anyway.
+        reason = f"truncated: {e}"
+    elif isinstance(e, (json.JSONDecodeError, KeyError, ValueError, AttributeError)):
+        reason = f"parse-fail: {type(e).__name__}: {e}"
+    elif isinstance(e, RateLimitError):
+        reason = f"rate-limited: {e}"
+    elif isinstance(e, APITimeoutError):
+        reason = f"timeout: {e}"
+    elif isinstance(e, APIStatusError):
+        reason = f"http-error {e.status_code}: {e}"
+    else:
+        reason = f"error: {type(e).__name__}: {e}"
+    return reason[:180]

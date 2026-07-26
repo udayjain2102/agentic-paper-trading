@@ -98,7 +98,7 @@ def test_forward_tick_and_reflect_writes_memory_and_meta(tmp_path, monkeypatch):
 
     def agent_complete(_prompt):
         calls["agent"] += 1
-        return '{"target": 1, "reason": "test"}'
+        return '{"AAA": 1}'  # batched: symbol -> target
 
     def reflect_complete(_prompt):
         calls["reflect"] += 1
@@ -106,6 +106,19 @@ def test_forward_tick_and_reflect_writes_memory_and_meta(tmp_path, monkeypatch):
 
     eval_dir = tmp_path / "journal" / "forward" / "agent"
     cfg = _cfg(["AAA"])
+    # First tick only anchors: every prior bar is seeded (never decided), so no
+    # realized day is a genuine decision yet and nothing is appended.
+    bars["AAA"].iloc[:-1].to_csv(cache / "AAA.csv", index_label="date")
+    res0 = forward.tick_and_reflect(
+        cfg, eval_dir, today=date(2026, 3, 20), cache_dir=cache, engine="agent",
+        agent=AgentEngine(complete=agent_complete), reflect_complete=reflect_complete,
+        memory_path=str(tmp_path / "journal" / "agent_memory.md"),
+    )
+    assert res0["appended"] == 0
+    assert calls["reflect"] == 0
+
+    # a new bar prints: the previously-decided day is now realized
+    bars["AAA"].to_csv(cache / "AAA.csv", index_label="date")
     res = forward.tick_and_reflect(
         cfg, eval_dir, today=date(2026, 3, 20), cache_dir=cache, engine="agent",
         agent=AgentEngine(complete=agent_complete), reflect_complete=reflect_complete,
@@ -146,9 +159,9 @@ def test_positions_lessons_include_memory(tmp_path, monkeypatch):
         def __init__(self, lessons=""):
             captured["lessons"] = lessons
 
-        def decide(self, symbol, history, current_pos):
+        def decide_all(self, symbols, histories, current_pos):
             from rhagent.engine import Decision
-            return Decision(target=0.0, reason="noop")
+            return {s: Decision(target=0.0, reason="noop") for s in symbols}
 
     monkeypatch.setattr("rhagent.engine.AgentEngine", FakeAgent)
     ed = tmp_path / "ed"
@@ -174,18 +187,27 @@ def test_agent_positions_log_decisions_with_reason(tmp_path):
     from rhagent.engine import Decision
 
     class FakeAgent:
-        def decide(self, symbol, history, current_pos):
-            return Decision(target=1.0, reason="agent: dip buy")
+        def __init__(self):
+            self.calls = 0
 
-    bars = _bars([10, 11, 12, 13, 14])
-    forward._agent_positions(tmp_path, "AAA", bars, FakeAgent())
+        def decide_all(self, symbols, histories, current_pos):
+            self.calls += 1
+            return {s: Decision(target=1.0, reason="agent: dip buy") for s in symbols}
+
+    bars = {"AAA": _bars([10, 11, 12, 13, 14]), "BBB": _bars([20, 21, 22, 23, 24])}
+    agent = FakeAgent()
+    pos, excluded = forward._agent_positions(tmp_path, bars, agent)
+    assert agent.calls == 1  # one call for the bar, not one per symbol
     lines = [json.loads(l) for l in
              (tmp_path / "decisions.jsonl").read_text().splitlines()]
-    assert lines and lines[-1]["symbol"] == "AAA"
+    assert lines and lines[-1]["symbol"] in ("AAA", "BBB")
     assert lines[-1]["target"] == 1.0
     assert lines[-1]["reason"] == "agent: dip buy"
     assert lines[-1]["status"] == "ok"
-    # second call: all bars cached, nothing new appended
-    forward._agent_positions(tmp_path, "AAA", bars, FakeAgent())
+    # the seeded anchor bars were never decided -> excluded, the decided one isn't
+    assert excluded == set(bars["AAA"].index[:-1])
+    # second call: all bars cached, nothing new appended and no model call
+    forward._agent_positions(tmp_path, bars, agent)
+    assert agent.calls == 1
     n2 = len((tmp_path / "decisions.jsonl").read_text().splitlines())
     assert n2 == len(lines)
