@@ -19,3 +19,6 @@ data/
 # graphify output — local tooling artifact, unrelated to trading
 graphify-out/
 src/graphify-out/
+.codex/
+.superpowers/
+deploy_api/

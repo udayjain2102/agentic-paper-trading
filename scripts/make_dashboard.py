@@ -37,7 +37,6 @@ from rhagent.evaluate import (  # noqa: E402
 )
 from rhagent.evaluate_robust import robust_table  # noqa: E402
 from rhagent.features import flatten_trades  # noqa: E402
-from rhagent.learn import lessons_from_runs  # noqa: E402
 from rhagent.memory import read_memory  # noqa: E402
 
 HALT_FILE = Path("HALT")
@@ -72,28 +71,50 @@ def _run_dirs(base_dir: Path) -> list[Path]:
 # client-side by a small vanilla-JS layer — chart mode toggle, run table sort/
 # filter, trade filter, and a per-run detail drawer. No React, no build step.
 
-def _forward_leg(eval_dir: Path) -> dict:
+def _stale_sessions(end_str: str, today: pd.Timestamp) -> int:
+    """Trading sessions elapsed since a leg's last recorded day (0 = ticked
+    today or later). Weekday-only, no holiday calendar.
+    ponytail: naive weekday count, add a holiday calendar if that starts
+    mattering (i.e. false amber/frozen chips around market holidays)."""
+    end = pd.Timestamp(end_str)
+    if today <= end:
+        return 0
+    return len(pd.bdate_range(end + pd.Timedelta(days=1), today))
+
+
+def _agent_leg_dir(forward_dir: Path) -> Path:
+    """agent-v2 if the record has been renamed onto it, else the legacy
+    agent/ dir. Never creates either — a rename that hasn't happened yet
+    still resolves to the (missing) legacy path, which _forward_leg then
+    reports as absent rather than silently voiding the leg."""
+    v2 = forward_dir / "agent-v2"
+    return v2 if v2.exists() else forward_dir / "agent"
+
+
+def _forward_leg(eval_dir: Path, today: pd.Timestamp) -> dict:
     # cost_bps/fill_mode: meta always has cost_bps; fill_mode is a newer field
     # (added alongside the fill wiring) so older run.json files fall back to
     # "close", the fill every record used before fill_mode was recorded.
     empty_spy = {"return": 0.0, "start": None, "end": None, "n_days": 0}
     if not (eval_dir / "run.json").exists():
         return {
-            "engine": "", "symbols": [], "start": "", "end": "", "days": 0,
+            "present": False, "engine": "", "symbols": [], "start": "", "end": "", "days": 0,
             "ret": 0.0, "pnl": 0.0, "notional": 10_000.0, "sharpe": 0.0, "dd": 0.0,
-            "costBps": 0.0, "fillMode": "close", "spy": empty_spy,
+            "costBps": 0.0, "fillMode": "close", "spy": empty_spy, "staleSessions": None,
         }
     meta, trades, net = load_run(eval_dir)
     a = aggregate(trades, net)
     notional = float(meta.get("notional", 10_000.0))
+    end = str(meta.get("end", ""))[:10]
     return {
-        "engine": meta.get("engine", ""), "symbols": meta.get("symbols", []),
-        "start": str(meta.get("start", ""))[:10], "end": str(meta.get("end", ""))[:10],
+        "present": True, "engine": meta.get("engine", ""), "symbols": meta.get("symbols", []),
+        "start": str(meta.get("start", ""))[:10], "end": end,
         "days": len(net), "ret": a["total_return"],
         "pnl": _return_pnl(a["total_return"], notional),
         "notional": notional, "sharpe": a["sharpe"], "dd": a["max_drawdown"],
         "costBps": float(meta.get("cost_bps", 0.0)), "fillMode": meta.get("fill_mode", "close"),
         "spy": spy_benchmark(net.index),
+        "staleSessions": _stale_sessions(end, today) if end else None,
     }
 
 
@@ -168,18 +189,16 @@ def _win_trades(run_dir: Path) -> list[dict]:
     return rows
 
 
-def _cross_run_buckets(base_dir: Path) -> tuple[list[dict], dict, list[dict], dict]:
-    """Top loss + win buckets ranked across every bucketing dimension
-    (vol, gap, holding, symbol, side, dow, near_high, ...), over every
-    archived run."""
+def _cross_run_buckets(base_dir: Path) -> tuple[list[dict], dict]:
+    """Top loss buckets ranked across every bucketing dimension (vol, gap,
+    holding, symbol, side, dow, near_high, ...), over every archived run."""
     frames = [load_run(d)[1] for d in _run_dirs(base_dir)]
     frames = [f for f in frames if len(f)]
     if not frames:
-        return [], {}, [], {}
+        return [], {}
     trades = flatten_trades(pd.concat(frames, ignore_index=True))
     n_total = len(trades)
     n_losses = int((trades["outcome"] == "loss").sum())
-    n_wins = int((trades["outcome"] == "win").sum())
     src = f"every paper-trade run archived so far ({len(frames)} runs)"
     rows = []
     for dim, labels in _bucket_labels(trades).items():
@@ -190,15 +209,11 @@ def _cross_run_buckets(base_dir: Path) -> tuple[list[dict], dict, list[dict], di
             wr = float((sub["outcome"] == "win").mean()) if len(sub) else 0.0
             rows.append({"dim": dim, "bucket": str(bucket), "lossN": loss_n, "winN": win_n,
                          "totalN": int(len(sub)), "wr": wr,
-                         "loss_share": loss_n / n_losses if n_losses else 0.0,
-                         "win_share": win_n / n_wins if n_wins else 0.0})
+                         "loss_share": loss_n / n_losses if n_losses else 0.0})
     loss_rows = [{**r, "share": r["loss_share"]} for r in sorted(rows, key=lambda r: -r["loss_share"])[:5]]
-    win_rows = [{**r, "share": r["win_share"]} for r in sorted(rows, key=lambda r: -r["win_share"])[:5]]
     loss_meta = {"n": n_total, "losses": n_losses, "runs": len(frames), "source": src,
                  "caveat": "Measured across every archived paper-trade run, not just the locked config."}
-    win_meta = {"n": n_total, "wins": n_wins, "source": src,
-                "note": "Top buckets across all dimensions, ranked by share of total wins."}
-    return loss_rows, loss_meta, win_rows, win_meta
+    return loss_rows, loss_meta
 
 
 def _bakeoff_data(base_dir: Path, engine: str) -> list[dict]:
@@ -244,24 +259,19 @@ def _build_control_room_data(base_dir: Path) -> dict:
 
     forward_dir = base_dir.parent / "forward"
     curve_vals, curve_dates = _equity_curve(locked_dir)
-    loss_buckets, loss_meta, win_buckets, win_meta = _cross_run_buckets(base_dir)
-    g = cfg.limits
+    loss_buckets, loss_meta = _cross_run_buckets(base_dir)
+    today = pd.Timestamp(datetime.now(timezone.utc).date())
 
     return {
         "updated": f"{datetime.now(timezone.utc):%Y-%m-%d %H:%M UTC}",
         "winRunId": str(load_run(locked_dir)[0]["run_id"]),
         "lockedEngine": cfg.strategy.name if cfg.strategy else "",
         "lockedOverlay": cfg.strategy.overlay if cfg.strategy else "",
-        "guardrails": {
-            "per_trade_max_usd": g.per_trade_max_usd, "total_deployed_max_usd": g.total_deployed_max_usd,
-            "max_new_positions_per_run": g.max_new_positions_per_run, "max_orders_per_run": g.max_orders_per_run,
-            "daily_loss_limit_usd": g.daily_loss_limit_usd, "live": not cfg.dry_run,
-            "halt": HALT_FILE.exists(), "model": cfg.agent.model,
-        },
+        "guardrails": {"live": not cfg.dry_run, "halt": HALT_FILE.exists()},
         "forward": {
-            "agent": _forward_leg(forward_dir / "agent"),
-            "baseline": _forward_leg(forward_dir / "mean_reversion"),
-            "real": _forward_leg(forward_dir / "mean_reversion_real"),
+            "agent": _forward_leg(_agent_leg_dir(forward_dir), today),
+            "baseline": _forward_leg(forward_dir / "mean_reversion", today),
+            "real": _forward_leg(forward_dir / "mean_reversion_real", today),
         },
         "bakeoff": _bakeoff_data(base_dir, cfg.strategy.name if cfg.strategy else ""),
         "curveDaily": curve_vals, "curveDates": curve_dates,
@@ -269,9 +279,7 @@ def _build_control_room_data(base_dir: Path) -> dict:
         "winScore": _win_score(locked_dir),
         "winTrades": _win_trades(locked_dir),
         "buckets": loss_buckets, "bucketsMeta": loss_meta,
-        "winBuckets": win_buckets, "winBucketsMeta": win_meta,
         "runbook": [list(x) for x in _RUNBOOK],
-        "lessons": lessons_from_runs(base_dir) or "",
         "reflections": _agent_reflections(),
         "actionsUrl": _ACTIONS_URL,
     }
@@ -294,8 +302,6 @@ _CONTROL_ROOM_TEMPLATE = r"""<!doctype html>
   a{color:#4db8ff;text-decoration:none}
   a:hover{color:#7fcfff}
   @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-  @keyframes drawerIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
-  @keyframes backdropIn{from{opacity:0}to{opacity:1}}
   .cr-scroll::-webkit-scrollbar{height:9px;width:9px}
   .cr-scroll::-webkit-scrollbar-thumb{background:#2b333f;border-radius:6px}
   .cr-scroll::-webkit-scrollbar-track{background:transparent}
@@ -350,85 +356,12 @@ _CONTROL_ROOM_TEMPLATE = r"""<!doctype html>
       <div id="cr-chart"></div>
     </section>
 
-    <section style="margin-top:30px;display:grid;grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr);gap:20px">
-      <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-          <h3 style="margin:0;font-size:15px;font-weight:600">Guardrails · armed</h3>
-          <span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--up);font-family:'IBM Plex Mono',monospace"><span style="width:7px;height:7px;border-radius:50%;background:var(--up);box-shadow:0 0 0 3px rgba(5,196,107,.18)"></span>0 BREACHES</span>
-        </div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Hard caps enforced in code — the model cannot talk its way past them.</div>
-        <div id="cr-guardrails" style="display:flex;flex-direction:column;gap:14px"></div>
-        <div id="cr-guardrail-chips" style="display:flex;gap:7px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)"></div>
-      </div>
-
-      <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-        <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Overlay bake-off · robust Sharpe</h3>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:16px">A variant beats baseline only if its 95% CI lower bound clears the baseline Sharpe.</div>
-        <div class="cr-scroll" style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:12.5px">
-            <thead>
-              <tr style="color:var(--muted);text-align:left">
-                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line)">overlay</th>
-                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">point</th>
-                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">deflated</th>
-                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">fold ±sd</th>
-                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">95% CI</th>
-                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:center">vs base</th>
-              </tr>
-            </thead>
-            <tbody id="cr-bakeoff"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <section style="margin-top:30px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px">
-        <div>
-          <h3 id="cr-runcount" style="margin:0;font-size:15px;font-weight:600"></h3>
-          <div style="font-size:12px;color:var(--muted);margin-top:3px">Every paper-trade run in the archive. Click a column to sort, a row to open.</div>
-        </div>
-        <div id="cr-enginechips" style="display:flex;gap:5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px;flex-wrap:wrap"></div>
-      </div>
-      <div class="cr-scroll" style="overflow-x:auto;border:1px solid var(--line);border-radius:12px">
-        <div style="min-width:760px">
-          <div id="cr-runcols" style="display:grid;grid-template-columns:minmax(150px,1.5fr) 1fr 0.9fr 0.65fr 0.7fr 0.6fr 1fr 1.25fr;background:var(--panel2);border-bottom:1px solid var(--line)"></div>
-          <div id="cr-runrows"></div>
-        </div>
-      </div>
-    </section>
-
-    <section style="margin-top:30px">
-      <h3 style="margin:0 0 14px;font-size:15px;font-weight:600">Engine leaderboard <span style="color:var(--muted);font-weight:400;font-size:13px">· best P&amp;L per strategy family</span></h3>
-      <div id="cr-leaderboard" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px"></div>
-    </section>
-
-    <section style="margin-top:30px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:16px">
-        <h3 style="margin:0;font-size:15px;font-weight:600">Locked-config scorecard</h3>
-        <span id="cr-winid" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)"></span>
-        <span style="padding:2px 9px;border-radius:6px;background:rgba(5,196,107,.14);color:var(--up);font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace">FORWARD CANDIDATE</span>
-        <span style="padding:2px 9px;border-radius:6px;background:rgba(255,176,32,.14);color:var(--warn);font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace">IN-SAMPLE</span>
-      </div>
-      <div style="font-size:11.5px;color:var(--muted);margin:-8px 0 14px">This return/Sharpe is measured over the same window the strategy was selected on — selection-biased, not out-of-sample evidence.</div>
-      <div id="cr-scoretiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:11px"></div>
-      <div id="cr-scorespy" style="margin-top:12px;font-size:11.5px;color:var(--muted)"></div>
-    </section>
-
     <section style="margin-top:30px;display:grid;grid-template-columns:minmax(0,0.85fr) minmax(0,1.15fr);gap:20px;align-items:stretch">
-      <div style="display:flex;flex-direction:column;gap:20px;height:100%">
-        <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-          <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Where losses concentrate</h3>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Very short exits and very long holds both underperform.</div>
-          <div id="cr-buckets" style="display:flex;flex-direction:column;gap:14px"></div>
-          <div id="cr-bucketscaveat" style="margin-top:16px;padding:11px 13px;background:rgba(255,176,32,.07);border:1px solid rgba(255,176,32,.22);border-radius:10px;font-size:11.5px;color:var(--muted);text-wrap:pretty"></div>
-        </div>
-        <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-          <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Where we win</h3>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Top buckets across all dimensions.</div>
-          <div id="cr-winbuckets" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:14px"></div>
-          <div id="cr-winbucketsnote" style="padding:11px 13px;background:rgba(5,196,107,.06);border:1px solid rgba(5,196,107,.2);border-radius:10px;font-size:11.5px;color:var(--muted);text-wrap:pretty"></div>
-        </div>
+      <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
+        <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Where losses concentrate</h3>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Very short exits and very long holds both underperform.</div>
+        <div id="cr-buckets" style="display:flex;flex-direction:column;gap:14px"></div>
+        <div id="cr-bucketscaveat" style="margin-top:16px;padding:11px 13px;background:rgba(255,176,32,.07);border:1px solid rgba(255,176,32,.22);border-radius:10px;font-size:11.5px;color:var(--muted);text-wrap:pretty"></div>
       </div>
 
       <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
@@ -459,6 +392,58 @@ _CONTROL_ROOM_TEMPLATE = r"""<!doctype html>
       </div>
     </section>
 
+    <details style="margin-top:30px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
+      <summary style="cursor:pointer;font-size:15px;font-weight:600">Research provenance <span style="color:var(--muted);font-weight:400;font-size:13px">· in-sample, selection-biased evidence</span></summary>
+
+      <div style="margin-top:20px">
+        <h4 style="margin:0 0 4px;font-size:14px;font-weight:600">Overlay bake-off · robust Sharpe</h4>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:16px">A variant beats baseline only if its 95% CI lower bound clears the baseline Sharpe.</div>
+        <div class="cr-scroll" style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+            <thead>
+              <tr style="color:var(--muted);text-align:left">
+                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line)">overlay</th>
+                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">point</th>
+                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">deflated</th>
+                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">fold ±sd</th>
+                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">95% CI</th>
+                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:center">vs base</th>
+              </tr>
+            </thead>
+            <tbody id="cr-bakeoff"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="margin-top:26px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px">
+          <div>
+            <h4 id="cr-runcount" style="margin:0;font-size:14px;font-weight:600"></h4>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px">Every paper-trade run in the archive. Click a column to sort.</div>
+          </div>
+          <div id="cr-enginechips" style="display:flex;gap:5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px;flex-wrap:wrap"></div>
+        </div>
+        <div class="cr-scroll" style="overflow-x:auto;border:1px solid var(--line);border-radius:12px">
+          <div style="min-width:760px">
+            <div id="cr-runcols" style="display:grid;grid-template-columns:minmax(150px,1.5fr) 1fr 0.9fr 0.65fr 0.7fr 0.6fr 1fr 1.25fr;background:var(--panel2);border-bottom:1px solid var(--line)"></div>
+            <div id="cr-runrows"></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:26px">
+        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+          <h4 style="margin:0;font-size:14px;font-weight:600">Locked-config scorecard</h4>
+          <span id="cr-winid" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)"></span>
+          <span style="padding:2px 9px;border-radius:6px;background:rgba(5,196,107,.14);color:var(--up);font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace">FORWARD CANDIDATE</span>
+          <span style="padding:2px 9px;border-radius:6px;background:rgba(255,176,32,.14);color:var(--warn);font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace">IN-SAMPLE</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);margin:-8px 0 14px">This return/Sharpe is measured over the same window the strategy was selected on — selection-biased, not out-of-sample evidence.</div>
+        <div id="cr-scoretiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:11px"></div>
+        <div id="cr-scorespy" style="margin-top:12px;font-size:11.5px;color:var(--muted)"></div>
+      </div>
+    </details>
+
     <section style="margin-top:30px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
         <div>
@@ -485,15 +470,13 @@ _CONTROL_ROOM_TEMPLATE = r"""<!doctype html>
       <span>numbers reproduced from rhagent.evaluate · not investment advice</span>
     </footer>
   </main>
-
-  <div id="cr-drawerwrap"></div>
 </div>
 
 <script>
 const DATA = __DATA_JSON__;
 const ACTIONS_URL = DATA.actionsUrl;
 
-const ST = { chartMode: 'cum', hoverIdx: null, engine: 'all', runSort: 'id', runDir: -1, tradeFilter: 'all', copied: -1, selectedRun: null, ledgerAll: false };
+const ST = { chartMode: 'cum', hoverIdx: null, engine: 'all', runSort: 'id', runDir: -1, tradeFilter: 'all', copied: -1, ledgerAll: false };
 const LEDGER_PREVIEW = 10;
 
 function money(x, dp = 2) { const s = x < 0 ? '-' : ''; return s + '$' + Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp }); }
@@ -513,44 +496,83 @@ function renderHeaderPills() {
     <span style="padding:5px 11px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-size:11px;font-family:'IBM Plex Mono',monospace">upd ${esc(DATA.updated)}</span>`;
 }
 
+// Pure so it's testable without a DOM: given the agent and baseline forward
+// legs, decide the verdict badge/note/warn state. Never falls back to the
+// other leg's day count (that was the bug: an absent agent leg used to
+// borrow the baseline's days and render "BASELINE LEADS").
+function verdictInfo(agent, base) {
+  if (!agent.present) {
+    return { badge: 'NO AGENT RECORD', warn: false,
+      note: 'The agent forward leg has not produced a run.json yet — nothing to compare.' };
+  }
+  if (agent.staleSessions != null && agent.staleSessions >= 5) {
+    return { badge: 'RECORD FROZEN', warn: true,
+      note: `Agent forward record has not ticked in ${agent.staleSessions} sessions (last tick ${agent.end}). Treat this number as stale, not current.` };
+  }
+  if (base.present && base.days > 0 && agent.days < base.days / 2) {
+    return { badge: 'RECORD INCOMPLETE', warn: false,
+      note: `Agent has ${agent.days} scored day(s) vs the baseline's ${base.days} — too far behind to compare fairly.` };
+  }
+  if (agent.days < 20) {
+    return { badge: 'TOO EARLY TO CALL', warn: false,
+      note: `Agent has ${agent.days} day(s) logged. Verdict needs at least 20 scored sessions.` };
+  }
+  if (agent.pnl > base.pnl) {
+    return { badge: 'AGENT LEADS', warn: false,
+      note: 'Agent forward P&L ahead of the mean-reversion baseline over the tracked window.' };
+  }
+  if (base.pnl > agent.pnl) {
+    return { badge: 'BASELINE LEADS', warn: false,
+      note: 'Baseline forward P&L ahead of the agent over the tracked window.' };
+  }
+  return { badge: 'TIED', warn: false, note: 'Agent and baseline forward P&L are tied so far.' };
+}
+
 function renderVerdict() {
   const f = DATA.forward, agent = f.agent, base = f.baseline, real = f.real;
-  const days = agent.days || base.days || 0;
-  let badge = 'TOO EARLY TO CALL', note = `Forward track has ${days} day(s) logged. Verdict needs weeks of OOS data.`;
-  if (days >= 5) {
-    if (agent.pnl > base.pnl) { badge = 'AGENT LEADS'; note = 'Agent forward P&L ahead of the mean-reversion baseline over the tracked window.'; }
-    else if (base.pnl > agent.pnl) { badge = 'BASELINE LEADS'; note = 'Baseline forward P&L ahead of the agent over the tracked window.'; }
-    else { badge = 'TIED'; note = 'Agent and baseline forward P&L are tied so far.'; }
-  }
+  const { badge, note, warn } = verdictInfo(agent, base);
   const fillLabel = leg => `${leg.fillMode === 'next_open' ? 'next-open' : 'same-close'} fill @ ${leg.costBps}bp`;
-  const sub = leg => `${leg.days} day${leg.days === 1 ? '' : 's'} · ${(leg.symbols || []).join(', ') || '—'} · ${leg.ret >= 0 ? 'up' : 'down'} · ${fillLabel(leg)}`;
+  const sub = leg => leg.present
+    ? `${leg.days} day${leg.days === 1 ? '' : 's'} · ${(leg.symbols || []).join(', ') || '—'} · ${leg.ret >= 0 ? 'up' : 'down'} · ${fillLabel(leg)}`
+    : 'no forward record yet';
+  const staleChip = leg => (leg.present && leg.staleSessions >= 2 && leg.staleSessions < 5)
+    ? `<div style="margin-top:2px"><span style="display:inline-block;padding:2px 8px;border-radius:6px;background:rgba(255,176,32,.14);border:1px solid rgba(255,176,32,.35);color:var(--warn);font-size:10.5px;font-weight:700;font-family:'IBM Plex Mono',monospace">LAST TICK ${leg.staleSessions} SESSIONS AGO</span></div>`
+    : '';
+  const legValue = leg => leg.present ? money(leg.pnl) : '—';
+  const legColor = leg => (!leg.present) ? 'var(--muted)' : (leg.staleSessions >= 5 ? 'var(--muted)' : 'inherit');
   const spyLine = leg => leg.spy && leg.spy.start
     ? `SPY buy&amp;hold ${leg.spy.start}→${leg.spy.end}: <b style="color:var(--fg)">${pct(leg.spy.return)}</b>`
     : 'SPY buy&amp;hold: not enough tracked days yet';
+  const cardBorder = warn ? '1px solid var(--warn)' : '1px solid var(--line)';
+  const badgeStyle = warn
+    ? 'background:rgba(255,92,92,.12);border:1px solid rgba(255,92,92,.4);color:var(--down)'
+    : 'background:rgba(255,176,32,.12);border:1px solid rgba(255,176,32,.35);color:var(--warn)';
   document.getElementById('cr-verdict').innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:0;align-items:stretch;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden">
+    <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:0;align-items:stretch;background:var(--panel);border:${cardBorder};border-radius:16px;overflow:hidden">
       <div style="padding:22px 26px;display:flex;flex-direction:column;gap:6px">
         <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600">LLM Agent</div>
-        <div style="font-size:34px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em">${money(agent.pnl)}</div>
+        <div style="font-size:34px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em;color:${legColor(agent)}">${legValue(agent)}</div>
         <div style="font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${sub(agent)}</div>
         <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${spyLine(agent)}</div>
+        ${staleChip(agent)}
       </div>
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:22px 30px;background:var(--panel2);border-left:1px solid var(--line);border-right:1px solid var(--line);min-width:220px">
-        <div style="padding:6px 16px;border-radius:999px;background:rgba(255,176,32,.12);border:1px solid rgba(255,176,32,.35);color:var(--warn);font-weight:700;font-size:13px;letter-spacing:.03em">${badge}</div>
+        <div style="padding:6px 16px;border-radius:999px;${badgeStyle};font-weight:700;font-size:13px;letter-spacing:.03em">${badge}</div>
         <div style="font-size:12px;color:var(--muted);text-align:center;max-width:210px;text-wrap:pretty">${esc(note)}</div>
       </div>
       <div style="padding:22px 26px;display:flex;flex-direction:column;gap:6px;text-align:right">
         <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--purple);font-weight:600">Mean-Reversion Baseline</div>
-        <div style="font-size:34px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em">${money(base.pnl)}</div>
+        <div style="font-size:34px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em;color:${legColor(base)}">${legValue(base)}</div>
         <div style="font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${sub(base)}</div>
         <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${spyLine(base)}</div>
+        ${staleChip(base)}
       </div>
     </div>
     <div style="margin-top:10px;display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(5,196,107,.06);border:1px solid rgba(5,196,107,.22);border-radius:12px">
       <span style="width:8px;height:8px;border-radius:50%;background:var(--up);flex:none;box-shadow:0 0 0 4px rgba(5,196,107,.15)"></span>
       <div style="font-size:13px;color:var(--fg)"><b style="color:var(--up)">Research winner locked:</b> ${esc(DATA.lockedEngine)}, gated by the <b>${esc(DATA.lockedOverlay || 'no')}</b> overlay. This is the config the forward track is now paper-trading.</div>
     </div>
-    ${real.days ? `<div style="margin-top:8px;display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(77,184,255,.06);border:1px solid rgba(77,184,255,.22);border-radius:12px">
+    ${real.present && real.days ? `<div style="margin-top:8px;display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(77,184,255,.06);border:1px solid rgba(77,184,255,.22);border-radius:12px">
       <span style="width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none"></span>
       <div style="font-size:13px;color:var(--fg)"><b style="color:var(--accent)">Honest-fill record (mean_reversion_real):</b> ${money(real.pnl)} over ${sub(real)}. The baseline above is ${fillLabel(base)} -- flattering by comparison, kept only because its track record predates this fill.</div>
     </div>` : ''}
@@ -644,30 +666,6 @@ function renderChart() {
   }
 }
 
-function renderGuardrails() {
-  const g = DATA.guardrails;
-  const rows = [
-    { label: 'Per-trade max', cap: money(g.per_trade_max_usd, 0), note: 'rejected above ceiling' },
-    { label: 'Total deployed max', cap: money(g.total_deployed_max_usd, 0), note: 'hard cap on live exposure' },
-    { label: 'Max new positions / run', cap: String(g.max_new_positions_per_run), note: 'per cron tick' },
-    { label: 'Max orders / run', cap: String(g.max_orders_per_run), note: 'rate limit' },
-    { label: 'Daily realized-loss kill', cap: money(g.daily_loss_limit_usd, 0), note: 'halts the day when breached' },
-  ];
-  document.getElementById('cr-guardrails').innerHTML = rows.map(r => `
-    <div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
-        <span style="font-size:12.5px;color:var(--fg)">${esc(r.label)}</span>
-        <span style="font-size:13px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--fg)">${esc(r.cap)}</span>
-      </div>
-      <div style="height:6px;background:var(--bg);border-radius:4px;overflow:hidden;border:1px solid var(--line)">
-        <div style="height:100%;width:100%;background:linear-gradient(90deg,var(--up),#3ad98a);border-radius:4px"></div>
-      </div>
-      <div style="font-size:10.5px;color:var(--muted);margin-top:4px;font-family:'IBM Plex Mono',monospace">${esc(r.note)}</div>
-    </div>`).join('');
-  document.getElementById('cr-guardrail-chips').innerHTML = ['US-equities only', 'daily-loss kill switch', 'HALT file', g.model.split('/').pop()]
-    .map(c => `<span style="padding:4px 10px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${esc(c)}</span>`).join('');
-}
-
 function renderBakeoff() {
   const rows = DATA.bakeoff;
   if (!rows.length) { document.getElementById('cr-bakeoff').innerHTML = `<tr><td colspan="6" style="padding:12px;color:var(--muted)">no bake-off data</td></tr>`; return; }
@@ -708,7 +706,7 @@ function renderRuns() {
   document.getElementById('cr-runrows').innerHTML = rows.map(r => {
     const win = r.id === DATA.winRunId;
     const w = Math.abs(r.ret) / maxAbsRet * 100;
-    return `<div class="cr-row cr-btn" data-open="${esc(r.id)}" style="display:grid;grid-template-columns:minmax(150px,1.5fr) 1fr 0.9fr 0.65fr 0.7fr 0.6fr 1fr 1.25fr;align-items:center;background:${win ? 'rgba(5,196,107,.06)' : 'transparent'};border-bottom:1px solid var(--line);border-left:3px solid ${win ? 'var(--up)' : 'transparent'};font-size:12.5px">
+    return `<div class="cr-row" style="display:grid;grid-template-columns:minmax(150px,1.5fr) 1fr 0.9fr 0.65fr 0.7fr 0.6fr 1fr 1.25fr;align-items:center;background:${win ? 'rgba(5,196,107,.06)' : 'transparent'};border-bottom:1px solid var(--line);border-left:3px solid ${win ? 'var(--up)' : 'transparent'};font-size:12.5px">
       <div style="padding:9px 12px;font-family:'IBM Plex Mono',monospace;white-space:nowrap"><span style="color:var(--accent);border-bottom:1px dashed rgba(77,184,255,.45);padding-bottom:1px">${esc(r.sid)}</span>${win ? '<span style="color:var(--up);font-weight:700;font-size:10px;margin-left:6px">◆ LOCKED</span>' : ''}</div>
       <div style="padding:9px 12px;white-space:nowrap;display:flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:${engineColor(r.engine)};flex:none"></span>${esc(r.engine)}</div>
       <div style="padding:9px 12px;font-family:'IBM Plex Mono',monospace;color:var(--muted)">${esc(r.overlay || '—')}</div>
@@ -721,37 +719,15 @@ function renderRuns() {
   }).join('');
 }
 
-function renderLeaderboard() {
-  const byEngine = {};
-  DATA.runs.forEach(r => { if (!byEngine[r.engine] || r.pnl > byEngine[r.engine].pnl) byEngine[r.engine] = r; });
-  const arr = Object.values(byEngine).sort((a, b) => b.pnl - a.pnl);
-  const maxLb = Math.max(...arr.map(r => r.pnl), 1);
-  document.getElementById('cr-leaderboard').innerHTML = arr.map(r => `
-    <div style="background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="width:9px;height:9px;border-radius:50%;background:${engineColor(r.engine)}"></span><span style="font-weight:600;font-size:14px">${esc(r.engine)}</span></div>
-      <div style="font-size:26px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:${r.pnl >= 0 ? 'var(--up)' : 'var(--down)'};letter-spacing:-.02em">${(r.pnl >= 0 ? '+' : '') + money(r.pnl, 0)}</div>
-      <div style="height:7px;background:var(--bg);border:1px solid var(--line);border-radius:4px;overflow:hidden;margin:10px 0 8px"><div style="height:100%;width:${(r.pnl / maxLb * 100).toFixed(0)}%;background:${engineColor(r.engine)};border-radius:4px"></div></div>
-      <div style="font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${r.n} trades · ${pctAbs(r.wr, 1)} win · ${esc(r.overlay || 'no overlay')}</div>
-    </div>`).join('');
-}
-
 function renderScorecard() {
   const S = DATA.winScore;
   document.getElementById('cr-winid').textContent = DATA.winRunId;
   const tiles = [
-    { label: 'balance', value: money(S.balance), color: 'var(--up)' },
-    { label: 'net P&L', value: '+' + money(S.pnl), color: 'var(--up)' },
     { label: 'total return', value: pct(S.ret), color: 'var(--up)' },
-    { label: 'trades', value: String(S.n), color: 'var(--fg)' },
-    { label: 'win rate', value: pctAbs(S.wr, 1), color: 'var(--fg)' },
-    { label: 'profit factor', value: S.pf.toFixed(2), color: 'var(--up)' },
-    { label: 'avg win', value: money(S.avgWin), color: 'var(--up)' },
-    { label: 'avg loss', value: money(S.avgLoss), color: 'var(--down)' },
     { label: 'sharpe', value: S.sharpe.toFixed(2), color: 'var(--fg)' },
     { label: 'max drawdown', value: pctAbs(S.dd, 2), color: 'var(--down)' },
-    { label: 'avg holding', value: S.avgHold.toFixed(1) + ' bars', color: 'var(--fg)' },
-    { label: 'gross win', value: money(S.gw, 0), color: 'var(--up)' },
-    { label: 'gross loss', value: money(-S.gl, 0), color: 'var(--down)' },
+    { label: 'trades', value: String(S.n), color: 'var(--fg)' },
+    { label: 'profit factor', value: S.pf.toFixed(2), color: 'var(--up)' },
   ];
   document.getElementById('cr-scoretiles').innerHTML = tiles.map(t => `
     <div style="background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:13px 15px">
@@ -776,18 +752,6 @@ function renderBuckets() {
       <div style="font-size:10.5px;color:var(--muted);margin-top:4px;font-family:'IBM Plex Mono',monospace">${b.lossN.toLocaleString()} of ${b.totalN.toLocaleString()} trades · ${pctAbs(b.wr, 0)} win rate</div>
     </div>`).join('');
   document.getElementById('cr-bucketscaveat').innerHTML = bm.n ? `⚠ ${esc(bm.caveat || '')}` : '';
-
-  const wm = DATA.winBucketsMeta || {};
-  document.getElementById('cr-winbuckets').innerHTML = DATA.winBuckets.map(w => `
-    <div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
-        <span style="font-size:12.5px"><span style="color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:11px">${esc(w.dim)}</span> · ${esc(w.bucket)}</span>
-        <span style="font-size:12.5px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--up)">${pctAbs(w.share, 1)}</span>
-      </div>
-      <div style="height:8px;background:var(--bg);border:1px solid var(--line);border-radius:4px;overflow:hidden"><div style="height:100%;width:${(w.share * 100).toFixed(0)}%;background:linear-gradient(90deg,var(--up),#3ad98a);border-radius:4px"></div></div>
-      <div style="font-size:10.5px;color:var(--muted);margin-top:4px;font-family:'IBM Plex Mono',monospace">${w.winN.toLocaleString()} of ${w.totalN.toLocaleString()} trades · ${pctAbs(w.wr, 0)} win rate</div>
-    </div>`).join('');
-  document.getElementById('cr-winbucketsnote').textContent = wm.note || '';
 }
 
 function renderLedger() {
@@ -863,90 +827,14 @@ function renderAgentNotes() {
   document.getElementById('cr-reflections').innerHTML = DATA.reflections.map(r => `<p style="margin:0">## ${esc(r)}</p>`).join('');
 }
 
-function buildDetail(runId) {
-  const r = DATA.runs.find(x => x.id === runId); if (!r) return null;
-  const win = r.id === DATA.winRunId;
-  const balance = r.notional * (1 + r.ret);
-  const avgWin = r.won ? r.gw / r.won : 0, avgLoss = r.lost ? -r.gl / r.lost : 0;
-  const tiles = [
-    { label: 'balance', value: money(balance), color: balance >= r.notional ? 'var(--up)' : 'var(--down)' },
-    { label: 'net P&L', value: (r.pnl >= 0 ? '+' : '') + money(r.pnl), color: r.pnl >= 0 ? 'var(--up)' : 'var(--down)' },
-    { label: 'return', value: pct(r.ret), color: r.ret >= 0 ? 'var(--up)' : 'var(--down)' },
-    { label: 'trades', value: String(r.n), color: 'var(--fg)' },
-    { label: 'win rate', value: pctAbs(r.wr, 1), color: 'var(--fg)' },
-    { label: 'profit factor', value: num(r.pf), color: r.pf >= 1 ? 'var(--up)' : 'var(--down)' },
-    { label: 'avg win', value: money(avgWin), color: 'var(--up)' },
-    { label: 'avg loss', value: money(avgLoss), color: 'var(--down)' },
-    { label: 'gross win', value: money(r.gw, 0), color: 'var(--up)' },
-    { label: 'gross loss', value: money(-r.gl, 0), color: 'var(--down)' },
-  ];
-  return {
-    idFull: r.id, engine: r.engine, dot: engineColor(r.engine), overlay: r.overlay || 'no overlay',
-    winTag: win ? '◆ LOCKED CONFIG' : '', ret: pct(r.ret), retColor: r.ret >= 0 ? 'var(--up)' : 'var(--down)',
-    pnl: (r.pnl >= 0 ? '+' : '') + money(r.pnl), notional: money(r.notional, 0),
-    symbols: r.uni, period: r.start + ' → ' + r.end, tiles, won: r.won, lost: r.lost,
-    winW: (r.won / r.n * 100).toFixed(1) + '%', lossW: (r.lost / r.n * 100).toFixed(1) + '%',
-    note: win ? 'This is the config the forward paper track is now trading.' : `Per-trade ledger for this run is available from the CLI: rhagent.evaluate --run ${r.id}.`,
-  };
-}
-
-function renderDrawer() {
-  const wrap = document.getElementById('cr-drawerwrap');
-  if (!ST.selectedRun) { wrap.innerHTML = ''; return; }
-  const d = buildDetail(ST.selectedRun);
-  if (!d) { wrap.innerHTML = ''; return; }
-  wrap.innerHTML = `
-    <div data-close-drawer style="position:fixed;inset:0;z-index:40;background:rgba(4,6,9,.6);backdrop-filter:blur(2px);animation:backdropIn .18s ease both"></div>
-    <aside style="position:fixed;top:0;right:0;z-index:41;height:100vh;width:min(540px,94vw);background:var(--panel);border-left:1px solid var(--line2);box-shadow:-24px 0 60px rgba(0,0,0,.5);overflow-y:auto;animation:drawerIn .22s cubic-bezier(.2,.8,.2,1) both" class="cr-scroll">
-      <div style="position:sticky;top:0;z-index:2;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:20px 24px;background:rgba(18,22,28,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)">
-        <div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span style="display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:14px"><span style="width:8px;height:8px;border-radius:50%;background:${d.dot}"></span>${esc(d.engine)}</span>
-            <span style="padding:2px 8px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${esc(d.overlay)}</span>
-            ${d.winTag ? `<span style="padding:2px 8px;border-radius:6px;background:rgba(5,196,107,.14);color:var(--up);font-size:10px;font-weight:700;font-family:'IBM Plex Mono',monospace">${d.winTag}</span>` : ''}
-          </div>
-          <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--muted);margin-top:6px">${esc(d.idFull)}</div>
-        </div>
-        <button data-close-drawer style="flex:none;width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--muted);cursor:pointer;font-size:15px;line-height:1">✕</button>
-      </div>
-      <div style="padding:22px 24px">
-        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px">
-          <div style="font-size:38px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em;color:${d.retColor}">${d.ret}</div>
-          <div style="font-size:14px;color:${d.retColor};font-family:'IBM Plex Mono',monospace;font-weight:600">${d.pnl}</div>
-        </div>
-        <div style="font-size:12px;color:var(--muted)">total return on ${d.notional} notional</div>
-        <div style="display:flex;gap:7px;flex-wrap:wrap;margin:18px 0 20px">
-          <span style="padding:5px 11px;border-radius:7px;background:var(--bg);border:1px solid var(--line);font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${esc(d.symbols)}</span>
-          <span style="padding:5px 11px;border-radius:7px;background:var(--bg);border:1px solid var(--line);font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${esc(d.period)}</span>
-        </div>
-        <h4 style="margin:0 0 12px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600">Scorecard</h4>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-          ${d.tiles.map(t => `<div style="background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:12px 14px">
-            <div style="font-size:18px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:${t.color};letter-spacing:-.01em">${esc(t.value)}</div>
-            <div style="font-size:10.5px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.04em">${esc(t.label)}</div></div>`).join('')}
-        </div>
-        <div style="margin-top:16px;display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg);border:1px solid var(--line);border-radius:11px">
-          <div style="flex:1">
-            <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-family:'IBM Plex Mono',monospace">win / loss split · ${d.won}W / ${d.lost}L</div>
-            <div style="display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--panel2)">
-              <div style="height:100%;width:${d.winW};background:var(--up)"></div>
-              <div style="height:100%;width:${d.lossW};background:var(--down)"></div>
-            </div>
-          </div>
-        </div>
-        <div style="margin-top:16px;padding:12px 14px;background:rgba(77,184,255,.06);border:1px solid rgba(77,184,255,.22);border-radius:11px;font-size:12px;color:var(--muted);text-wrap:pretty">${esc(d.note)}</div>
-      </div>
-    </aside>`;
-}
-
 function renderAll() {
-  renderHeaderPills(); renderVerdict(); renderKpis(); renderChart(); renderGuardrails();
-  renderBakeoff(); renderRuns(); renderLeaderboard(); renderScorecard(); renderBuckets();
-  renderLedger(); renderRunbook(); renderAgentNotes(); renderDrawer();
+  renderHeaderPills(); renderVerdict(); renderKpis(); renderChart();
+  renderBakeoff(); renderRuns(); renderScorecard(); renderBuckets();
+  renderLedger(); renderRunbook(); renderAgentNotes();
 }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-chartmode],[data-engine],[data-sort],[data-open],[data-tradefilter],[data-ledgertoggle],[data-copy],[data-close-drawer],#cr-trigger-btn');
+  const t = e.target.closest('[data-chartmode],[data-engine],[data-sort],[data-tradefilter],[data-ledgertoggle],[data-copy],#cr-trigger-btn');
   if (!t) return;
   if (t.dataset.chartmode) { ST.chartMode = t.dataset.chartmode; renderChart(); }
   else if (t.dataset.engine) { ST.engine = t.dataset.engine; renderRuns(); }
@@ -954,8 +842,7 @@ document.addEventListener('click', e => {
     if (ST.runSort === t.dataset.sort) ST.runDir = -ST.runDir;
     else { ST.runSort = t.dataset.sort; ST.runDir = ['id', 'engine', 'overlay'].includes(t.dataset.sort) ? 1 : -1; }
     renderRuns();
-  } else if (t.dataset.open) { ST.selectedRun = t.dataset.open; renderDrawer(); }
-  else if (t.dataset.tradefilter) { ST.tradeFilter = t.dataset.tradefilter; ST.ledgerAll = false; renderLedger(); }
+  } else if (t.dataset.tradefilter) { ST.tradeFilter = t.dataset.tradefilter; ST.ledgerAll = false; renderLedger(); }
   else if (t.dataset.ledgertoggle) { ST.ledgerAll = !ST.ledgerAll; renderLedger(); }
   else if (t.id === 'cr-trigger-btn') { triggerResearchRun(); }
   else if (t.dataset.copy != null) {
@@ -964,9 +851,8 @@ document.addEventListener('click', e => {
     if (navigator.clipboard) navigator.clipboard.writeText(cmd).catch(() => {});
     ST.copied = i; renderRunbook();
     setTimeout(() => { ST.copied = -1; renderRunbook(); }, 1400);
-  } else if (t.hasAttribute('data-close-drawer')) { ST.selectedRun = null; renderDrawer(); }
+  }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && ST.selectedRun) { ST.selectedRun = null; renderDrawer(); } });
 
 renderAll();
 </script>
