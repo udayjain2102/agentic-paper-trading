@@ -1,13 +1,15 @@
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
 
+_SOURCE = Path(__file__).resolve().parents[1] / "scripts" / "make_dashboard.py"
+
 
 def _dashboard_module():
-    path = Path(__file__).resolve().parents[1] / "scripts" / "make_dashboard.py"
-    spec = importlib.util.spec_from_file_location("make_dashboard", path)
+    spec = importlib.util.spec_from_file_location("make_dashboard", _SOURCE)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
@@ -54,3 +56,13 @@ def test_default_dashboard_writes_only_one_dashboard_html(tmp_path):
         tmp_path / "journal" / "forward" / "dashboard.html",
     ]:
         assert not legacy_dashboard.exists()
+
+
+def test_every_js_render_target_exists_in_the_static_shell():
+    """The JS writes into elements by id, so a renamed id silently blanks a whole
+    panel. Every $('...') target must be present in the HTML skeleton."""
+    src = _SOURCE.read_text()
+    targets = set(re.findall(r"\$\('([\w-]+)'\)", src))
+    declared = set(re.findall(r'id="([\w-]+)"', src))
+    assert targets, "no $('id') calls found -- this check has drifted from the source"
+    assert targets <= declared, f"JS targets with no element: {sorted(targets - declared)}"

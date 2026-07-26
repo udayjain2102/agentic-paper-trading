@@ -1,16 +1,14 @@
 """Render the trading system into a single self-contained HTML dashboard.
 
-Everything happening in one page: forward records, the latest paper-trade
-scorecard, all research runs, the robust bake-off, the equity curve, and the
-latest run's ledger/failure buckets. The unified view ("control room") is a
-static HTML page with a small vanilla-JS layer for chart mode toggles, run
-sorting/filtering, and a per-run detail drawer — no build step, no framework.
+Forward records, the locked-config scorecard, every research run, the robust
+bake-off, the equity curve, and the ledger / decision-quality buckets — one
+static page with a small vanilla-JS layer (sort, filter, per-run drawer).
 
-    python scripts/make_dashboard.py                 # unified control room
+    python scripts/make_dashboard.py                 # writes journal/dashboard.html
     python scripts/make_dashboard.py --open          # also open in a browser
 
-Reads the ledgers written under journal/papertrade/ and journal/forward/; it
-reuses rhagent.evaluate so the numbers match the CLI report exactly.
+Reads the ledgers under journal/papertrade/ and journal/forward/; reuses
+rhagent.evaluate so the numbers match the CLI report exactly.
 """
 
 from __future__ import annotations
@@ -29,21 +27,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import pandas as pd  # noqa: E402
 
 from rhagent.config import load as load_config  # noqa: E402
-from rhagent.evaluate import (  # noqa: E402
-    _bucket_labels,
-    aggregate,
-    load_run,
-    spy_benchmark,
-)
+from rhagent.evaluate import _bucket_labels, aggregate, load_run, spy_benchmark  # noqa: E402
 from rhagent.evaluate_robust import robust_table  # noqa: E402
 from rhagent.features import flatten_trades  # noqa: E402
-from rhagent.learn import lessons_from_runs  # noqa: E402
 from rhagent.memory import read_memory  # noqa: E402
 
 HALT_FILE = Path("HALT")
 
-# GitHub renders this badge live (in progress / passing / failing), so the
-# static dashboard shows current CI state without any JS or re-render.
+# GitHub renders this badge live, so the static page shows CI state with no JS.
 _ACTIONS_URL = ("https://github.com/udayjain2102/papertrading-model-"
                 "/actions/workflows/daily-paper-run.yml")
 
@@ -56,149 +47,89 @@ _RUNBOOK = [
 ]
 
 
-# ── formatting helpers ──────────────────────────────────────────────────────
-
-def _return_pnl(total_return: float, notional: float) -> float:
-    return float(notional) * float(total_return)
-
-
 def _run_dirs(base_dir: Path) -> list[Path]:
     return sorted(p.parent for p in base_dir.glob("*/run.json"))
 
 
-# ── Trading Control Room: unified dashboard ─────────────────────────────────
-#
-# Data is computed server-side into one JSON blob (schema below) and rendered
-# client-side by a small vanilla-JS layer — chart mode toggle, run table sort/
-# filter, trade filter, and a per-run detail drawer. No React, no build step.
+def _run_row(run_dir: Path) -> dict:
+    """Every per-run number the page shows, for one archived run."""
+    meta, trades, net = load_run(run_dir)
+    a = aggregate(trades, net)
+    pnl_s = trades["pnl_abs"].astype(float) if len(trades) else pd.Series(dtype=float)
+    symbols = meta.get("symbols", [])
+    rid = str(meta["run_id"])
+    notional = float(meta.get("notional", 10_000.0))
+    return {
+        "id": rid, "sid": rid[:10] + "·" + rid.split("-")[-1],
+        "engine": meta.get("engine", ""), "overlay": meta.get("overlay", "") or "",
+        "notional": notional, "balance": notional * (1.0 + a["total_return"]),
+        "start": str(meta.get("start", ""))[:10], "end": str(meta.get("end", ""))[:10],
+        "n": a["n_trades"],
+        "won": int((trades["outcome"] == "win").sum()) if len(trades) else 0,
+        "lost": int((trades["outcome"] == "loss").sum()) if len(trades) else 0,
+        "pnl": notional * a["total_return"], "ret": a["total_return"],
+        "gw": float(pnl_s[pnl_s > 0].sum()), "gl": float(-pnl_s[pnl_s < 0].sum()),
+        "pf": a["profit_factor"], "wr": a["win_rate"], "sharpe": a["sharpe"],
+        "dd": a["max_drawdown"], "avgWin": a["avg_win"], "avgLoss": a["avg_loss"],
+        "avgHold": a["avg_holding_bars"],
+        "uni": ", ".join(symbols) if len(symbols) <= 5 else f"universe ({len(symbols)})",
+    }
+
 
 def _forward_leg(eval_dir: Path) -> dict:
-    # cost_bps/fill_mode: meta always has cost_bps; fill_mode is a newer field
-    # (added alongside the fill wiring) so older run.json files fall back to
-    # "close", the fill every record used before fill_mode was recorded.
-    empty_spy = {"return": 0.0, "start": None, "end": None, "n_days": 0}
+    """One forward track (agent / baseline / honest-fill baseline).
+
+    fill_mode is a newer field than cost_bps, so older run.json files fall back
+    to "close" — the fill every record used before fill_mode was written.
+    """
     if not (eval_dir / "run.json").exists():
-        return {
-            "engine": "", "symbols": [], "start": "", "end": "", "days": 0,
-            "ret": 0.0, "pnl": 0.0, "notional": 10_000.0, "sharpe": 0.0, "dd": 0.0,
-            "costBps": 0.0, "fillMode": "close", "spy": empty_spy,
-        }
+        return {"symbols": [], "days": 0, "ret": 0.0, "pnl": 0.0, "notional": 10_000.0,
+                "costBps": 0.0, "fillMode": "close",
+                "spy": {"return": 0.0, "start": None, "end": None, "n_days": 0}}
     meta, trades, net = load_run(eval_dir)
     a = aggregate(trades, net)
     notional = float(meta.get("notional", 10_000.0))
     return {
-        "engine": meta.get("engine", ""), "symbols": meta.get("symbols", []),
-        "start": str(meta.get("start", ""))[:10], "end": str(meta.get("end", ""))[:10],
-        "days": len(net), "ret": a["total_return"],
-        "pnl": _return_pnl(a["total_return"], notional),
-        "notional": notional, "sharpe": a["sharpe"], "dd": a["max_drawdown"],
-        "costBps": float(meta.get("cost_bps", 0.0)), "fillMode": meta.get("fill_mode", "close"),
-        "spy": spy_benchmark(net.index),
+        "symbols": meta.get("symbols", []), "days": len(net), "ret": a["total_return"],
+        "pnl": notional * a["total_return"], "notional": notional,
+        "costBps": float(meta.get("cost_bps", 0.0)),
+        "fillMode": meta.get("fill_mode", "close"), "spy": spy_benchmark(net.index),
     }
 
 
-def _locked_run(base_dir: Path, runs: list[Path], cfg) -> Path:
-    """The run matching the locked strategy config (config.yaml `strategy:`),
-    most recent first. Falls back to the latest run if config has no match."""
+def _locked_run(runs: list[Path], cfg) -> Path:
+    """The most recent run matching config.yaml `strategy:`, else the latest run."""
     if cfg.strategy is not None:
-        candidates = []
-        for run_dir in runs:
-            meta = load_run(run_dir)[0]
-            if meta.get("engine") == cfg.strategy.name and meta.get("overlay", "none") == cfg.strategy.overlay:
-                candidates.append((str(meta["run_id"]), run_dir))
+        candidates = [(str(m["run_id"]), d) for d, m in ((d, load_run(d)[0]) for d in runs)
+                      if m.get("engine") == cfg.strategy.name
+                      and m.get("overlay", "none") == cfg.strategy.overlay]
         if candidates:
             return max(candidates, key=lambda c: c[0])[1]
     return runs[-1]
 
 
-def _runs_data(base_dir: Path) -> list[dict]:
-    rows = []
-    for run_dir in _run_dirs(base_dir):
-        meta, trades, net = load_run(run_dir)
-        a = aggregate(trades, net)
-        pnl_series = trades["pnl_abs"].astype(float) if len(trades) else pd.Series(dtype=float)
-        won = int((trades["outcome"] == "win").sum()) if len(trades) else 0
-        lost = int((trades["outcome"] == "loss").sum()) if len(trades) else 0
-        symbols = meta.get("symbols", [])
-        uni = ", ".join(symbols) if len(symbols) <= 5 else f"universe ({len(symbols)})"
-        rid = str(meta["run_id"])
-        notional = float(meta.get("notional", 10_000.0))
-        rows.append({
-            "id": rid, "engine": meta.get("engine", ""), "overlay": meta.get("overlay", "") or "",
-            "notional": notional, "start": str(meta.get("start", ""))[:10], "end": str(meta.get("end", ""))[:10],
-            "n": a["n_trades"], "won": won, "lost": lost,
-            "pnl": _return_pnl(a["total_return"], notional),
-            "gw": float(pnl_series[pnl_series > 0].sum()), "gl": float(-pnl_series[pnl_series < 0].sum()),
-            "pf": a["profit_factor"], "ret": a["total_return"], "wr": a["win_rate"],
-            "uni": uni, "nsym": len(symbols), "sid": rid[:10] + "·" + rid.split("-")[-1],
-        })
-    return rows
-
-
-def _win_score(run_dir: Path) -> dict:
-    meta, trades, net = load_run(run_dir)
-    a = aggregate(trades, net)
-    pnl_series = trades["pnl_abs"].astype(float) if len(trades) else pd.Series(dtype=float)
-    won = int((trades["outcome"] == "win").sum()) if len(trades) else 0
-    lost = int((trades["outcome"] == "loss").sum()) if len(trades) else 0
-    gw = float(pnl_series[pnl_series > 0].sum())
-    gl = float(-pnl_series[pnl_series < 0].sum())
-    notional = float(meta.get("notional", 10_000.0))
-    pnl = _return_pnl(a["total_return"], notional)
-    return {
-        "notional": notional, "ret": a["total_return"], "pnl": pnl, "balance": notional + pnl,
-        "n": a["n_trades"], "won": won, "lost": lost, "wr": a["win_rate"], "pf": a["profit_factor"],
-        "avgWin": a["avg_win"], "avgLoss": a["avg_loss"], "sharpe": a["sharpe"], "dd": a["max_drawdown"],
-        "avgHold": a["avg_holding_bars"], "gw": gw, "gl": gl,
-        "spy": spy_benchmark(net.index),
-    }
-
-
-def _win_trades(run_dir: Path) -> list[dict]:
-    _, trades, _ = load_run(run_dir)
-    rows = []
-    for i, t in enumerate(trades.itertuples(), start=1):
-        rows.append({
-            "id": f"{i:04d}", "sym": t.symbol, "side": t.side,
-            "entry": str(t.entry_ts)[:10], "in": float(t.entry_price),
-            "exit": str(t.exit_ts)[:10], "out": float(t.exit_price),
-            "bars": int(t.holding_bars), "pnlPct": float(t.pnl_pct),
-            "pnl": float(t.pnl_abs), "oc": t.outcome,
-        })
-    return rows
-
-
-def _cross_run_buckets(base_dir: Path) -> tuple[list[dict], dict, list[dict], dict]:
-    """Top loss + win buckets ranked across every bucketing dimension
-    (vol, gap, holding, symbol, side, dow, near_high, ...), over every
-    archived run."""
-    frames = [load_run(d)[1] for d in _run_dirs(base_dir)]
-    frames = [f for f in frames if len(f)]
+def _cross_run_buckets(base_dir: Path) -> tuple[list[dict], list[dict]]:
+    """Top loss and win buckets across every bucketing dimension (vol, gap,
+    holding, symbol, side, dow, near_high, ...) over every archived run."""
+    frames = [f for f in (load_run(d)[1] for d in _run_dirs(base_dir)) if len(f)]
     if not frames:
-        return [], {}, [], {}
+        return [], []
     trades = flatten_trades(pd.concat(frames, ignore_index=True))
-    n_total = len(trades)
     n_losses = int((trades["outcome"] == "loss").sum())
     n_wins = int((trades["outcome"] == "win").sum())
-    src = f"every paper-trade run archived so far ({len(frames)} runs)"
     rows = []
     for dim, labels in _bucket_labels(trades).items():
         for bucket, idx in trades.groupby(labels).groups.items():
             sub = trades.loc[idx]
             loss_n = int((sub["outcome"] == "loss").sum())
             win_n = int((sub["outcome"] == "win").sum())
-            wr = float((sub["outcome"] == "win").mean()) if len(sub) else 0.0
             rows.append({"dim": dim, "bucket": str(bucket), "lossN": loss_n, "winN": win_n,
-                         "totalN": int(len(sub)), "wr": wr,
-                         "loss_share": loss_n / n_losses if n_losses else 0.0,
-                         "win_share": win_n / n_wins if n_wins else 0.0})
-    loss_rows = [{**r, "share": r["loss_share"]} for r in sorted(rows, key=lambda r: -r["loss_share"])[:5]]
-    win_rows = [{**r, "share": r["win_share"]} for r in sorted(rows, key=lambda r: -r["win_share"])[:5]]
-    loss_meta = {"n": n_total, "losses": n_losses, "runs": len(frames), "source": src,
-                 "caveat": "Measured across every archived paper-trade run, not just the locked config."}
-    win_meta = {"n": n_total, "wins": n_wins, "source": src,
-                "note": "Top buckets across all dimensions, ranked by share of total wins."}
-    return loss_rows, loss_meta, win_rows, win_meta
+                         "totalN": int(len(sub)),
+                         "wr": float((sub["outcome"] == "win").mean()) if len(sub) else 0.0,
+                         "lossShare": loss_n / n_losses if n_losses else 0.0,
+                         "winShare": win_n / n_wins if n_wins else 0.0})
+    top = lambda key: [{**r, "share": r[key]} for r in sorted(rows, key=lambda r: -r[key])[:5]]  # noqa: E731
+    return top("lossShare"), top("winShare")
 
 
 def _bakeoff_data(base_dir: Path, engine: str) -> list[dict]:
@@ -206,55 +137,52 @@ def _bakeoff_data(base_dir: Path, engine: str) -> list[dict]:
     if len(df) == 0 or not engine:
         return []
     df = df[df["engine"] == engine]
-    if len(df) == 0:
-        return []
     order = {"none": 0, "conviction": 1, "bucket": 2, "winprob": 3}
     rows = []
     for overlay, grp in df.groupby(df["overlay"].fillna("none").replace("", "none")):
         best = grp.loc[grp["deflated"].idxmax()]
         rows.append({
-            "overlay": overlay, "point": float(best["point_sharpe"]), "deflated": float(best["deflated"]),
+            "overlay": overlay, "point": float(best["point_sharpe"]),
+            "deflated": float(best["deflated"]),
             "fold": f"{best['fold_mean']:.2f}±{best['fold_std']:.2f}",
             "ci": f"[{best['ci_lo']:.2f}, {best['ci_hi']:.2f}]",
             "beats": bool(best["beats_baseline"]),
         })
-    rows.sort(key=lambda r: order.get(r["overlay"], 99))
-    return rows
+    return sorted(rows, key=lambda r: order.get(r["overlay"], 99))
 
 
-def _equity_curve(run_dir: Path) -> tuple[list[float], list[str]]:
-    _, _, net = load_run(run_dir)
-    equity = (1.0 + net.astype(float)).cumprod()
-    return [float(v) for v in equity.tolist()], [str(d)[:10] for d in equity.index]
+def _win_trades(run_dir: Path) -> list[dict]:
+    _, trades, _ = load_run(run_dir)
+    return [{
+        "id": f"{i:04d}", "sym": t.symbol,
+        "entry": str(t.entry_ts)[:10], "exit": str(t.exit_ts)[:10],
+        "bars": int(t.holding_bars), "pnlPct": float(t.pnl_pct),
+        "pnl": float(t.pnl_abs), "oc": t.outcome,
+    } for i, t in enumerate(trades.itertuples(), start=1)]
 
 
-def _agent_reflections() -> list[str]:
-    memory = read_memory()
-    if not memory:
-        return []
-    return memory.split("\n## ")[1:][-3:]
-
-
-def _build_control_room_data(base_dir: Path) -> dict:
+def _build_data(base_dir: Path) -> dict:
     runs = _run_dirs(base_dir)
     if not runs:
         raise SystemExit(f"no runs found under {base_dir} — run rhagent.papertrade first")
     cfg = load_config()
-    locked_dir = _locked_run(base_dir, runs, cfg)
-
+    locked_dir = _locked_run(runs, cfg)
+    _, _, net = load_run(locked_dir)
+    equity = (1.0 + net.astype(float)).cumprod()
     forward_dir = base_dir.parent / "forward"
-    curve_vals, curve_dates = _equity_curve(locked_dir)
-    loss_buckets, loss_meta, win_buckets, win_meta = _cross_run_buckets(base_dir)
+    loss_buckets, win_buckets = _cross_run_buckets(base_dir)
     g = cfg.limits
+    memory = read_memory()
 
     return {
         "updated": f"{datetime.now(timezone.utc):%Y-%m-%d %H:%M UTC}",
-        "winRunId": str(load_run(locked_dir)[0]["run_id"]),
         "lockedEngine": cfg.strategy.name if cfg.strategy else "",
         "lockedOverlay": cfg.strategy.overlay if cfg.strategy else "",
         "guardrails": {
-            "per_trade_max_usd": g.per_trade_max_usd, "total_deployed_max_usd": g.total_deployed_max_usd,
-            "max_new_positions_per_run": g.max_new_positions_per_run, "max_orders_per_run": g.max_orders_per_run,
+            "per_trade_max_usd": g.per_trade_max_usd,
+            "total_deployed_max_usd": g.total_deployed_max_usd,
+            "max_new_positions_per_run": g.max_new_positions_per_run,
+            "max_orders_per_run": g.max_orders_per_run,
             "daily_loss_limit_usd": g.daily_loss_limit_usd, "live": not cfg.dry_run,
             "halt": HALT_FILE.exists(), "model": cfg.agent.model,
         },
@@ -264,581 +192,416 @@ def _build_control_room_data(base_dir: Path) -> dict:
             "real": _forward_leg(forward_dir / "mean_reversion_real"),
         },
         "bakeoff": _bakeoff_data(base_dir, cfg.strategy.name if cfg.strategy else ""),
-        "curveDaily": curve_vals, "curveDates": curve_dates,
-        "runs": _runs_data(base_dir),
-        "winScore": _win_score(locked_dir),
+        "curveDaily": [float(v) for v in equity.tolist()],
+        "curveDates": [str(d)[:10] for d in equity.index],
+        "runs": [_run_row(d) for d in runs],
+        "winScore": {**_run_row(locked_dir), "spy": spy_benchmark(net.index)},
         "winTrades": _win_trades(locked_dir),
-        "buckets": loss_buckets, "bucketsMeta": loss_meta,
-        "winBuckets": win_buckets, "winBucketsMeta": win_meta,
+        "buckets": loss_buckets, "winBuckets": win_buckets,
         "runbook": [list(x) for x in _RUNBOOK],
-        "lessons": lessons_from_runs(base_dir) or "",
-        "reflections": _agent_reflections(),
+        "reflections": memory.split("\n## ")[1:][-3:] if memory else [],
         "actionsUrl": _ACTIONS_URL,
     }
 
 
-_CONTROL_ROOM_TEMPLATE = r"""<!doctype html>
+_TEMPLATE = r"""<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  *{box-sizing:border-box}
-  html,body{margin:0}
-  body{background:#0a0c10}
-  ::selection{background:rgba(5,196,107,.25)}
-  a{color:#4db8ff;text-decoration:none}
-  a:hover{color:#7fcfff}
-  @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-  @keyframes drawerIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
-  @keyframes backdropIn{from{opacity:0}to{opacity:1}}
-  .cr-scroll::-webkit-scrollbar{height:9px;width:9px}
-  .cr-scroll::-webkit-scrollbar-thumb{background:#2b333f;border-radius:6px}
-  .cr-scroll::-webkit-scrollbar-track{background:transparent}
-  .cr-row:hover{background:var(--panel2)}
-  .cr-btn{border:none;cursor:pointer;font-family:'IBM Plex Sans',sans-serif}
+:root{--bg:#0a0c10;--panel:#12161c;--panel2:#171d25;--line:#232a34;--line2:#2e3742;--fg:#e8edf4;--muted:#828d9b;--up:#05c46b;--down:#ff5c5c;--accent:#4db8ff;--warn:#ffb020;--purple:#b388ff}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:radial-gradient(1200px 600px at 78% -8%,rgba(77,184,255,.06),transparent 60%),var(--bg);color:var(--fg);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+::selection{background:rgba(5,196,107,.25)}
+@keyframes drawerIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
+.m{font-family:'IBM Plex Mono',monospace}
+.mu{color:var(--muted)}
+section{margin-top:30px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px}
+.card h3,.card h2{margin:0 0 4px;font-size:15px;font-weight:600}
+.sub{font-size:12px;color:var(--muted);margin-bottom:16px}
+.grid{display:grid;gap:11px}
+.two{display:grid;gap:20px}
+.col{display:flex;flex-direction:column;gap:14px}
+.hdr{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.tile{background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:13px 15px}
+.tile .v{font-size:20px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.01em}
+.tile .k{font-size:11px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
+.chipbar{display:flex;gap:5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px;flex-wrap:wrap}
+.chip{border:none;cursor:pointer;font:600 12px 'IBM Plex Sans',sans-serif;padding:6px 13px;border-radius:7px;background:transparent;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.chip[aria-pressed=true]{background:var(--panel2);color:var(--fg)}
+.tag{padding:2px 9px;border-radius:6px;font:700 11px 'IBM Plex Mono',monospace;white-space:nowrap}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font:600 11px 'IBM Plex Mono',monospace;border:1px solid var(--line);background:var(--panel2);color:var(--muted)}
+.dot{width:7px;height:7px;border-radius:50%;flex:none;background:currentColor}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);color:var(--muted);text-align:right;white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;text-align:right}
+th.l,td.l{text-align:left}
+th.c,td.c{text-align:center}
+.bar{height:8px;background:var(--bg);border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:4px}
+.scroll{overflow-x:auto}
+.scroll::-webkit-scrollbar{height:9px;width:9px}
+.scroll::-webkit-scrollbar-thumb{background:#2b333f;border-radius:6px}
+.row:hover{background:var(--panel2)}
+.row{cursor:pointer}
+.note{padding:11px 13px;border-radius:10px;font-size:11.5px;color:var(--muted);text-wrap:pretty}
+.btn{border:1px solid var(--line);background:var(--panel2);color:var(--fg);cursor:pointer;font:600 12.5px 'IBM Plex Sans',sans-serif;padding:8px 16px;border-radius:8px}
+.sortable{cursor:pointer}
 </style>
 </head>
 <body>
-<div id="cr-root" style="--bg:#0a0c10;--panel:#12161c;--panel2:#171d25;--line:#232a34;--line2:#2e3742;--fg:#e8edf4;--muted:#828d9b;--up:#05c46b;--down:#ff5c5c;--accent:#4db8ff;--warn:#ffb020;--purple:#b388ff;min-height:100vh;background:radial-gradient(1200px 600px at 78% -8%,rgba(77,184,255,.06),transparent 60%),var(--bg);color:var(--fg);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased">
+<header class="hdr" style="position:sticky;top:0;z-index:20;align-items:center;padding:14px 26px;background:rgba(10,12,16,.82);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)">
+  <div style="line-height:1.15">
+    <div style="font-weight:700;font-size:15px">RHAGENT<span class="mu" style="font-weight:500"> · Trading Control Room</span></div>
+    <div class="m mu" style="font-size:11px">autonomous US-equities agent · guardrail-enforced</div>
+  </div>
+  <div id="headerpills" class="hdr" style="align-items:center;gap:8px"></div>
+</header>
 
-  <header style="position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:14px 26px;background:rgba(10,12,16,.82);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)">
-    <div style="display:flex;align-items:center;gap:11px">
-      <div style="width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--up),#00a35a);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px rgba(5,196,107,.35),0 4px 14px rgba(5,196,107,.25)">
-        <div style="width:9px;height:9px;background:#04120b;transform:rotate(45deg);border-radius:1px"></div>
+<main style="max-width:1240px;margin:0 auto;padding:26px 26px 90px">
+  <section style="margin-top:0">
+    <h2 class="mu" style="margin:0 0 12px;font-size:12px;letter-spacing:.14em;text-transform:uppercase">The verdict · agent vs baseline · forward paper track</h2>
+    <div id="verdict"></div>
+  </section>
+
+  <section class="card">
+    <h3>Equity curve · locked strategy candidate</h3><div class="sub" id="chartsub"></div>
+    <div id="chart"></div>
+    <div class="mu" style="margin-top:6px;font-size:11.5px">green dot = peak, red dot = trough of the max-drawdown window (shaded); dashed line = break-even.</div>
+  </section>
+
+  <section class="two" style="grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr)">
+    <div class="card">
+      <h3>Guardrails · armed</h3><div class="sub">Hard caps enforced in code — the model cannot talk its way past them.</div>
+      <div id="guardrails" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))"></div>
+    </div>
+    <div class="card">
+      <h3>Overlay bake-off · robust Sharpe</h3><div class="sub">A variant beats baseline only if its 95% CI lower bound clears the baseline Sharpe.</div>
+      <div class="scroll"><table><thead><tr><th class="l">overlay</th><th>point</th><th>deflated</th><th>fold ±sd</th><th>95% CI</th><th class="c">vs base</th></tr></thead><tbody id="bakeoff"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="hdr">
+      <div><h3 id="runcount"></h3><div class="sub">Every paper-trade run in the archive. Click a column to sort, a row to open.</div></div>
+      <div id="enginechips" class="chipbar"></div>
+    </div>
+    <div class="scroll" style="border:1px solid var(--line);border-radius:12px"><table style="min-width:760px"><thead id="runcols"></thead><tbody id="runrows"></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <div class="hdr" style="align-items:baseline;gap:10px;margin-bottom:6px">
+      <h3>Locked-config scorecard</h3><span id="winid" class="m mu" style="font-size:11px"></span>
+      <span class="tag" style="background:rgba(5,196,107,.14);color:var(--up)">FORWARD CANDIDATE</span>
+      <span class="tag" style="background:rgba(255,176,32,.14);color:var(--warn)">IN-SAMPLE</span>
+      <div style="flex:1"></div>
+    </div>
+    <div class="sub">Measured over the same window the strategy was selected on — selection-biased, not out-of-sample evidence.</div>
+    <div id="scoretiles" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))"></div>
+    <div id="scorespy" class="mu" style="margin-top:12px;font-size:11.5px"></div>
+  </section>
+
+  <section class="two" style="grid-template-columns:minmax(0,0.85fr) minmax(0,1.15fr)">
+    <div class="col" style="gap:20px">
+      <div class="card">
+        <h3>Where losses concentrate</h3><div class="sub">Top buckets by share of all losses, across every archived run.</div>
+        <div id="buckets" class="col"></div>
+        <div class="note" style="margin-top:16px;background:rgba(255,176,32,.07);border:1px solid rgba(255,176,32,.22)">⚠ Measured across every archived paper-trade run, not just the locked config.</div>
       </div>
-      <div style="line-height:1.15">
-        <div style="font-weight:700;letter-spacing:-.01em;font-size:15px">RHAGENT<span style="color:var(--muted);font-weight:500"> · Trading Control Room</span></div>
-        <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">autonomous US-equities agent · guardrail-enforced</div>
+      <div class="card">
+        <h3>Where we win</h3><div class="sub">Top buckets by share of all wins, across every archived run.</div>
+        <div id="winbuckets" class="col"></div>
       </div>
     </div>
-    <div style="flex:1"></div>
-    <div id="cr-headerpills" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"></div>
-  </header>
-
-  <main style="max-width:1240px;margin:0 auto;padding:26px 26px 90px">
-
-    <section style="animation:fadeUp .4s ease both">
-      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px">
-        <h2 style="margin:0;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600">The verdict · agent vs baseline</h2>
-        <span style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">forward paper track</span>
+    <div class="card">
+      <div class="hdr" style="margin-bottom:14px">
+        <div><h3>Trade ledger</h3><div id="ledgercount" class="mu" style="font-size:12px"></div></div>
+        <div id="tradechips" class="chipbar"></div>
       </div>
-      <div id="cr-verdict"></div>
-    </section>
+      <div class="scroll"><table style="min-width:520px"><thead><tr><th class="l">#</th><th class="l">sym</th><th class="l">entry → exit</th><th>bars</th><th>pnl %</th><th>pnl $</th><th style="min-width:90px">weight</th></tr></thead><tbody id="ledger"></tbody></table></div>
+      <div id="ledgermore" style="margin-top:12px;text-align:center"></div>
+    </div>
+  </section>
 
-    <section style="margin-top:30px">
-      <div id="cr-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px"></div>
-    </section>
+  <section class="card">
+    <div class="hdr" style="align-items:center">
+      <div><h3>Runbook</h3><div class="mu" style="font-size:12px">Every command that drives this system. Click to copy.</div></div>
+      <div class="hdr" style="align-items:center;gap:10px"><span id="trigger-status" class="m mu" style="font-size:11px"></span><button id="trigger-btn" class="btn">Run new research run</button></div>
+    </div>
+    <div id="runbook" class="col" style="gap:8px;margin-top:16px"></div>
+  </section>
 
-    <section style="margin-top:30px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:6px">
-        <div>
-          <h3 style="margin:0;font-size:15px;font-weight:600">Equity curve · locked strategy candidate</h3>
-          <div id="cr-chartsub" style="font-size:12px;color:var(--muted);margin-top:3px"></div>
-        </div>
-        <div id="cr-chartmodes" style="display:flex;gap:5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px"></div>
-      </div>
-      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:8px">
-        <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace"><span style="width:16px;height:3px;background:var(--up);border-radius:2px"></span>equity</span>
-        <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace"><span style="width:16px;height:0;border-top:2px dashed var(--accent)"></span>break-even</span>
-        <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace"><span style="width:12px;height:12px;border-radius:50%;background:rgba(255,92,92,.12);border:1px solid var(--down)"></span>max drawdown window</span>
-      </div>
-      <div id="cr-chart"></div>
-    </section>
+  <section id="agentnotes" class="card" style="display:none">
+    <h3>Agent's own lessons (self-written)</h3><div class="sub">Reflections the agent journaled after past runs.</div>
+    <div id="reflections" class="col" style="gap:10px;font-size:12.5px"></div>
+  </section>
 
-    <section style="margin-top:30px;display:grid;grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr);gap:20px">
-      <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-          <h3 style="margin:0;font-size:15px;font-weight:600">Guardrails · armed</h3>
-          <span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--up);font-family:'IBM Plex Mono',monospace"><span style="width:7px;height:7px;border-radius:50%;background:var(--up);box-shadow:0 0 0 3px rgba(5,196,107,.18)"></span>0 BREACHES</span>
-        </div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Hard caps enforced in code — the model cannot talk its way past them.</div>
-        <div id="cr-guardrails" style="display:flex;flex-direction:column;gap:14px"></div>
-        <div id="cr-guardrail-chips" style="display:flex;gap:7px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)"></div>
-      </div>
-
-      <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-        <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Overlay bake-off · robust Sharpe</h3>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:16px">A variant beats baseline only if its 95% CI lower bound clears the baseline Sharpe.</div>
-        <div class="cr-scroll" style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:12.5px">
-            <thead>
-              <tr style="color:var(--muted);text-align:left">
-                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line)">overlay</th>
-                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">point</th>
-                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">deflated</th>
-                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">fold ±sd</th>
-                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:right">95% CI</th>
-                <th style="padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);text-align:center">vs base</th>
-              </tr>
-            </thead>
-            <tbody id="cr-bakeoff"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <section style="margin-top:30px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px">
-        <div>
-          <h3 id="cr-runcount" style="margin:0;font-size:15px;font-weight:600"></h3>
-          <div style="font-size:12px;color:var(--muted);margin-top:3px">Every paper-trade run in the archive. Click a column to sort, a row to open.</div>
-        </div>
-        <div id="cr-enginechips" style="display:flex;gap:5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px;flex-wrap:wrap"></div>
-      </div>
-      <div class="cr-scroll" style="overflow-x:auto;border:1px solid var(--line);border-radius:12px">
-        <div style="min-width:760px">
-          <div id="cr-runcols" style="display:grid;grid-template-columns:minmax(150px,1.5fr) 1fr 0.9fr 0.65fr 0.7fr 0.6fr 1fr 1.25fr;background:var(--panel2);border-bottom:1px solid var(--line)"></div>
-          <div id="cr-runrows"></div>
-        </div>
-      </div>
-    </section>
-
-    <section style="margin-top:30px">
-      <h3 style="margin:0 0 14px;font-size:15px;font-weight:600">Engine leaderboard <span style="color:var(--muted);font-weight:400;font-size:13px">· best P&amp;L per strategy family</span></h3>
-      <div id="cr-leaderboard" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px"></div>
-    </section>
-
-    <section style="margin-top:30px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:16px">
-        <h3 style="margin:0;font-size:15px;font-weight:600">Locked-config scorecard</h3>
-        <span id="cr-winid" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)"></span>
-        <span style="padding:2px 9px;border-radius:6px;background:rgba(5,196,107,.14);color:var(--up);font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace">FORWARD CANDIDATE</span>
-        <span style="padding:2px 9px;border-radius:6px;background:rgba(255,176,32,.14);color:var(--warn);font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace">IN-SAMPLE</span>
-      </div>
-      <div style="font-size:11.5px;color:var(--muted);margin:-8px 0 14px">This return/Sharpe is measured over the same window the strategy was selected on — selection-biased, not out-of-sample evidence.</div>
-      <div id="cr-scoretiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:11px"></div>
-      <div id="cr-scorespy" style="margin-top:12px;font-size:11.5px;color:var(--muted)"></div>
-    </section>
-
-    <section style="margin-top:30px;display:grid;grid-template-columns:minmax(0,0.85fr) minmax(0,1.15fr);gap:20px;align-items:stretch">
-      <div style="display:flex;flex-direction:column;gap:20px;height:100%">
-        <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-          <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Where losses concentrate</h3>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Very short exits and very long holds both underperform.</div>
-          <div id="cr-buckets" style="display:flex;flex-direction:column;gap:14px"></div>
-          <div id="cr-bucketscaveat" style="margin-top:16px;padding:11px 13px;background:rgba(255,176,32,.07);border:1px solid rgba(255,176,32,.22);border-radius:10px;font-size:11.5px;color:var(--muted);text-wrap:pretty"></div>
-        </div>
-        <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-          <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Where we win</h3>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Top buckets across all dimensions.</div>
-          <div id="cr-winbuckets" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:14px"></div>
-          <div id="cr-winbucketsnote" style="padding:11px 13px;background:rgba(5,196,107,.06);border:1px solid rgba(5,196,107,.2);border-radius:10px;font-size:11.5px;color:var(--muted);text-wrap:pretty"></div>
-        </div>
-      </div>
-
-      <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-          <div>
-            <h3 style="margin:0;font-size:15px;font-weight:600">Trade ledger</h3>
-            <div id="cr-ledgercount" style="font-size:12px;color:var(--muted);margin-top:3px"></div>
-          </div>
-          <div id="cr-tradechips" style="display:flex;gap:5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px"></div>
-        </div>
-        <div class="cr-scroll" style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px">
-            <thead>
-              <tr style="color:var(--muted);text-align:right">
-                <th style="padding:8px 9px;font-weight:600;border-bottom:1px solid var(--line);text-align:left">#</th>
-                <th style="padding:8px 9px;font-weight:600;border-bottom:1px solid var(--line);text-align:left">sym</th>
-                <th style="padding:8px 9px;font-weight:600;border-bottom:1px solid var(--line);text-align:left">entry → exit</th>
-                <th style="padding:8px 9px;font-weight:600;border-bottom:1px solid var(--line)">bars</th>
-                <th style="padding:8px 9px;font-weight:600;border-bottom:1px solid var(--line)">pnl %</th>
-                <th style="padding:8px 9px;font-weight:600;border-bottom:1px solid var(--line)">pnl $</th>
-                <th style="padding:8px 9px;font-weight:600;border-bottom:1px solid var(--line);text-align:right;min-width:90px">weight</th>
-              </tr>
-            </thead>
-            <tbody id="cr-ledger"></tbody>
-          </table>
-        </div>
-        <div id="cr-ledgermore" style="margin-top:12px;text-align:center"></div>
-      </div>
-    </section>
-
-    <section style="margin-top:30px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-        <div>
-          <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Runbook</h3>
-          <div style="font-size:12px;color:var(--muted)">Every command that drives this system. Click to copy.</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <span id="cr-trigger-status" style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace"></span>
-          <button id="cr-trigger-btn" class="cr-btn" style="padding:9px 16px;border-radius:8px;font-size:12.5px;font-weight:600;background:var(--panel2);border:1px solid var(--line);color:var(--fg)">Run new research run</button>
-        </div>
-      </div>
-      <div style="font-size:12px;color:var(--muted);margin:16px 0 16px"></div>
-      <div id="cr-runbook" style="display:flex;flex-direction:column;gap:8px"></div>
-    </section>
-
-    <section id="cr-agentnotes" style="margin-top:30px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px;display:none">
-      <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Agent's own lessons (self-written)</h3>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Reflections the agent journaled after past runs.</div>
-      <div id="cr-reflections" style="display:flex;flex-direction:column;gap:10px;font-size:12.5px;color:var(--fg)"></div>
-    </section>
-
-    <footer style="margin-top:40px;padding-top:20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;color:var(--muted);font-size:11.5px;font-family:'IBM Plex Mono',monospace">
-      <span>rhagent trading harness · journal/papertrade + journal/forward</span>
-      <span>numbers reproduced from rhagent.evaluate · not investment advice</span>
-    </footer>
-  </main>
-
-  <div id="cr-drawerwrap"></div>
-</div>
+  <footer class="hdr m mu" style="margin-top:40px;padding-top:20px;border-top:1px solid var(--line);font-size:11.5px">
+    <span>rhagent trading harness · journal/papertrade + journal/forward</span>
+    <span>numbers reproduced from rhagent.evaluate · not investment advice</span>
+  </footer>
+</main>
+<div id="drawerwrap"></div>
 
 <script>
 const DATA = __DATA_JSON__;
-const ACTIONS_URL = DATA.actionsUrl;
-
-const ST = { chartMode: 'cum', hoverIdx: null, engine: 'all', runSort: 'id', runDir: -1, tradeFilter: 'all', copied: -1, selectedRun: null, ledgerAll: false };
+const ST = { engine: 'all', runSort: 'id', runDir: -1, tradeFilter: 'all', copied: -1, selectedRun: null, ledgerAll: false };
 const LEDGER_PREVIEW = 10;
+const $ = id => document.getElementById(id);
 
-function money(x, dp = 2) { const s = x < 0 ? '-' : ''; return s + '$' + Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp }); }
-function pct(x, dp = 2) { return (x >= 0 ? '+' : '') + (x * 100).toFixed(dp) + '%'; }
-function pctAbs(x, dp = 1) { return (x * 100).toFixed(dp) + '%'; }
-function num(x) { return x >= 999 ? '∞' : x.toFixed(2); }
-function engineColor(e) { return { mean_reversion: 'var(--accent)', momentum: 'var(--warn)', linreg: 'var(--purple)', agent: 'var(--up)' }[e] || 'var(--muted)'; }
-function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+const money = (x, dp = 2) => (x < 0 ? '-' : '') + '$' + Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+const signed = (x, dp = 2) => (x >= 0 ? '+' : '') + money(x, dp);
+const pct = (x, dp = 2) => (x >= 0 ? '+' : '') + (x * 100).toFixed(dp) + '%';
+const pctAbs = (x, dp = 1) => (x * 100).toFixed(dp) + '%';
+const num = x => x >= 999 ? '∞' : x.toFixed(2);
+const ud = x => x >= 0 ? 'var(--up)' : 'var(--down)';
+const engineColor = e => ({ mean_reversion: 'var(--accent)', momentum: 'var(--warn)', linreg: 'var(--purple)', agent: 'var(--up)' }[e] || 'var(--muted)');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// one tile, one chip row, one bucket bar — reused by every panel.
+const tile = (v, k, color) => `<div class="tile"><div class="v" style="color:${color || 'var(--fg)'}">${esc(v)}</div><div class="k">${esc(k)}</div></div>`;
+const chips = (attr, items, active) => items.map(([id, label, dot]) =>
+  `<button class="chip" ${attr}="${esc(id)}" aria-pressed="${id === active}">${dot ? `<span class="dot" style="color:${dot}"></span>` : ''}${esc(label)}</button>`).join('');
+const bucketRow = (b, nKey, color) => `<div>
+  <div class="hdr" style="align-items:baseline;gap:8px;margin-bottom:5px"><span style="font-size:12.5px"><span class="m mu" style="font-size:11px">${esc(b.dim)}</span> · ${esc(b.bucket)}</span><span class="m" style="font-size:12.5px;font-weight:700;color:${color}">${pctAbs(b.share, 1)}</span></div>
+  <div class="bar"><i style="width:${(b.share * 100).toFixed(0)}%;background:${color}"></i></div>
+  <div class="m mu" style="font-size:10.5px">${b[nKey].toLocaleString()} of ${b.totalN.toLocaleString()} trades · ${pctAbs(b.wr, 0)} win rate</div></div>`;
 
 function renderHeaderPills() {
-  const g = DATA.guardrails;
-  const el = document.getElementById('cr-headerpills');
-  el.innerHTML = `
-    <span style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:${g.live ? 'rgba(5,196,107,.1)' : 'rgba(255,176,32,.12)'};border:1px solid ${g.live ? 'rgba(5,196,107,.28)' : 'rgba(255,176,32,.3)'};color:${g.live ? 'var(--up)' : 'var(--warn)'};font-size:11px;font-weight:600;font-family:'IBM Plex Mono',monospace"><span style="width:6px;height:6px;border-radius:50%;background:currentColor"></span>${g.live ? 'LIVE · TRADING' : 'PAPER · DRY-RUN'}</span>
-    <span style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:${g.halt ? 'rgba(255,92,92,.12)' : 'rgba(5,196,107,.1)'};border:1px solid ${g.halt ? 'var(--down)' : 'rgba(5,196,107,.28)'};color:${g.halt ? 'var(--down)' : 'var(--up)'};font-size:11px;font-weight:600;font-family:'IBM Plex Mono',monospace">HALT · ${g.halt ? 'SET' : 'CLEAR'}</span>
-    <a href="${ACTIONS_URL}" style="display:inline-flex"><img src="${ACTIONS_URL}/badge.svg?branch=main" alt="daily paper-run status"></a>
-    <span style="padding:5px 11px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-size:11px;font-family:'IBM Plex Mono',monospace">upd ${esc(DATA.updated)}</span>`;
+  const g = DATA.guardrails, U = 'var(--up)', W = 'var(--warn)', D = 'var(--down)';
+  $('headerpills').innerHTML = `
+    <span class="pill" style="color:${g.live ? U : W};border-color:currentColor"><span class="dot"></span>${g.live ? 'LIVE · TRADING' : 'PAPER · DRY-RUN'}</span>
+    <span class="pill" style="color:${g.halt ? D : U};border-color:currentColor">HALT · ${g.halt ? 'SET' : 'CLEAR'}</span>
+    <a href="${DATA.actionsUrl}"><img src="${DATA.actionsUrl}/badge.svg?branch=main" alt="daily paper-run status"></a>
+    <span class="pill">upd ${esc(DATA.updated)}</span>`;
 }
 
 function renderVerdict() {
-  const f = DATA.forward, agent = f.agent, base = f.baseline, real = f.real;
+  const { agent, baseline: base, real } = DATA.forward;
   const days = agent.days || base.days || 0;
   let badge = 'TOO EARLY TO CALL', note = `Forward track has ${days} day(s) logged. Verdict needs weeks of OOS data.`;
   if (days >= 5) {
-    if (agent.pnl > base.pnl) { badge = 'AGENT LEADS'; note = 'Agent forward P&L ahead of the mean-reversion baseline over the tracked window.'; }
-    else if (base.pnl > agent.pnl) { badge = 'BASELINE LEADS'; note = 'Baseline forward P&L ahead of the agent over the tracked window.'; }
-    else { badge = 'TIED'; note = 'Agent and baseline forward P&L are tied so far.'; }
+    badge = agent.pnl > base.pnl ? 'AGENT LEADS' : base.pnl > agent.pnl ? 'BASELINE LEADS' : 'TIED';
+    note = `Forward P&L over the tracked window: ${badge.toLowerCase()}.`;
   }
-  const fillLabel = leg => `${leg.fillMode === 'next_open' ? 'next-open' : 'same-close'} fill @ ${leg.costBps}bp`;
-  const sub = leg => `${leg.days} day${leg.days === 1 ? '' : 's'} · ${(leg.symbols || []).join(', ') || '—'} · ${leg.ret >= 0 ? 'up' : 'down'} · ${fillLabel(leg)}`;
+  const fill = leg => `${leg.fillMode === 'next_open' ? 'next-open' : 'same-close'} fill @ ${leg.costBps}bp`;
+  const sub = leg => `${leg.days} day(s) · bal ${money(leg.notional + leg.pnl, 0)} · net ${pct(leg.ret)} · ${(leg.symbols || []).join(', ') || '—'} · ${fill(leg)}`;
   const spyLine = leg => leg.spy && leg.spy.start
     ? `SPY buy&amp;hold ${leg.spy.start}→${leg.spy.end}: <b style="color:var(--fg)">${pct(leg.spy.return)}</b>`
     : 'SPY buy&amp;hold: not enough tracked days yet';
-  document.getElementById('cr-verdict').innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:0;align-items:stretch;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden">
-      <div style="padding:22px 26px;display:flex;flex-direction:column;gap:6px">
-        <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600">LLM Agent</div>
-        <div style="font-size:34px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em">${money(agent.pnl)}</div>
-        <div style="font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${sub(agent)}</div>
-        <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${spyLine(agent)}</div>
-      </div>
+  const side = (leg, title, color, align) => `<div style="padding:22px 26px;display:flex;flex-direction:column;gap:6px;text-align:${align}">
+      <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:${color};font-weight:600">${title}</div>
+      <div class="m" style="font-size:34px;font-weight:700;letter-spacing:-.02em">${money(leg.pnl)}</div>
+      <div class="m mu" style="font-size:12px">${esc(sub(leg))}</div>
+      <div class="m mu" style="font-size:11px">${spyLine(leg)}</div></div>`;
+  const banner = (color, bg, html) => `<div class="note" style="margin-top:8px;font-size:13px;color:var(--fg);background:${bg};border:1px solid ${color}">${html}</div>`;
+  $('verdict').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden">
+      ${side(agent, 'LLM Agent', 'var(--accent)', 'left')}
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:22px 30px;background:var(--panel2);border-left:1px solid var(--line);border-right:1px solid var(--line);min-width:220px">
-        <div style="padding:6px 16px;border-radius:999px;background:rgba(255,176,32,.12);border:1px solid rgba(255,176,32,.35);color:var(--warn);font-weight:700;font-size:13px;letter-spacing:.03em">${badge}</div>
-        <div style="font-size:12px;color:var(--muted);text-align:center;max-width:210px;text-wrap:pretty">${esc(note)}</div>
+        <div style="padding:6px 16px;border-radius:999px;background:rgba(255,176,32,.12);border:1px solid rgba(255,176,32,.35);color:var(--warn);font-weight:700;font-size:13px">${badge}</div>
+        <div class="mu" style="font-size:12px;text-align:center;max-width:210px;text-wrap:pretty">${esc(note)}</div>
       </div>
-      <div style="padding:22px 26px;display:flex;flex-direction:column;gap:6px;text-align:right">
-        <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--purple);font-weight:600">Mean-Reversion Baseline</div>
-        <div style="font-size:34px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em">${money(base.pnl)}</div>
-        <div style="font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${sub(base)}</div>
-        <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${spyLine(base)}</div>
-      </div>
+      ${side(base, 'Mean-Reversion Baseline', 'var(--purple)', 'right')}
     </div>
-    <div style="margin-top:10px;display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(5,196,107,.06);border:1px solid rgba(5,196,107,.22);border-radius:12px">
-      <span style="width:8px;height:8px;border-radius:50%;background:var(--up);flex:none;box-shadow:0 0 0 4px rgba(5,196,107,.15)"></span>
-      <div style="font-size:13px;color:var(--fg)"><b style="color:var(--up)">Research winner locked:</b> ${esc(DATA.lockedEngine)}, gated by the <b>${esc(DATA.lockedOverlay || 'no')}</b> overlay. This is the config the forward track is now paper-trading.</div>
-    </div>
-    ${real.days ? `<div style="margin-top:8px;display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(77,184,255,.06);border:1px solid rgba(77,184,255,.22);border-radius:12px">
-      <span style="width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none"></span>
-      <div style="font-size:13px;color:var(--fg)"><b style="color:var(--accent)">Honest-fill record (mean_reversion_real):</b> ${money(real.pnl)} over ${sub(real)}. The baseline above is ${fillLabel(base)} -- flattering by comparison, kept only because its track record predates this fill.</div>
-    </div>` : ''}
-    <div style="margin-top:8px;font-size:11px;color:var(--muted)">SPY benchmark is buy-and-hold over each leg's own tracked window; the strategy is not always fully invested, so this isn't an apples-to-apples exposure comparison.</div>`;
-}
-
-function renderKpis() {
-  const S = DATA.winScore, f = DATA.forward.agent;
-  const kpis = [
-    { label: 'Forward balance', value: money(f.notional + f.pnl), color: 'var(--fg)', bar: 'var(--accent)', sub: `${f.days} day(s) tracked · net ${pct(f.ret)}` },
-    { label: 'Locked-config return', value: pct(S.ret), color: 'var(--up)', bar: 'var(--up)', sub: `${esc(DATA.lockedEngine)} + ${esc(DATA.lockedOverlay)} · in-sample` },
-    { label: 'Win rate', value: pctAbs(S.wr, 1), color: 'var(--up)', bar: 'var(--up)', sub: `${S.won}W / ${S.lost}L` },
-    { label: 'Profit factor', value: S.pf.toFixed(2), color: 'var(--up)', bar: 'var(--up)', sub: `${money(S.gw, 0)} / ${money(S.gl, 0)}` },
-    { label: 'Max drawdown', value: pctAbs(S.dd, 2), color: 'var(--down)', bar: 'var(--down)', sub: `${S.avgHold.toFixed(1)} bar avg hold` },
-    { label: 'System health', value: DATA.guardrails.halt ? 'HALTED' : 'ARMED', color: DATA.guardrails.halt ? 'var(--down)' : 'var(--up)', bar: DATA.guardrails.halt ? 'var(--down)' : 'var(--up)', sub: '5 guardrails · 0 breaches' },
-  ];
-  document.getElementById('cr-kpis').innerHTML = kpis.map(k => `
-    <div style="background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;position:relative;overflow:hidden">
-      <div style="position:absolute;top:0;left:0;width:3px;height:100%;background:${k.bar}"></div>
-      <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600">${esc(k.label)}</div>
-      <div style="font-size:27px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em;margin-top:6px;color:${k.color}">${esc(k.value)}</div>
-      <div style="font-size:11.5px;color:var(--muted);margin-top:5px;font-family:'IBM Plex Mono',monospace">${esc(k.sub)}</div>
-    </div>`).join('');
-}
-
-function buildChartSvg() {
-  const ys = DATA.curveDaily, dates = DATA.curveDates, n = ys.length;
-  if (!n) return '<p style="color:var(--muted)">no equity series</p>';
-  const W = 960, H = 320, padL = 54, padR = 18, padT = 20, padB = 30;
-  const plotW = W - padL - padR, plotH = H - padT - padB;
-  const mode = ST.chartMode;
-  const vals = mode === 'cum' ? ys : ys.map(v => (v - 1) * 100);
-  let lo = Math.min(...vals), hi = Math.max(...vals);
-  const m = (hi - lo) * 0.14 || 0.01; lo -= m; hi += m; const span = hi - lo || 1;
-  const px = i => padL + plotW * (i / Math.max(n - 1, 1));
-  const py = v => padT + plotH * (1 - (v - lo) / span);
-  let grid = '', yl = '';
-  for (let k = 0; k < 5; k++) {
-    const v = lo + span * k / 4, y = py(v);
-    grid += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#232a34" stroke-width="1" opacity="0.55"/>`;
-    yl += `<text x="${padL - 9}" y="${y + 3.5}" text-anchor="end" fill="#828d9b" font-size="11" font-family="'IBM Plex Mono',monospace">${mode === 'cum' ? v.toFixed(2) + '×' : v.toFixed(0) + '%'}</text>`;
-  }
-  const line = vals.map((v, i) => px(i).toFixed(1) + ',' + py(v).toFixed(1)).join(' ');
-  const area = px(0).toFixed(1) + ',' + py(lo).toFixed(1) + ' ' + line + ' ' + px(n - 1).toFixed(1) + ',' + py(lo).toFixed(1);
-  const stroke = ys[n - 1] >= 1 ? '#05c46b' : '#ff5c5c';
-  const baseVal = mode === 'cum' ? 1 : 0;
-  const baseEl = (baseVal >= lo && baseVal <= hi) ? `<line x1="${padL}" y1="${py(baseVal)}" x2="${W - padR}" y2="${py(baseVal)}" stroke="#4db8ff" stroke-dasharray="4 4" opacity="0.5"/>` : '';
-  let rm = -Infinity, ddMin = 0, ddI = 0, peakI = 0;
-  ys.forEach((v, i) => { rm = Math.max(rm, v); const x = v / rm - 1; if (x < ddMin) { ddMin = x; ddI = i; } });
-  let pk = -Infinity; for (let i = 0; i <= ddI; i++) if (ys[i] > pk) { pk = ys[i]; peakI = i; }
-  const ddBand = ddMin < 0 ? `<rect x="${px(peakI)}" y="${padT}" width="${Math.max(px(ddI) - px(peakI), 1)}" height="${plotH}" fill="#ff5c5c" opacity="0.07"/>` : '';
-  const peakDot = `<circle cx="${px(peakI)}" cy="${py(vals[peakI])}" r="3.5" fill="#05c46b" stroke="#0a0c10" stroke-width="1.5"/>`;
-  const troughDot = ddMin < 0 ? `<circle cx="${px(ddI)}" cy="${py(vals[ddI])}" r="3.5" fill="#ff5c5c" stroke="#0a0c10" stroke-width="1.5"/>` : '';
-  const xl = [0, Math.floor(n / 2), n - 1].map((i, k) => `<text x="${px(i)}" y="${H - 9}" text-anchor="${k === 0 ? 'start' : k === 2 ? 'end' : 'middle'}" fill="#828d9b" font-size="11" font-family="'IBM Plex Mono',monospace">${esc(dates[i])}</text>`).join('');
-  let hov = '';
-  if (ST.hoverIdx != null) {
-    const hIdx = ST.hoverIdx, hx = px(hIdx), hy = py(vals[hIdx]);
-    const label = mode === 'cum' ? ys[hIdx].toFixed(3) + '×  (' + pct(ys[hIdx] - 1) + ')' : pct(ys[hIdx] - 1);
-    const tw = 172, tx = Math.min(Math.max(hx - tw / 2, padL), W - padR - tw), ty = Math.max(hy - 50, padT + 2);
-    hov = `<g pointer-events="none"><line x1="${hx}" y1="${padT}" x2="${hx}" y2="${padT + plotH}" stroke="#828d9b" stroke-width="1" opacity="0.5"/>
-      <circle cx="${hx}" cy="${hy}" r="4.5" fill="${stroke}" stroke="#0a0c10" stroke-width="2"/>
-      <g transform="translate(${tx},${ty})"><rect width="${tw}" height="42" rx="7" fill="#05070a" stroke="#2e3742"/>
-      <text x="11" y="18" fill="#e8edf4" font-size="12.5" font-family="'IBM Plex Mono',monospace" font-weight="600">${esc(label)}</text>
-      <text x="11" y="33" fill="#828d9b" font-size="11" font-family="'IBM Plex Mono',monospace">${esc(dates[hIdx])}</text></g></g>`;
-  }
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" preserveAspectRatio="xMidYMid meet" id="cr-chart-svg">
-    ${grid}${ddBand}<polygon points="${area}" fill="${stroke}" opacity="0.1"/>${baseEl}
-    <polyline points="${line}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-    ${peakDot}${troughDot}${yl}${xl}${hov}
-    <rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent" id="cr-chart-overlay"/>
-  </svg>`;
+    ${banner('rgba(5,196,107,.22)', 'rgba(5,196,107,.06)', `<b style="color:var(--up)">Research winner locked:</b> ${esc(DATA.lockedEngine)}, gated by the <b>${esc(DATA.lockedOverlay || 'no')}</b> overlay. This is the config the forward track is now paper-trading.`)}
+    ${real.days ? banner('rgba(77,184,255,.22)', 'rgba(77,184,255,.06)', `<b style="color:var(--accent)">Honest-fill record (mean_reversion_real):</b> ${money(real.pnl)} over ${esc(sub(real))}. The baseline above is ${fill(base)} — flattering by comparison, kept only because its track record predates this fill.`) : ''}
+    <div class="mu" style="margin-top:8px;font-size:11px">SPY benchmark is buy-and-hold over each leg's own tracked window; the strategy is not always fully invested, so this isn't an apples-to-apples exposure comparison.</div>`;
 }
 
 function renderChart() {
-  const cm = ST.chartMode;
-  document.getElementById('cr-chartmodes').innerHTML = ['cum', 'ret'].map(id => `
-    <button class="cr-btn" data-chartmode="${id}" style="padding:6px 14px;border-radius:7px;font-size:12px;font-weight:600;background:${cm === id ? 'var(--accent)' : 'transparent'};color:${cm === id ? '#04121f' : 'var(--muted)'}">${id === 'cum' ? 'Cumulative ×' : 'Return %'}</button>`).join('');
-  const dates = DATA.curveDates;
-  document.getElementById('cr-chartsub').textContent = `${esc(DATA.lockedEngine)}${DATA.lockedOverlay ? ' + ' + DATA.lockedOverlay : ''} · ${dates[0] || ''} → ${dates[dates.length - 1] || ''} · ${money(DATA.winScore.notional, 0)} notional`;
-  document.getElementById('cr-chart').innerHTML = buildChartSvg();
-  const overlay = document.getElementById('cr-chart-overlay');
-  if (overlay) {
-    overlay.addEventListener('mousemove', e => {
-      const svg = overlay.ownerSVGElement, r = svg.getBoundingClientRect();
-      const xr = (e.clientX - r.left) / r.width * 960;
-      let i = Math.round((xr - 54) / (960 - 54 - 18) * (DATA.curveDaily.length - 1));
-      i = Math.max(0, Math.min(DATA.curveDaily.length - 1, i));
-      if (i !== ST.hoverIdx) { ST.hoverIdx = i; renderChart(); }
-    });
-    overlay.addEventListener('mouseleave', () => { if (ST.hoverIdx != null) { ST.hoverIdx = null; renderChart(); } });
+  const ys = DATA.curveDaily, dates = DATA.curveDates, n = ys.length;
+  $('chartsub').textContent = `${DATA.lockedEngine}${DATA.lockedOverlay ? ' + ' + DATA.lockedOverlay : ''} · ${dates[0] || ''} → ${dates[n - 1] || ''} · ${money(DATA.winScore.notional, 0)} notional`;
+  if (!n) { $('chart').innerHTML = '<p class="mu">no equity series</p>'; return; }
+  const W = 960, H = 320, padL = 54, padR = 18, padT = 20, padB = 30;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  let lo = Math.min(...ys), hi = Math.max(...ys);
+  const m = (hi - lo) * 0.14 || 0.01; lo -= m; hi += m;
+  const span = hi - lo || 1;
+  const px = i => padL + plotW * (i / Math.max(n - 1, 1));
+  const py = v => padT + plotH * (1 - (v - lo) / span);
+  const txt = (x, y, s, anchor, fill, size) => `<text x="${x}" y="${y}" text-anchor="${anchor}" fill="${fill}" font-size="${size}" font-family="'IBM Plex Mono',monospace">${esc(s)}</text>`;
+  let axes = '';
+  for (let k = 0; k < 5; k++) {
+    const v = lo + span * k / 4, y = py(v);
+    axes += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#232a34" opacity="0.55"/>` + txt(padL - 9, y + 3.5, v.toFixed(2) + '×', 'end', '#828d9b', 11);
   }
+  axes += [0, Math.floor(n / 2), n - 1].map((i, k) => txt(px(i), H - 9, dates[i], ['start', 'middle', 'end'][k === 0 ? 0 : k === 2 ? 2 : 1], '#828d9b', 11)).join('');
+  const line = ys.map((v, i) => px(i).toFixed(1) + ',' + py(v).toFixed(1)).join(' ');
+  const stroke = ys[n - 1] >= 1 ? '#05c46b' : '#ff5c5c';
+  let rm = -Infinity, ddMin = 0, ddI = 0, peakI = 0, pk = -Infinity;
+  ys.forEach((v, i) => { rm = Math.max(rm, v); if (v / rm - 1 < ddMin) { ddMin = v / rm - 1; ddI = i; } });
+  for (let i = 0; i <= ddI; i++) if (ys[i] > pk) { pk = ys[i]; peakI = i; }
+  const dot = (i, c) => `<circle cx="${px(i)}" cy="${py(ys[i])}" r="3.5" fill="${c}" stroke="#0a0c10" stroke-width="1.5"/>`;
+  $('chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">
+    ${ddMin < 0 ? `<rect x="${px(peakI)}" y="${padT}" width="${Math.max(px(ddI) - px(peakI), 1)}" height="${plotH}" fill="#ff5c5c" opacity="0.07"/>` : ''}
+    ${axes}
+    <polygon points="${px(0).toFixed(1)},${py(lo).toFixed(1)} ${line} ${px(n - 1).toFixed(1)},${py(lo).toFixed(1)}" fill="${stroke}" opacity="0.1"/>
+    ${(1 >= lo && 1 <= hi) ? `<line x1="${padL}" y1="${py(1)}" x2="${W - padR}" y2="${py(1)}" stroke="#4db8ff" stroke-dasharray="4 4" opacity="0.5"/>` : ''}
+    <polyline points="${line}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linejoin="round"/>
+    ${dot(peakI, '#05c46b')}${ddMin < 0 ? dot(ddI, '#ff5c5c') : ''}
+  </svg>`;
 }
 
 function renderGuardrails() {
   const g = DATA.guardrails;
-  const rows = [
-    { label: 'Per-trade max', cap: money(g.per_trade_max_usd, 0), note: 'rejected above ceiling' },
-    { label: 'Total deployed max', cap: money(g.total_deployed_max_usd, 0), note: 'hard cap on live exposure' },
-    { label: 'Max new positions / run', cap: String(g.max_new_positions_per_run), note: 'per cron tick' },
-    { label: 'Max orders / run', cap: String(g.max_orders_per_run), note: 'rate limit' },
-    { label: 'Daily realized-loss kill', cap: money(g.daily_loss_limit_usd, 0), note: 'halts the day when breached' },
-  ];
-  document.getElementById('cr-guardrails').innerHTML = rows.map(r => `
-    <div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
-        <span style="font-size:12.5px;color:var(--fg)">${esc(r.label)}</span>
-        <span style="font-size:13px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--fg)">${esc(r.cap)}</span>
-      </div>
-      <div style="height:6px;background:var(--bg);border-radius:4px;overflow:hidden;border:1px solid var(--line)">
-        <div style="height:100%;width:100%;background:linear-gradient(90deg,var(--up),#3ad98a);border-radius:4px"></div>
-      </div>
-      <div style="font-size:10.5px;color:var(--muted);margin-top:4px;font-family:'IBM Plex Mono',monospace">${esc(r.note)}</div>
-    </div>`).join('');
-  document.getElementById('cr-guardrail-chips').innerHTML = ['US-equities only', 'daily-loss kill switch', 'HALT file', g.model.split('/').pop()]
-    .map(c => `<span style="padding:4px 10px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${esc(c)}</span>`).join('');
+  $('guardrails').innerHTML = [
+    ['per-trade max', money(g.per_trade_max_usd, 0)], ['total deployed max', money(g.total_deployed_max_usd, 0)],
+    ['new positions / run', g.max_new_positions_per_run], ['orders / run', g.max_orders_per_run],
+    ['daily realized-loss kill', money(g.daily_loss_limit_usd, 0)], ['model', g.model.split('/').pop()],
+  ].map(([k, v]) => tile(v, k, 'var(--up)')).join('');
 }
 
 function renderBakeoff() {
   const rows = DATA.bakeoff;
-  if (!rows.length) { document.getElementById('cr-bakeoff').innerHTML = `<tr><td colspan="6" style="padding:12px;color:var(--muted)">no bake-off data</td></tr>`; return; }
+  if (!rows.length) { $('bakeoff').innerHTML = '<tr><td colspan="6" class="l mu">no bake-off data</td></tr>'; return; }
   const maxPoint = Math.max(...rows.map(b => b.point));
-  document.getElementById('cr-bakeoff').innerHTML = rows.map(b => `
-    <tr style="background:${b.beats ? 'rgba(5,196,107,.07)' : 'transparent'}">
-      <td style="padding:9px 10px;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;color:${b.beats ? 'var(--up)' : 'var(--fg)'};font-weight:${b.beats ? 700 : 500}">${esc(b.overlay)}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace">
-        <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px"><span style="width:44px;height:5px;background:var(--bg);border-radius:3px;overflow:hidden;border:1px solid var(--line)"><span style="display:block;height:100%;width:${(b.point / maxPoint * 100).toFixed(0)}%;background:${b.beats ? 'var(--up)' : 'var(--muted)'}"></span></span>${b.point.toFixed(2)}</div>
-      </td>
-      <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--muted)">${b.deflated.toFixed(2)}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--muted)">${esc(b.fold)}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--muted)">${esc(b.ci)}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:center">${b.beats ? '✓ beats' : '—'}</td>
-    </tr>`).join('');
+  $('bakeoff').innerHTML = rows.map(b => `<tr style="background:${b.beats ? 'rgba(5,196,107,.07)' : 'transparent'}">
+    <td class="l" style="color:${b.beats ? 'var(--up)' : 'var(--fg)'};font-weight:${b.beats ? 700 : 500}">${esc(b.overlay)}</td>
+    <td><div style="display:flex;align-items:center;justify-content:flex-end;gap:8px"><span class="bar" style="width:44px;height:5px"><i style="width:${(b.point / maxPoint * 100).toFixed(0)}%;background:${b.beats ? 'var(--up)' : 'var(--muted)'}"></i></span>${b.point.toFixed(2)}</div></td>
+    <td class="mu">${b.deflated.toFixed(2)}</td><td class="mu">${esc(b.fold)}</td><td class="mu">${esc(b.ci)}</td>
+    <td class="c">${b.beats ? '✓ beats' : '—'}</td></tr>`).join('');
 }
 
-const RUN_COLS = [
-  { key: 'id', label: 'run', align: 'left' }, { key: 'engine', label: 'engine', align: 'left' },
-  { key: 'overlay', label: 'overlay', align: 'left' }, { key: 'n', label: 'trades', align: 'right' },
-  { key: 'wr', label: 'win %', align: 'right' }, { key: 'pf', label: 'PF', align: 'right' },
-  { key: 'pnl', label: 'P&L', align: 'right' }, { key: 'ret', label: 'return', align: 'right' },
-];
+const RUN_COLS = [['id', 'run'], ['engine', 'engine'], ['overlay', 'overlay'], ['n', 'trades'], ['wr', 'win %'], ['pf', 'PF'], ['pnl', 'P&L'], ['ret', 'return']];
 
 function renderRuns() {
-  document.getElementById('cr-runcount').textContent = `Research runs · ${DATA.runs.length} total`;
-  document.getElementById('cr-enginechips').innerHTML = ['all', ...new Set(DATA.runs.map(r => r.engine))].map(e => `
-    <button class="cr-btn" data-engine="${esc(e)}" style="padding:6px 13px;border-radius:7px;font-size:12px;font-weight:600;background:${ST.engine === e ? 'var(--panel2)' : 'transparent'};color:${ST.engine === e ? 'var(--fg)' : 'var(--muted)'};display:inline-flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:${e === 'all' ? 'var(--muted)' : engineColor(e)}"></span>${esc(e)}</button>`).join('');
-  document.getElementById('cr-runcols').innerHTML = RUN_COLS.map(c => `
-    <div class="cr-btn" data-sort="${c.key}" style="padding:10px 12px;font-weight:600;color:var(--muted);font-size:12.5px;white-space:nowrap;cursor:pointer;text-align:${c.align}">${esc(c.label)}<span style="color:var(--accent)">${ST.runSort === c.key ? (ST.runDir < 0 ? ' ↓' : ' ↑') : ''}</span></div>`).join('');
+  $('runcount').textContent = `Research runs · ${DATA.runs.length} total`;
+  $('enginechips').innerHTML = chips('data-engine',
+    [['all', 'all', 'var(--muted)'], ...new Set(DATA.runs.map(r => r.engine))].map(e => Array.isArray(e) ? e : [e, e, engineColor(e)]), ST.engine);
+  $('runcols').innerHTML = '<tr>' + RUN_COLS.map(([k, label], i) =>
+    `<th class="sortable ${i < 3 ? 'l' : ''}" data-sort="${k}">${esc(label)}<span style="color:var(--accent)">${ST.runSort === k ? (ST.runDir < 0 ? ' ↓' : ' ↑') : ''}</span></th>`).join('') + '</tr>';
 
-  let rows = DATA.runs.filter(r => ST.engine === 'all' || r.engine === ST.engine);
-  rows = rows.slice().sort((a, b) => {
+  const rows = DATA.runs.filter(r => ST.engine === 'all' || r.engine === ST.engine).slice().sort((a, b) => {
     const av = a[ST.runSort], bv = b[ST.runSort];
     return typeof av === 'string' ? ST.runDir * av.localeCompare(bv) : ST.runDir * (av - bv);
   });
   const maxAbsRet = Math.max(...rows.map(r => Math.abs(r.ret)), 0.01);
-  document.getElementById('cr-runrows').innerHTML = rows.map(r => {
-    const win = r.id === DATA.winRunId;
-    const w = Math.abs(r.ret) / maxAbsRet * 100;
-    return `<div class="cr-row cr-btn" data-open="${esc(r.id)}" style="display:grid;grid-template-columns:minmax(150px,1.5fr) 1fr 0.9fr 0.65fr 0.7fr 0.6fr 1fr 1.25fr;align-items:center;background:${win ? 'rgba(5,196,107,.06)' : 'transparent'};border-bottom:1px solid var(--line);border-left:3px solid ${win ? 'var(--up)' : 'transparent'};font-size:12.5px">
-      <div style="padding:9px 12px;font-family:'IBM Plex Mono',monospace;white-space:nowrap"><span style="color:var(--accent);border-bottom:1px dashed rgba(77,184,255,.45);padding-bottom:1px">${esc(r.sid)}</span>${win ? '<span style="color:var(--up);font-weight:700;font-size:10px;margin-left:6px">◆ LOCKED</span>' : ''}</div>
-      <div style="padding:9px 12px;white-space:nowrap;display:flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:${engineColor(r.engine)};flex:none"></span>${esc(r.engine)}</div>
-      <div style="padding:9px 12px;font-family:'IBM Plex Mono',monospace;color:var(--muted)">${esc(r.overlay || '—')}</div>
-      <div style="padding:9px 12px;text-align:right;font-family:'IBM Plex Mono',monospace">${r.n}</div>
-      <div style="padding:9px 12px;text-align:right;font-family:'IBM Plex Mono',monospace">${pctAbs(r.wr, 1)}</div>
-      <div style="padding:9px 12px;text-align:right;font-family:'IBM Plex Mono',monospace">${num(r.pf)}</div>
-      <div style="padding:9px 12px;text-align:right;font-family:'IBM Plex Mono',monospace;color:${r.pnl >= 0 ? 'var(--up)' : 'var(--down)'};font-weight:600">${(r.pnl >= 0 ? '+' : '') + money(r.pnl, 0)}</div>
-      <div style="padding:9px 12px;font-family:'IBM Plex Mono',monospace;display:flex;align-items:center;justify-content:flex-end;gap:8px"><span style="width:52px;height:5px;background:var(--bg);border-radius:3px;overflow:hidden;border:1px solid var(--line);flex:none"><span style="display:block;height:100%;width:${w.toFixed(0)}%;background:${r.ret >= 0 ? 'var(--up)' : 'var(--down)'}"></span></span><span style="color:${r.ret >= 0 ? 'var(--up)' : 'var(--down)'};min-width:56px;text-align:right">${pct(r.ret, 1)}</span></div>
-    </div>`;
+  $('runrows').innerHTML = rows.map(r => {
+    const win = r.id === DATA.winScore.id;
+    return `<tr class="row" data-open="${esc(r.id)}" style="background:${win ? 'rgba(5,196,107,.06)' : 'transparent'};border-left:3px solid ${win ? 'var(--up)' : 'transparent'}">
+      <td class="l"><span style="color:var(--accent)">${esc(r.sid)}</span>${win ? '<span style="color:var(--up);font-weight:700;font-size:10px;margin-left:6px">◆ LOCKED</span>' : ''}</td>
+      <td class="l"><span class="dot" style="display:inline-block;color:${engineColor(r.engine)}"></span> ${esc(r.engine)}</td>
+      <td class="l mu">${esc(r.overlay || '—')}</td><td>${r.n}</td><td>${pctAbs(r.wr, 1)}</td><td>${num(r.pf)}</td>
+      <td style="color:${ud(r.pnl)};font-weight:600">${signed(r.pnl, 0)}</td>
+      <td><div style="display:flex;align-items:center;justify-content:flex-end;gap:8px"><span class="bar" style="width:52px;height:5px;flex:none"><i style="width:${(Math.abs(r.ret) / maxAbsRet * 100).toFixed(0)}%;background:${ud(r.ret)}"></i></span><span style="color:${ud(r.ret)};min-width:56px">${pct(r.ret, 1)}</span></div></td></tr>`;
   }).join('');
 }
 
-function renderLeaderboard() {
-  const byEngine = {};
-  DATA.runs.forEach(r => { if (!byEngine[r.engine] || r.pnl > byEngine[r.engine].pnl) byEngine[r.engine] = r; });
-  const arr = Object.values(byEngine).sort((a, b) => b.pnl - a.pnl);
-  const maxLb = Math.max(...arr.map(r => r.pnl), 1);
-  document.getElementById('cr-leaderboard').innerHTML = arr.map(r => `
-    <div style="background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="width:9px;height:9px;border-radius:50%;background:${engineColor(r.engine)}"></span><span style="font-weight:600;font-size:14px">${esc(r.engine)}</span></div>
-      <div style="font-size:26px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:${r.pnl >= 0 ? 'var(--up)' : 'var(--down)'};letter-spacing:-.02em">${(r.pnl >= 0 ? '+' : '') + money(r.pnl, 0)}</div>
-      <div style="height:7px;background:var(--bg);border:1px solid var(--line);border-radius:4px;overflow:hidden;margin:10px 0 8px"><div style="height:100%;width:${(r.pnl / maxLb * 100).toFixed(0)}%;background:${engineColor(r.engine)};border-radius:4px"></div></div>
-      <div style="font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${r.n} trades · ${pctAbs(r.wr, 1)} win · ${esc(r.overlay || 'no overlay')}</div>
-    </div>`).join('');
-}
+const SCORE_TILES = S => [
+  ['balance', money(S.balance), ud(S.balance - S.notional)], ['net P&L', signed(S.pnl), ud(S.pnl)],
+  ['total return', pct(S.ret), ud(S.ret)], ['trades', String(S.n)], ['win rate', pctAbs(S.wr, 1)],
+  ['profit factor', num(S.pf), ud(S.pf - 1)], ['avg win', money(S.avgWin), 'var(--up)'],
+  ['avg loss', money(S.avgLoss), 'var(--down)'], ['sharpe', S.sharpe.toFixed(2)],
+  ['max drawdown', pctAbs(S.dd, 2), 'var(--down)'], ['avg holding', S.avgHold.toFixed(1) + ' bars'],
+  ['gross win', money(S.gw, 0), 'var(--up)'], ['gross loss', money(-S.gl, 0), 'var(--down)'],
+];
 
 function renderScorecard() {
-  const S = DATA.winScore;
-  document.getElementById('cr-winid').textContent = DATA.winRunId;
-  const tiles = [
-    { label: 'balance', value: money(S.balance), color: 'var(--up)' },
-    { label: 'net P&L', value: '+' + money(S.pnl), color: 'var(--up)' },
-    { label: 'total return', value: pct(S.ret), color: 'var(--up)' },
-    { label: 'trades', value: String(S.n), color: 'var(--fg)' },
-    { label: 'win rate', value: pctAbs(S.wr, 1), color: 'var(--fg)' },
-    { label: 'profit factor', value: S.pf.toFixed(2), color: 'var(--up)' },
-    { label: 'avg win', value: money(S.avgWin), color: 'var(--up)' },
-    { label: 'avg loss', value: money(S.avgLoss), color: 'var(--down)' },
-    { label: 'sharpe', value: S.sharpe.toFixed(2), color: 'var(--fg)' },
-    { label: 'max drawdown', value: pctAbs(S.dd, 2), color: 'var(--down)' },
-    { label: 'avg holding', value: S.avgHold.toFixed(1) + ' bars', color: 'var(--fg)' },
-    { label: 'gross win', value: money(S.gw, 0), color: 'var(--up)' },
-    { label: 'gross loss', value: money(-S.gl, 0), color: 'var(--down)' },
-  ];
-  document.getElementById('cr-scoretiles').innerHTML = tiles.map(t => `
-    <div style="background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:13px 15px">
-      <div style="font-size:20px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:${t.color};letter-spacing:-.01em">${esc(t.value)}</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.04em">${esc(t.label)}</div>
-    </div>`).join('');
-  const spy = S.spy;
-  document.getElementById('cr-scorespy').textContent = spy && spy.start
+  const S = DATA.winScore, spy = S.spy;
+  $('winid').textContent = S.id;
+  $('scoretiles').innerHTML = SCORE_TILES(S).map(([k, v, c]) => tile(v, k, c)).join('');
+  $('scorespy').textContent = spy && spy.start
     ? `SPY buy-and-hold over the same window (${spy.start} → ${spy.end}): ${pct(spy.return)} — vs strategy total return ${pct(S.ret)}. The strategy is not always fully invested, so this isn't apples-to-apples on exposure.`
     : 'SPY buy-and-hold benchmark unavailable for this window (price cache does not cover it).';
 }
 
 function renderBuckets() {
-  const bm = DATA.bucketsMeta || {};
-  document.getElementById('cr-buckets').innerHTML = DATA.buckets.map(b => `
-    <div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
-        <span style="font-size:12.5px"><span style="color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:11px">${esc(b.dim)}</span> · ${esc(b.bucket)}</span>
-        <span style="font-size:12.5px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--down)">${pctAbs(b.share, 1)}</span>
-      </div>
-      <div style="height:8px;background:var(--bg);border:1px solid var(--line);border-radius:4px;overflow:hidden"><div style="height:100%;width:${(b.share * 100).toFixed(0)}%;background:linear-gradient(90deg,var(--down),#ff8a8a);border-radius:4px"></div></div>
-      <div style="font-size:10.5px;color:var(--muted);margin-top:4px;font-family:'IBM Plex Mono',monospace">${b.lossN.toLocaleString()} of ${b.totalN.toLocaleString()} trades · ${pctAbs(b.wr, 0)} win rate</div>
-    </div>`).join('');
-  document.getElementById('cr-bucketscaveat').innerHTML = bm.n ? `⚠ ${esc(bm.caveat || '')}` : '';
-
-  const wm = DATA.winBucketsMeta || {};
-  document.getElementById('cr-winbuckets').innerHTML = DATA.winBuckets.map(w => `
-    <div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
-        <span style="font-size:12.5px"><span style="color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:11px">${esc(w.dim)}</span> · ${esc(w.bucket)}</span>
-        <span style="font-size:12.5px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--up)">${pctAbs(w.share, 1)}</span>
-      </div>
-      <div style="height:8px;background:var(--bg);border:1px solid var(--line);border-radius:4px;overflow:hidden"><div style="height:100%;width:${(w.share * 100).toFixed(0)}%;background:linear-gradient(90deg,var(--up),#3ad98a);border-radius:4px"></div></div>
-      <div style="font-size:10.5px;color:var(--muted);margin-top:4px;font-family:'IBM Plex Mono',monospace">${w.winN.toLocaleString()} of ${w.totalN.toLocaleString()} trades · ${pctAbs(w.wr, 0)} win rate</div>
-    </div>`).join('');
-  document.getElementById('cr-winbucketsnote').textContent = wm.note || '';
+  $('buckets').innerHTML = DATA.buckets.map(b => bucketRow(b, 'lossN', 'var(--down)')).join('');
+  $('winbuckets').innerHTML = DATA.winBuckets.map(b => bucketRow(b, 'winN', 'var(--up)')).join('');
 }
 
 function renderLedger() {
   const S = DATA.winScore;
-  document.getElementById('cr-ledgercount').textContent = `${S.won} wins · ${S.lost} losses · ${S.n} trades`;
-  document.getElementById('cr-tradechips').innerHTML = [['all', 'all'], ['win', 'wins'], ['loss', 'losses']].map(([id, label]) => `
-    <button class="cr-btn" data-tradefilter="${id}" style="padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600;background:${ST.tradeFilter === id ? 'var(--panel2)' : 'transparent'};color:${ST.tradeFilter === id ? 'var(--fg)' : 'var(--muted)'}">${esc(label)}</button>`).join('');
+  $('ledgercount').textContent = `${S.won} wins · ${S.lost} losses · ${S.n} trades`;
+  $('tradechips').innerHTML = chips('data-tradefilter', [['all', 'all'], ['win', 'wins'], ['loss', 'losses']], ST.tradeFilter);
   const all = DATA.winTrades.filter(t => ST.tradeFilter === 'all' || t.oc === ST.tradeFilter);
-  const trades = ST.ledgerAll ? all : all.slice(0, LEDGER_PREVIEW);
   const maxAbsPnl = Math.max(...DATA.winTrades.map(t => Math.abs(t.pnl)), 1);
-  document.getElementById('cr-ledger').innerHTML = trades.map(t => {
-    const w = Math.abs(t.pnl) / maxAbsPnl * 100;
-    const color = t.oc === 'win' ? 'var(--up)' : 'var(--down)';
-    return `<tr style="border-left:3px solid ${color}">
-      <td style="padding:8px 9px;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;color:var(--muted)">#${esc(t.id)}</td>
-      <td style="padding:8px 9px;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-weight:600">${esc(t.sym)}</td>
-      <td style="padding:8px 9px;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:11px">${esc(t.entry)} → ${esc(t.exit)}</td>
-      <td style="padding:8px 9px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace">${t.bars}</td>
-      <td style="padding:8px 9px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace;color:${color}">${pct(t.pnlPct)}</td>
-      <td style="padding:8px 9px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace;color:${color};font-weight:600">${(t.pnl >= 0 ? '+' : '') + money(t.pnl)}</td>
-      <td style="padding:8px 9px;border-bottom:1px solid var(--line)">
-        <div style="display:flex;align-items:center;gap:0;height:12px"><span style="flex:1;display:flex;justify-content:flex-end"><span style="height:8px;width:${t.pnl < 0 ? w.toFixed(0) : 0}%;background:var(--down);border-radius:2px 0 0 2px"></span></span><span style="width:1px;height:12px;background:var(--line2)"></span><span style="flex:1;display:flex;justify-content:flex-start"><span style="height:8px;width:${t.pnl >= 0 ? w.toFixed(0) : 0}%;background:var(--up);border-radius:0 2px 2px 0"></span></span></div>
-      </td>
-    </tr>`;
+  $('ledger').innerHTML = (ST.ledgerAll ? all : all.slice(0, LEDGER_PREVIEW)).map(t => {
+    const w = (Math.abs(t.pnl) / maxAbsPnl * 100).toFixed(0), c = ud(t.pnl);
+    const half = (side, on) => `<span style="flex:1;display:flex;justify-content:flex-${side}"><span style="height:8px;width:${on ? w : 0}%;background:${c};border-radius:2px"></span></span>`;
+    return `<tr style="border-left:3px solid ${c}">
+      <td class="l mu">#${esc(t.id)}</td><td class="l" style="font-weight:600">${esc(t.sym)}</td>
+      <td class="l" style="font-size:11px">${esc(t.entry)} → ${esc(t.exit)}</td><td>${t.bars}</td>
+      <td style="color:${c}">${pct(t.pnlPct)}</td><td style="color:${c};font-weight:600">${signed(t.pnl)}</td>
+      <td><div style="display:flex;align-items:center;height:12px">${half('end', t.pnl < 0)}<span style="width:1px;height:12px;background:var(--line2)"></span>${half('start', t.pnl >= 0)}</div></td></tr>`;
   }).join('');
-  const more = document.getElementById('cr-ledgermore');
-  more.innerHTML = all.length > LEDGER_PREVIEW
-    ? `<button class="cr-btn" data-ledgertoggle="1" style="padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;background:var(--panel2);color:var(--fg)">${ST.ledgerAll ? 'show fewer' : `show all ${all.length} trades`}</button>`
-    : '';
+  $('ledgermore').innerHTML = all.length > LEDGER_PREVIEW
+    ? `<button class="btn" data-ledgertoggle="1">${ST.ledgerAll ? 'show fewer' : `show all ${all.length} trades`}</button>` : '';
+}
+
+function renderRunbook() {
+  $('runbook').innerHTML = DATA.runbook.map(([label, cmd], i) => `
+    <button class="btn" data-copy="${i}" style="text-align:left;display:flex;align-items:center;gap:14px;background:var(--bg)">
+      <span class="mu" style="font-size:12px;min-width:150px;flex:none">${esc(label)}</span>
+      <span class="m" style="font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(cmd)}</span>
+      <span class="m" style="font-size:11px;color:${ST.copied === i ? 'var(--up)' : 'var(--muted)'};flex:none">${ST.copied === i ? 'COPIED' : 'COPY'}</span>
+    </button>`).join('');
+}
+
+function renderAgentNotes() {
+  const has = DATA.reflections && DATA.reflections.length;
+  $('agentnotes').style.display = has ? '' : 'none';
+  if (has) $('reflections').innerHTML = DATA.reflections.map(r => `<p style="margin:0">## ${esc(r)}</p>`).join('');
+}
+
+function renderDrawer() {
+  const wrap = $('drawerwrap');
+  const r = ST.selectedRun && DATA.runs.find(x => x.id === ST.selectedRun);
+  if (!r) { wrap.innerHTML = ''; return; }
+  const win = r.id === DATA.winScore.id;
+  wrap.innerHTML = `
+    <div data-close style="position:fixed;inset:0;z-index:40;background:rgba(4,6,9,.6);backdrop-filter:blur(2px)"></div>
+    <aside class="scroll" style="position:fixed;top:0;right:0;z-index:41;height:100vh;width:min(540px,94vw);background:var(--panel);border-left:1px solid var(--line2);box-shadow:-24px 0 60px rgba(0,0,0,.5);overflow-y:auto;animation:drawerIn .22s cubic-bezier(.2,.8,.2,1) both">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:20px 24px;border-bottom:1px solid var(--line)">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-weight:600;font-size:14px"><span class="dot" style="display:inline-block;color:${engineColor(r.engine)}"></span> ${esc(r.engine)}</span>
+            <span class="pill" style="border-radius:6px">${esc(r.overlay || 'no overlay')}</span>
+            ${win ? '<span class="tag" style="background:rgba(5,196,107,.14);color:var(--up)">◆ LOCKED CONFIG</span>' : ''}
+          </div>
+          <div class="m mu" style="font-size:11.5px;margin-top:6px">${esc(r.id)}</div>
+        </div>
+        <button class="btn" data-close style="padding:4px 10px">✕</button>
+      </div>
+      <div style="padding:22px 24px">
+        <div style="display:flex;align-items:baseline;gap:12px">
+          <div class="m" style="font-size:38px;font-weight:700;color:${ud(r.ret)}">${pct(r.ret)}</div>
+          <div class="m" style="font-size:14px;font-weight:600;color:${ud(r.pnl)}">${signed(r.pnl)}</div>
+        </div>
+        <div class="mu" style="font-size:12px">total return on ${money(r.notional, 0)} notional · ${esc(r.uni)} · ${r.start} → ${r.end}</div>
+        <div class="grid" style="grid-template-columns:repeat(3,1fr);margin-top:18px">${SCORE_TILES(r).map(([k, v, c]) => tile(v, k, c)).join('')}</div>
+        <div style="margin-top:16px">
+          <div class="m mu" style="font-size:11px;margin-bottom:6px">win / loss split · ${r.won}W / ${r.lost}L</div>
+          <div style="display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--panel2)">
+            <div style="width:${(r.won / (r.n || 1) * 100).toFixed(1)}%;background:var(--up)"></div>
+            <div style="width:${(r.lost / (r.n || 1) * 100).toFixed(1)}%;background:var(--down)"></div>
+          </div>
+        </div>
+        <div class="note" style="margin-top:16px;background:rgba(77,184,255,.06);border:1px solid rgba(77,184,255,.22)">${win
+          ? 'This is the config the forward paper track is now trading — its per-trade ledger is in the Trade ledger panel.'
+          : `Per-trade ledger for this run: rhagent.evaluate --run ${esc(r.id)}`}</div>
+      </div>
+    </aside>`;
 }
 
 async function triggerResearchRun() {
-  const status = document.getElementById('cr-trigger-status');
-  const btn = document.getElementById('cr-trigger-btn');
+  const status = $('trigger-status'), btn = $('trigger-btn');
   btn.disabled = true;
   status.textContent = 'triggering…';
   status.style.color = 'var(--muted)';
   try {
-    const r = await fetch('/api/trigger-run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    });
-    if (r.ok) {
-      status.textContent = 'triggered — running on GitHub Actions';
-      status.style.color = 'var(--up)';
-    } else {
-      const body = await r.json().catch(() => ({}));
-      status.textContent = 'failed: ' + (body.error || r.status);
-      status.style.color = 'var(--down)';
-    }
+    const r = await fetch('/api/trigger-run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const body = r.ok ? {} : await r.json().catch(() => ({}));
+    status.textContent = r.ok ? 'triggered — running on GitHub Actions' : 'failed: ' + (body.error || r.status);
+    status.style.color = r.ok ? 'var(--up)' : 'var(--down)';
   } catch (e) {
     status.textContent = 'failed: ' + e.message;
     status.style.color = 'var(--down)';
@@ -847,128 +610,30 @@ async function triggerResearchRun() {
   }
 }
 
-function renderRunbook() {
-  document.getElementById('cr-runbook').innerHTML = DATA.runbook.map(([label, cmd], i) => `
-    <button class="cr-btn" data-copy="${i}" style="text-align:left;display:flex;align-items:center;gap:14px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:11px 14px">
-      <span style="font-size:12px;color:var(--muted);min-width:150px;flex:none">${esc(label)}</span>
-      <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--fg);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(cmd)}</span>
-      <span style="font-size:11px;font-weight:600;color:${ST.copied === i ? 'var(--up)' : 'var(--muted)'};flex:none;font-family:'IBM Plex Mono',monospace">${ST.copied === i ? 'COPIED' : 'COPY'}</span>
-    </button>`).join('');
-}
-
-function renderAgentNotes() {
-  const sec = document.getElementById('cr-agentnotes');
-  if (!DATA.reflections || !DATA.reflections.length) { sec.style.display = 'none'; return; }
-  sec.style.display = '';
-  document.getElementById('cr-reflections').innerHTML = DATA.reflections.map(r => `<p style="margin:0">## ${esc(r)}</p>`).join('');
-}
-
-function buildDetail(runId) {
-  const r = DATA.runs.find(x => x.id === runId); if (!r) return null;
-  const win = r.id === DATA.winRunId;
-  const balance = r.notional * (1 + r.ret);
-  const avgWin = r.won ? r.gw / r.won : 0, avgLoss = r.lost ? -r.gl / r.lost : 0;
-  const tiles = [
-    { label: 'balance', value: money(balance), color: balance >= r.notional ? 'var(--up)' : 'var(--down)' },
-    { label: 'net P&L', value: (r.pnl >= 0 ? '+' : '') + money(r.pnl), color: r.pnl >= 0 ? 'var(--up)' : 'var(--down)' },
-    { label: 'return', value: pct(r.ret), color: r.ret >= 0 ? 'var(--up)' : 'var(--down)' },
-    { label: 'trades', value: String(r.n), color: 'var(--fg)' },
-    { label: 'win rate', value: pctAbs(r.wr, 1), color: 'var(--fg)' },
-    { label: 'profit factor', value: num(r.pf), color: r.pf >= 1 ? 'var(--up)' : 'var(--down)' },
-    { label: 'avg win', value: money(avgWin), color: 'var(--up)' },
-    { label: 'avg loss', value: money(avgLoss), color: 'var(--down)' },
-    { label: 'gross win', value: money(r.gw, 0), color: 'var(--up)' },
-    { label: 'gross loss', value: money(-r.gl, 0), color: 'var(--down)' },
-  ];
-  return {
-    idFull: r.id, engine: r.engine, dot: engineColor(r.engine), overlay: r.overlay || 'no overlay',
-    winTag: win ? '◆ LOCKED CONFIG' : '', ret: pct(r.ret), retColor: r.ret >= 0 ? 'var(--up)' : 'var(--down)',
-    pnl: (r.pnl >= 0 ? '+' : '') + money(r.pnl), notional: money(r.notional, 0),
-    symbols: r.uni, period: r.start + ' → ' + r.end, tiles, won: r.won, lost: r.lost,
-    winW: (r.won / r.n * 100).toFixed(1) + '%', lossW: (r.lost / r.n * 100).toFixed(1) + '%',
-    note: win ? 'This is the config the forward paper track is now trading.' : `Per-trade ledger for this run is available from the CLI: rhagent.evaluate --run ${r.id}.`,
-  };
-}
-
-function renderDrawer() {
-  const wrap = document.getElementById('cr-drawerwrap');
-  if (!ST.selectedRun) { wrap.innerHTML = ''; return; }
-  const d = buildDetail(ST.selectedRun);
-  if (!d) { wrap.innerHTML = ''; return; }
-  wrap.innerHTML = `
-    <div data-close-drawer style="position:fixed;inset:0;z-index:40;background:rgba(4,6,9,.6);backdrop-filter:blur(2px);animation:backdropIn .18s ease both"></div>
-    <aside style="position:fixed;top:0;right:0;z-index:41;height:100vh;width:min(540px,94vw);background:var(--panel);border-left:1px solid var(--line2);box-shadow:-24px 0 60px rgba(0,0,0,.5);overflow-y:auto;animation:drawerIn .22s cubic-bezier(.2,.8,.2,1) both" class="cr-scroll">
-      <div style="position:sticky;top:0;z-index:2;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:20px 24px;background:rgba(18,22,28,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)">
-        <div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span style="display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:14px"><span style="width:8px;height:8px;border-radius:50%;background:${d.dot}"></span>${esc(d.engine)}</span>
-            <span style="padding:2px 8px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${esc(d.overlay)}</span>
-            ${d.winTag ? `<span style="padding:2px 8px;border-radius:6px;background:rgba(5,196,107,.14);color:var(--up);font-size:10px;font-weight:700;font-family:'IBM Plex Mono',monospace">${d.winTag}</span>` : ''}
-          </div>
-          <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--muted);margin-top:6px">${esc(d.idFull)}</div>
-        </div>
-        <button data-close-drawer style="flex:none;width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--muted);cursor:pointer;font-size:15px;line-height:1">✕</button>
-      </div>
-      <div style="padding:22px 24px">
-        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px">
-          <div style="font-size:38px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em;color:${d.retColor}">${d.ret}</div>
-          <div style="font-size:14px;color:${d.retColor};font-family:'IBM Plex Mono',monospace;font-weight:600">${d.pnl}</div>
-        </div>
-        <div style="font-size:12px;color:var(--muted)">total return on ${d.notional} notional</div>
-        <div style="display:flex;gap:7px;flex-wrap:wrap;margin:18px 0 20px">
-          <span style="padding:5px 11px;border-radius:7px;background:var(--bg);border:1px solid var(--line);font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${esc(d.symbols)}</span>
-          <span style="padding:5px 11px;border-radius:7px;background:var(--bg);border:1px solid var(--line);font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${esc(d.period)}</span>
-        </div>
-        <h4 style="margin:0 0 12px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600">Scorecard</h4>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-          ${d.tiles.map(t => `<div style="background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:12px 14px">
-            <div style="font-size:18px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:${t.color};letter-spacing:-.01em">${esc(t.value)}</div>
-            <div style="font-size:10.5px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.04em">${esc(t.label)}</div></div>`).join('')}
-        </div>
-        <div style="margin-top:16px;display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg);border:1px solid var(--line);border-radius:11px">
-          <div style="flex:1">
-            <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-family:'IBM Plex Mono',monospace">win / loss split · ${d.won}W / ${d.lost}L</div>
-            <div style="display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--panel2)">
-              <div style="height:100%;width:${d.winW};background:var(--up)"></div>
-              <div style="height:100%;width:${d.lossW};background:var(--down)"></div>
-            </div>
-          </div>
-        </div>
-        <div style="margin-top:16px;padding:12px 14px;background:rgba(77,184,255,.06);border:1px solid rgba(77,184,255,.22);border-radius:11px;font-size:12px;color:var(--muted);text-wrap:pretty">${esc(d.note)}</div>
-      </div>
-    </aside>`;
-}
-
-function renderAll() {
-  renderHeaderPills(); renderVerdict(); renderKpis(); renderChart(); renderGuardrails();
-  renderBakeoff(); renderRuns(); renderLeaderboard(); renderScorecard(); renderBuckets();
-  renderLedger(); renderRunbook(); renderAgentNotes(); renderDrawer();
-}
-
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-chartmode],[data-engine],[data-sort],[data-open],[data-tradefilter],[data-ledgertoggle],[data-copy],[data-close-drawer],#cr-trigger-btn');
+  const t = e.target.closest('[data-engine],[data-sort],[data-open],[data-tradefilter],[data-ledgertoggle],[data-copy],[data-close],#trigger-btn');
   if (!t) return;
-  if (t.dataset.chartmode) { ST.chartMode = t.dataset.chartmode; renderChart(); }
-  else if (t.dataset.engine) { ST.engine = t.dataset.engine; renderRuns(); }
-  else if (t.dataset.sort) {
-    if (ST.runSort === t.dataset.sort) ST.runDir = -ST.runDir;
-    else { ST.runSort = t.dataset.sort; ST.runDir = ['id', 'engine', 'overlay'].includes(t.dataset.sort) ? 1 : -1; }
+  const d = t.dataset;
+  if (d.engine) { ST.engine = d.engine; renderRuns(); }
+  else if (d.sort) {
+    if (ST.runSort === d.sort) ST.runDir = -ST.runDir;
+    else { ST.runSort = d.sort; ST.runDir = ['id', 'engine', 'overlay'].includes(d.sort) ? 1 : -1; }
     renderRuns();
-  } else if (t.dataset.open) { ST.selectedRun = t.dataset.open; renderDrawer(); }
-  else if (t.dataset.tradefilter) { ST.tradeFilter = t.dataset.tradefilter; ST.ledgerAll = false; renderLedger(); }
-  else if (t.dataset.ledgertoggle) { ST.ledgerAll = !ST.ledgerAll; renderLedger(); }
-  else if (t.id === 'cr-trigger-btn') { triggerResearchRun(); }
-  else if (t.dataset.copy != null) {
-    const i = Number(t.dataset.copy);
-    const cmd = DATA.runbook[i][1];
-    if (navigator.clipboard) navigator.clipboard.writeText(cmd).catch(() => {});
+  } else if (d.open) { ST.selectedRun = d.open; renderDrawer(); }
+  else if (d.tradefilter) { ST.tradeFilter = d.tradefilter; ST.ledgerAll = false; renderLedger(); }
+  else if (d.ledgertoggle) { ST.ledgerAll = !ST.ledgerAll; renderLedger(); }
+  else if (t.id === 'trigger-btn') { triggerResearchRun(); }
+  else if (d.copy != null) {
+    const i = Number(d.copy);
+    if (navigator.clipboard) navigator.clipboard.writeText(DATA.runbook[i][1]).catch(() => {});
     ST.copied = i; renderRunbook();
     setTimeout(() => { ST.copied = -1; renderRunbook(); }, 1400);
-  } else if (t.hasAttribute('data-close-drawer')) { ST.selectedRun = null; renderDrawer(); }
+  } else if (d.close != null) { ST.selectedRun = null; renderDrawer(); }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && ST.selectedRun) { ST.selectedRun = null; renderDrawer(); } });
 
-renderAll();
+[renderHeaderPills, renderVerdict, renderChart, renderGuardrails, renderBakeoff, renderRuns,
+ renderScorecard, renderBuckets, renderLedger, renderRunbook, renderAgentNotes, renderDrawer].forEach(f => f());
 </script>
 </body>
 </html>
@@ -976,10 +641,10 @@ renderAll();
 
 
 def render_control_room(base_dir: Path) -> str:
-    data = _build_control_room_data(base_dir)
+    data = _build_data(base_dir)
     title = f"Trading Control Room — {len(data['runs'])} research runs"
-    html = _CONTROL_ROOM_TEMPLATE.replace("__TITLE__", escape(title))
-    return html.replace("__DATA_JSON__", json.dumps(data))
+    return (_TEMPLATE.replace("__TITLE__", escape(title))
+            .replace("__DATA_JSON__", json.dumps(data)))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -990,10 +655,8 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     base_dir = Path(args.base_dir)
-    html = render_control_room(base_dir)
-
     out = Path(args.out) if args.out else base_dir.parent / "dashboard.html"
-    out.write_text(html, encoding="utf-8")
+    out.write_text(render_control_room(base_dir), encoding="utf-8")
     print(f"wrote {out}")
     if args.open:
         webbrowser.open(out.resolve().as_uri())
