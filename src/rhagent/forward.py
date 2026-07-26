@@ -20,6 +20,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -29,23 +32,67 @@ from .backtest import net_returns
 from .config import load
 from .data import get_bars
 
+# NVIDIA endpoint sustains ~18 req/min (burst then token-bucket, measured
+# live -- see docs/memory nvidia-rate-limit note). Symbols are decided
+# concurrently (they're independent), but every complete() call funnels
+# through one shared limiter so total request rate stays at/under that,
+# instead of relying on retry/backoff to paper over exceeding it.
+FORWARD_RATE_LIMIT_PER_MIN = 18
+FORWARD_MAX_WORKERS = 20
 
-def _agent_positions(eval_dir: Path, symbol: str, bars: pd.DataFrame,
-                     agent) -> pd.Series:
-    """Target-position series for `symbol`, deciding only bars not yet cached.
 
-    Agent decisions are non-deterministic and cost an API call each, so past
-    verdicts are frozen to disk (eval_dir/pos_<sym>.csv) and only new bars are
-    decided. Keeps a daily forward tick at ~1 call/symbol/day.
-    ponytail: one call per uncached bar; catch-up after a long gap costs N calls.
+class RateLimiter:
+    """Thread-safe call spacing: at most `per_minute` calls/min across callers.
+
+    Not a bursty token bucket -- a monotonic-clock lock that assigns each
+    caller the next free slot spaced 60/per_minute seconds apart. Simpler than
+    a bucket and sufficient here: the goal is "never exceed steady-state rate",
+    not "allow an initial burst". time_func/sleep_func are injectable so tests
+    can assert spacing without sleeping for real seconds.
     """
+
+    def __init__(self, per_minute: float, *, time_func=time.monotonic,
+                sleep_func=time.sleep) -> None:
+        self.min_interval = 60.0 / per_minute
+        self._lock = threading.Lock()
+        self._next_at = 0.0
+        self._time = time_func
+        self._sleep = sleep_func
+
+    def wait(self) -> None:
+        with self._lock:
+            now = self._time()
+            start = max(now, self._next_at)
+            self._next_at = start + self.min_interval
+        delay = start - now
+        if delay > 0:
+            self._sleep(delay)
+
+
+def _rate_limited(complete, limiter: RateLimiter):
+    def wrapped(prompt: str) -> str:
+        limiter.wait()
+        return complete(prompt)
+    return wrapped
+
+
+def _read_prev_positions(eval_dir: Path, symbol: str, bars: pd.DataFrame) -> pd.Series:
     cache = eval_dir / f"pos_{symbol}.csv"
     if cache.exists():
-        prev = pd.read_csv(cache, parse_dates=["date"]).set_index("date")["pos"]
-    else:
-        # Anchor: don't back-decide a year of history (that's ~N API calls and
-        # isn't "forward"). Seed all but the latest bar as flat; decide only new.
-        prev = pd.Series(0.0, index=bars.index[:-1])
+        return pd.read_csv(cache, parse_dates=["date"]).set_index("date")["pos"]
+    # Anchor: don't back-decide a year of history (that's ~N API calls and
+    # isn't "forward"). Seed all but the latest bar as flat; decide only new.
+    return pd.Series(0.0, index=bars.index[:-1])
+
+
+def _decide_new_agent_rows(symbol: str, bars: pd.DataFrame, agent,
+                           prev: pd.Series) -> tuple[pd.Series, list[dict]]:
+    """Pure decide loop (no file I/O): bars for one symbol, strictly in order.
+
+    Sequentially dependent -- each bar's decision feeds the next bar's
+    current_pos -- so this must never be parallelized across bars. Symbols
+    are independent of each other and may run in their own thread/task.
+    """
     pos = float(prev.iloc[-1]) if len(prev) else 0.0
     decided = dict(prev)
     new_rows = []
@@ -61,18 +108,90 @@ def _agent_positions(eval_dir: Path, symbol: str, bars: pd.DataFrame,
                          "target": pos, "reason": d.reason,
                          "status": getattr(d, "status", "ok")})
     out = pd.Series(decided).reindex(bars.index).astype(float)
-    out.rename_axis("date").rename("pos").to_csv(cache)
+    return out, new_rows
+
+
+def _write_agent_cache(eval_dir: Path, symbol: str, out: pd.Series) -> None:
+    out.rename_axis("date").rename("pos").to_csv(eval_dir / f"pos_{symbol}.csv")
+
+
+def _append_decisions(eval_dir: Path, rows: list[dict]) -> None:
     # Append-only decisions log. `status` ("ok" vs "failed") makes a genuine
     # verdict distinguishable from a parse-fail/timeout/API-error fallback
     # without sniffing the reason string; agent performance metrics should
     # filter to status == "ok" rather than counting a failed tick as a real
     # flat decision. Rows written before this field existed have no "status"
     # key -- readers should treat a missing key as unknown/legacy, not "ok".
-    if new_rows:
-        with (eval_dir / "decisions.jsonl").open("a") as f:
-            for r in new_rows:
-                f.write(json.dumps(r) + "\n")
+    if not rows:
+        return
+    with (eval_dir / "decisions.jsonl").open("a") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+
+
+def _agent_positions(eval_dir: Path, symbol: str, bars: pd.DataFrame,
+                     agent) -> pd.Series:
+    """Target-position series for `symbol`, deciding only bars not yet cached.
+
+    Single-symbol entry point (used directly by callers/tests that want one
+    symbol decided and written immediately, e.g. outside the daily tick's
+    multi-symbol dispatch). The concurrent multi-symbol path in `_positions`
+    reuses the same pure decide/write helpers but batches the decisions.jsonl
+    write across symbols instead of appending per-symbol.
+    """
+    prev = _read_prev_positions(eval_dir, symbol, bars)
+    out, new_rows = _decide_new_agent_rows(symbol, bars, agent, prev)
+    _write_agent_cache(eval_dir, symbol, out)
+    _append_decisions(eval_dir, new_rows)
     return out
+
+
+def _agent_positions_parallel(eval_dir: Path, universe: list[str],
+                              bars: dict[str, pd.DataFrame], agent,
+                              rate_limit_per_min: float = FORWARD_RATE_LIMIT_PER_MIN,
+                              ) -> dict[str, pd.Series]:
+    """Decide every symbol's positions concurrently, one thread per symbol.
+
+    Symbols are independent (each has its own bar loop and cache file); only
+    the shared model client is rate-limited across all of them. Pre-builds
+    the client once (avoids the `if self.complete is None` lazy-init race in
+    AgentEngine.decide under threads) and wraps it once in a RateLimiter so
+    every symbol's calls share one budget. decisions.jsonl is written once at
+    the end, sorted by (date, symbol), so concurrent dispatch never produces
+    interleaved/nondeterministic log lines.
+    """
+    # Rate-limiting/pre-building only applies to AgentEngine-shaped agents
+    # (a `complete` attribute); test doubles that stub `decide()` directly
+    # (no model client at all) have nothing to rate-limit.
+    if hasattr(agent, "complete"):
+        if agent.complete is None:
+            agent.complete = agent._default_complete()
+        # Guard against double-wrapping if a caller reuses one `agent`
+        # instance across multiple ticks -- re-wrapping an already-limited
+        # complete() would stack redundant limiters without changing
+        # correctness, just latency.
+        if not getattr(agent, "_forward_rate_limited", False):
+            agent.complete = _rate_limited(agent.complete, RateLimiter(rate_limit_per_min))
+            agent._forward_rate_limited = True
+
+    def task(symbol: str):
+        prev = _read_prev_positions(eval_dir, symbol, bars[symbol])
+        out, rows = _decide_new_agent_rows(symbol, bars[symbol], agent, prev)
+        _write_agent_cache(eval_dir, symbol, out)
+        return symbol, out, rows
+
+    results: dict[str, pd.Series] = {}
+    all_rows: list[dict] = []
+    workers = min(len(universe), FORWARD_MAX_WORKERS) or 1
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futures = {ex.submit(task, s): s for s in universe}
+        for fut in as_completed(futures):
+            symbol, out, rows = fut.result()
+            results[symbol] = out
+            all_rows.extend(rows)
+
+    _append_decisions(eval_dir, sorted(all_rows, key=lambda r: (r["date"], r["symbol"])))
+    return results
 
 
 def _positions(cfg, engine: str, bars: dict[str, pd.DataFrame],
@@ -86,7 +205,7 @@ def _positions(cfg, engine: str, bars: dict[str, pd.DataFrame],
 
             lessons = read_memory() + "\n" + lessons_from_runs()
             agent = AgentEngine(lessons=lessons)
-        return {s: _agent_positions(eval_dir, s, bars[s], agent) for s in cfg.strategy.universe}
+        return _agent_positions_parallel(eval_dir, list(cfg.strategy.universe), bars, agent)
     from .strategies import build
 
     strat = build(engine, cfg.strategy.params)
