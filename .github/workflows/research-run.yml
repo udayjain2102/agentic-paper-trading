@@ -15,6 +15,12 @@ permissions:
 concurrency:
   group: paper-run        # shared with daily-paper-run.yml -- never let a
   cancel-in-progress: false  # forward tick and a research run race on paper-state
+  # Do NOT split this into its own group. Both workflows rsync --delete onto
+  # paper-state and push without --force, so running them concurrently makes
+  # the loser's push fail non-fast-forward and drops that run's work entirely.
+  # Serializing here is the point. The starvation risk from the unauthenticated
+  # trigger (deploy_api/trigger-run.js) is real but strictly smaller than losing
+  # a day of the forward record; fix that at the endpoint, not here.
 
 jobs:
   run:
@@ -30,6 +36,11 @@ jobs:
           cache: pip
 
       - run: pip install -r requirements.txt
+
+      - name: run tests (fail fast, don't ship a regression)
+        env:
+          PYTHONPATH: src
+        run: python -m pytest -q
 
       - name: restore cache from paper-state
         run: |
