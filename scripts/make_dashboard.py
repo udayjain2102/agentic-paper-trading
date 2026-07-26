@@ -450,10 +450,12 @@ _CONTROL_ROOM_TEMPLATE = r"""<!doctype html>
           <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">Runbook</h3>
           <div style="font-size:12px;color:var(--muted)">Every command that drives this system. Click to copy.</div>
         </div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <span id="cr-trigger-status" style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace"></span>
-          <button id="cr-trigger-btn" class="cr-btn" style="padding:9px 16px;border-radius:8px;font-size:12.5px;font-weight:600;background:var(--panel2);border:1px solid var(--line);color:var(--fg)">Run new research run</button>
-        </div>
+        <!-- The "run new research run" button was removed with
+             deploy_api/trigger-run.js: it POSTed to an unauthenticated endpoint
+             that dispatched a workflow which rsync --delete's onto paper-state,
+             the only copy of the forward record. Trigger research runs from
+             GitHub's "Run workflow" button instead; the command is in the
+             runbook below. -->
       </div>
       <div style="font-size:12px;color:var(--muted);margin:16px 0 16px"></div>
       <div id="cr-runbook" style="display:flex;flex-direction:column;gap:8px"></div>
@@ -783,34 +785,6 @@ function renderLedger() {
     : '';
 }
 
-async function triggerResearchRun() {
-  const status = document.getElementById('cr-trigger-status');
-  const btn = document.getElementById('cr-trigger-btn');
-  btn.disabled = true;
-  status.textContent = 'triggering…';
-  status.style.color = 'var(--muted)';
-  try {
-    const r = await fetch('/api/trigger-run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    });
-    if (r.ok) {
-      status.textContent = 'triggered — running on GitHub Actions';
-      status.style.color = 'var(--up)';
-    } else {
-      const body = await r.json().catch(() => ({}));
-      status.textContent = 'failed: ' + (body.error || r.status);
-      status.style.color = 'var(--down)';
-    }
-  } catch (e) {
-    status.textContent = 'failed: ' + e.message;
-    status.style.color = 'var(--down)';
-  } finally {
-    btn.disabled = false;
-  }
-}
-
 function renderRunbook() {
   document.getElementById('cr-runbook').innerHTML = DATA.runbook.map(([label, cmd], i) => `
     <button class="cr-btn" data-copy="${i}" style="text-align:left;display:flex;align-items:center;gap:14px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:11px 14px">
@@ -834,7 +808,7 @@ function renderAll() {
 }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-chartmode],[data-engine],[data-sort],[data-tradefilter],[data-ledgertoggle],[data-copy],#cr-trigger-btn');
+  const t = e.target.closest('[data-chartmode],[data-engine],[data-sort],[data-tradefilter],[data-ledgertoggle],[data-copy]');
   if (!t) return;
   if (t.dataset.chartmode) { ST.chartMode = t.dataset.chartmode; renderChart(); }
   else if (t.dataset.engine) { ST.engine = t.dataset.engine; renderRuns(); }
@@ -844,7 +818,6 @@ document.addEventListener('click', e => {
     renderRuns();
   } else if (t.dataset.tradefilter) { ST.tradeFilter = t.dataset.tradefilter; ST.ledgerAll = false; renderLedger(); }
   else if (t.dataset.ledgertoggle) { ST.ledgerAll = !ST.ledgerAll; renderLedger(); }
-  else if (t.id === 'cr-trigger-btn') { triggerResearchRun(); }
   else if (t.dataset.copy != null) {
     const i = Number(t.dataset.copy);
     const cmd = DATA.runbook[i][1];

@@ -19,7 +19,7 @@ concurrency:
   # paper-state and push without --force, so running them concurrently makes
   # the loser's push fail non-fast-forward and drops that run's work entirely.
   # Serializing here is the point. The starvation risk from the unauthenticated
-  # trigger (deploy_api/trigger-run.js) is real but strictly smaller than losing
+  # trigger endpoint (now deleted) was real but strictly smaller than losing
   # a day of the forward record; fix that at the endpoint, not here.
 
 jobs:
@@ -82,6 +82,5 @@ jobs:
           fi
           mkdir -p site/api
           PYTHONPATH=src python scripts/make_dashboard.py --out site/index.html
-          cp deploy_api/trigger-run.js site/api/trigger-run.js
           npx vercel deploy site --prod --yes --token "$VERCEL_TOKEN" \
             || echo "!! dashboard deploy failed -- paper state already persisted" >&2
