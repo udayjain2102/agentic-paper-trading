@@ -74,8 +74,15 @@ def test_reflect_noop_on_failure(tmp_path):
 
 
 def _cfg(universe):
-    return SimpleNamespace(strategy=SimpleNamespace(
-        name="mean_reversion", params={}, universe=universe, overlay="none"))
+    return SimpleNamespace(
+        strategy=SimpleNamespace(
+            name="mean_reversion", params={}, universe=universe, overlay="none"),
+        # use_lessons=True: this test is the guard that the memory/lessons block
+        # still reaches the prompt when the knob is on (production default is
+        # off -- see config.yaml).
+        agent=SimpleNamespace(model="", max_tokens=None, allow_short=True,
+                              use_lessons=True),
+    )
 
 
 def test_forward_tick_and_reflect_writes_memory_and_meta(tmp_path, monkeypatch):
@@ -143,7 +150,7 @@ def test_positions_lessons_include_memory(tmp_path, monkeypatch):
     captured = {}
 
     class FakeAgent:
-        def __init__(self, lessons=""):
+        def __init__(self, lessons="", allow_short=None):
             captured["lessons"] = lessons
 
         def decide(self, symbol, history, current_pos):

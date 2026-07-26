@@ -29,6 +29,19 @@ agent:
   # leaves room for the preamble without paying for the full 16000-token
   # budget, which measured 60-120s/call -- over an hour for a 65-name tick.
   max_tokens: 2000
+  # Every production AgentEngine() call previously omitted this kwarg, which
+  # defaults False in engine.py -- production has run long-only since launch
+  # despite the offline IC gate (which found "no signal") testing allow_short=
+  # True, a config it never actually ran. Default here matches the gate.
+  allow_short: true
+  # The lessons/memory block prepended to every prompt is an unvalidated prior:
+  # its live text ("losses concentrate in holding=long ... prefer avoiding these
+  # setups") is computed from 24 papertrade runs frozen since 2026-07-15, and it
+  # is what produced 259 flat decisions out of 260. With allow_short now true it
+  # would push the agent short on that stale prior rather than on signal. Off, so
+  # the live record measures the same naked agent the IC gate measured. Turn back
+  # on only once the lessons are derived from the live forward record.
+  use_lessons: false
 
 # Winning strategy. Chosen by the long-only paper-trade bake-off (2026-07-13/14),
 # ranked by risk-adjusted return with the robust evaluator (fold Sharpe +

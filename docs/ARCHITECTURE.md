@@ -1,18 +1,25 @@
 # Architecture
 
-How this system decides what to trade, the math it uses to judge a strategy,
-and the loop by which it improves — all behind hard, code-enforced safety rails.
+How this system decides what to trade, and the math it uses to judge a
+strategy.
 
-The project has **two decision brains** that share one safety funnel:
+The project has **two decision brains**, but only one of them runs through
+the guardrail funnel today:
 
-1. **The LLM agent** — Nemotron (via NVIDIA's API) reasons over the live account
-   each cron tick and proposes orders.
-2. **The quant strategy pipeline** — rule-based strategies that are searched,
-   statistically gated, and paper-traded offline, then run live in "strategy mode".
+1. **The LLM agent** — Nemotron (via NVIDIA's API) reasons over the account
+   each forward tick (`rhagent.forward --engine agent`) and computes a target
+   position for the paper ledger directly. This path never calls
+   `OrderExecutor` or `guardrails.py` — verified: `forward.py` has no
+   reference to either. There is no order to guard because it never proposes
+   a broker order, only a position size for its own paper track.
+2. **The quant strategy pipeline** — the locked strategy (`mean_reversion`,
+   `config.yaml`) is what `paper_run.py`'s scheduled tick turns into orders
+   and routes through `OrderExecutor → guardrails` (§3) before
+   `broker.place_order` — which is always `MockBroker` (see the README's
+   "Safety" section).
 
-Both emit the same thing — proposed `(symbol, side, notional)` orders — and both
-are forced through the identical `OrderExecutor → guardrails → broker` path. The
-model decides; **the code decides what's allowed.**
+The code-enforced funnel in §3 is real and exercised daily, but it sits on
+the quant-strategy path only, not the LLM agent's.
 
 ---
 
@@ -73,12 +80,15 @@ return, trained only on rows whose target is already realized (strictly before
 *t*), then predicts day *t*. Expanding window, no lookahead.
 
 `clamp_short` maps any `-1` to `0` unless shorting is explicitly enabled. **The
-system is long-only: shorting is disabled everywhere by default** (every strategy
-*and* `AgentEngine` default `allow_short=False`, and the paper-trade CLI exposes
-no short toggle). The `allow_short` parameter still exists in the strategy
-classes, so the capability can be re-enabled deliberately in code/config, but no
-normal run shorts. A run can sweep the whole cached universe at once with
-`--symbols all`.
+rule-based strategies are long-only**: `config.yaml`'s locked preset (mean
+reversion) is the long-only bake-off winner, and the paper-trade CLI exposes no
+short toggle for it. The LLM agent is different: `AgentEngine.__init__` still
+defaults `allow_short=False` (`engine.py:134`), but `config.yaml`'s `agent.allow_short:
+true` is passed explicitly at both production call sites
+(`forward.py:215,335`), so the agent runs with shorting enabled today — a
+change from earlier, when both call sites omitted the kwarg and every
+production decision was long-only long-or-flat. A run can sweep the whole
+cached universe at once with `--symbols all`.
 
 ### 1c. The trade setup — the live preset
 
@@ -264,8 +274,12 @@ Design choices worth noting:
   positions/run, 5 orders/run, $200 daily-loss kill switch) — all conservative
   defaults.
 
-One cron tick (`runner.py`): load config → `check_halted` → build executor →
-route to LLM agent *or* strategy mode (`STRATEGY_MODE=true`) → journal.
+The scheduled path today is `paper_run.py`, not a standalone `runner.py`
+(that module no longer exists): load config → `check_halted` → turn the
+day's target positions into orders → `OrderExecutor` → journal to
+`journal/paper_orders.jsonl`. `paper_run.py` hardcodes `MockBroker`
+unconditionally, so this path never reaches a real broker regardless of
+`LIVE`. See the README's "Safety" section for the verified call chain.
 
 ---
 
@@ -375,7 +389,7 @@ One overlay survives:
 
 Two other variants (BucketFilter, a loss-bucket veto; WinProbGate, a logit
 win-probability gate) were baked off against it, lost, and were removed in the
-2026-07-17 cleanup (.md/AUDIT-2026-07-17.md); they live in git history.
+2026-07-17 cleanup (docs/archive/AUDIT-2026-07-17.md); they live in git history.
 
 Because these barely-profitable strategies live in the noise, the bake-off is
 judged by a **robust evaluator** (`evaluate_robust.py`), not a single Sharpe:
@@ -419,7 +433,7 @@ forward numbers match the ranking path exactly.
   `scripts/paper_cron.sh`) runs `refresh --fetch` + tick on GitHub's runners, so the
   record grows without a live laptop or Claude session. The cumulative cache and
   record (both gitignored) persist on a dedicated `paper-state` branch. One-time
-  setup in `.md/paper-cron-setup.md`.
+  setup in `docs/paper-cron-setup.md`.
 - **Self-written memory loop (`memory.py`).** The agent's education is no longer
   just the one-sentence `lessons_from_runs()` stats line — before each bar's
   decision it also reads `journal/agent_memory.md`, its own dated reflections.

@@ -15,6 +15,15 @@ import pandas as pd
 
 from .backtest import result_from_returns
 
+# Below these sample sizes a metric is noise, not signal -- return None instead
+# of a computed-but-meaningless (or fake-zero) float.
+MIN_TRADES_FOR_RATE_STATS = 3  # win_rate/avg_win/avg_loss/profit_factor/avg_holding_bars:
+# below 3 trades a rate is just which of {0%, 50%, 100%} you happened to land
+# on, not an estimate of anything.
+MIN_RETURN_DAYS_FOR_SHARPE = 20  # sharpe annualizes by sqrt(252); under ~1
+# trading month that amplifies day-to-day noise into nonsense (observed:
+# n=2 return-days -> sharpe -15.48, n=6 -> sharpe +6.48).
+
 
 def load_run(run_dir: str | Path) -> tuple[dict, pd.DataFrame, pd.Series]:
     run_dir = Path(run_dir)
@@ -40,26 +49,32 @@ def load_run(run_dir: str | Path) -> tuple[dict, pd.DataFrame, pd.Series]:
 
 def aggregate(trades: pd.DataFrame, net: pd.Series) -> dict:
     res = result_from_returns(net.astype(float))
-    if len(trades) == 0:
+    sharpe = res.sharpe if res.n_days >= MIN_RETURN_DAYS_FOR_SHARPE else None
+    n_trades = len(trades)
+    if n_trades == 0:
         return {
-            "n_trades": 0, "win_rate": 0.0, "avg_win": 0.0, "avg_loss": 0.0,
-            "profit_factor": 0.0, "total_return": res.total_return,
-            "sharpe": res.sharpe, "max_drawdown": res.max_drawdown,
-            "avg_holding_bars": 0.0,
+            "n_trades": 0, "win_rate": None, "avg_win": None, "avg_loss": None,
+            "profit_factor": None, "total_return": res.total_return,
+            "sharpe": sharpe, "max_drawdown": res.max_drawdown,
+            "avg_holding_bars": None, "n_return_days": res.n_days,
         }
+    enough = n_trades >= MIN_TRADES_FOR_RATE_STATS
     pnl = trades["pnl_abs"].astype(float)
     wins, losses = pnl[pnl > 0], pnl[pnl < 0]
     gross_win, gross_loss = float(wins.sum()), float(-losses.sum())
     return {
-        "n_trades": int(len(trades)),
-        "win_rate": float((trades["outcome"] == "win").mean()),
-        "avg_win": float(wins.mean()) if len(wins) else 0.0,
-        "avg_loss": float(losses.mean()) if len(losses) else 0.0,
-        "profit_factor": gross_win / gross_loss if gross_loss > 0 else float("inf"),
+        "n_trades": int(n_trades),
+        "win_rate": float((trades["outcome"] == "win").mean()) if enough else None,
+        "avg_win": (float(wins.mean()) if len(wins) else 0.0) if enough else None,
+        "avg_loss": (float(losses.mean()) if len(losses) else 0.0) if enough else None,
+        "profit_factor": (
+            (gross_win / gross_loss if gross_loss > 0 else float("inf")) if enough else None
+        ),
         "total_return": res.total_return,
-        "sharpe": res.sharpe,
+        "sharpe": sharpe,
         "max_drawdown": res.max_drawdown,
-        "avg_holding_bars": float(trades["holding_bars"].mean()),
+        "avg_holding_bars": float(trades["holding_bars"].mean()) if enough else None,
+        "n_return_days": res.n_days,
     }
 
 

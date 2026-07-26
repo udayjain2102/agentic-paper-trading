@@ -5,12 +5,17 @@ loop (GitHub Actions, Mon-Fri) that ticks rule-based strategies and an LLM agent
 (Nemotron, via NVIDIA's OpenAI-compatible API) forward one day at a time against
 real prices, and scores the resulting track record.
 
-> **It does not place orders.** There is no live order path in this repo: the
-> runner/executor stack that once funnelled orders through the guardrails was
-> removed as dead code (nothing scheduled ever invoked it). `LIVE=true` no
-> longer causes anything to trade, and `guardrails.validate_order` /
-> `check_halted` currently have no production callers — they are retained,
-> tested, and ready for a future order path, not guarding a live one today.
+> **It does not place orders.** The guardrail funnel runs on every scheduled
+> day: `paper_run.run()` calls `guardrails.check_halted` (`paper_run.py:62`),
+> then `OrderExecutor.execute()` calls `guardrails.validate_order`
+> (`executor.py:60`) before `broker.place_order` (`executor.py:74`). What
+> actually stops a real order is that `paper_run.py` hardcodes `MockBroker`
+> unconditionally — it has no import of the live broker class and no branch
+> that can place a real order — and `McpBroker` (`broker.py:82`), the only
+> broker that talks to Robinhood, has zero callers anywhere in `src/`,
+> `scripts/*.sh`, or `.github/workflows/*.yml`. `LIVE=true` gates nothing on
+> this path: `config.py:47` reads it into `cfg.dry_run`, and no order code
+> consults `dry_run` — it only reaches `make_dashboard.py:270` for display.
 > Everything this repo does is read-only against market data.
 
 ## How it actually runs
@@ -48,39 +53,41 @@ cp .env.example .env   # then fill in NVIDIA_API_KEY (needed for the LLM agent p
 
 ## How a strategy is graded
 
-**Trade-level grading is the project's judge**: the scorecard (win rate, avg
-win/loss, profit factor, Sharpe, max drawdown) and failure buckets
-(`rhagent.evaluate`), plus the robust bake-off (fold Sharpe + bootstrap CI +
-deflated Sharpe, `rhagent.evaluate_robust`) — all confirmed against the live
-forward paper-trade record, not backtests. That forward record, growing
-unattended every trading day, is the only thing that can earn the eventual
-`LIVE=true` flip; see `.md/FINDINGS.md` for the trust ladder.
+The scorecard (win rate, avg win/loss, profit factor, Sharpe, max drawdown)
+and failure buckets (`rhagent.evaluate`), plus the robust bake-off (fold
+Sharpe + bootstrap CI + deflated Sharpe, `rhagent.evaluate_robust`), are the
+tools used to grade a strategy against backtests. They are **not** yet
+confirmed against the live forward paper-trade record: as of this writing
+that record (`origin/paper-state`) holds 10, 6, and 2 realized return-days
+across its three tracked strategies, and all three `trades.jsonl` files are
+0-1 bytes — zero trade records. The forward record is meant to be the thing
+that eventually earns a `LIVE=true` flip, but it does not yet have enough
+history to confirm or reject anything; see `docs/archive/FINDINGS.md` for the
+original trust-ladder proposal.
 
-The IC/ICIR machinery under `factor/`, `search/`, and `gate/` (.md/ARCHITECTURE.md
+The IC/ICIR machinery under `factor/`, `search/`, and `gate/` (docs/ARCHITECTURE.md
 §2) is an offline research tool for *narrowing candidates* before they enter
 the bake-off above — it is not a competing grading system, and a strategy does
 not need to clear its gates to be promoted.
 
 ## Safety
 
-**The current safety property is that there is no order path at all.** Nothing
-in this repo can place a trade; the scheduled run only reads prices and appends
-to a paper record.
-
-The guardrail primitives below are implemented and exhaustively tested, but are
-**not currently wired to anything** — they were enforced by `executor.py` /
-`runner.py`, which were removed as dead code. Treat this list as the contract
-any future order path must satisfy, not as protection in force today:
+The guardrail funnel described above (`check_halted` → `validate_order`)
+executes on every scheduled run, in code, not just in tests:
 
 - Per-trade cap, total-deployed cap, max new positions/run, max orders/run —
   defined in `config.yaml`, implemented in `guardrails.validate_order`.
 - Daily realized-loss kill switch and `HALT` file — implemented in
-  `guardrails.check_halted`, called by nothing.
+  `guardrails.check_halted`, called from `paper_run.run()` on every tick.
 - US equities only — non-equity symbols are rejected.
 
-If you reintroduce order placement, route it through `guardrails.validate_order`
-before `broker.place_order` and re-verify the caps end to end. Do not assume the
-`LIVE` flag still gates anything — it does not.
+The property that keeps this repo from placing a real order today is not the
+guardrails — it's that `paper_run.py` hardcodes `MockBroker` unconditionally
+and `McpBroker` (the only broker that can reach Robinhood) has no caller
+anywhere in this repo. If you ever wire a live broker into `paper_run.py`,
+that hardcoding is the thing you'd be removing, and the guardrail funnel is
+already upstream of it — verify the caps end to end when you do. Do not
+assume the `LIVE` flag gates anything on this path; it does not (see above).
 
 ## Tests
 
@@ -88,12 +95,17 @@ before `broker.place_order` and re-verify the caps end to end. Do not assume the
 .venv/bin/python -m pytest
 ```
 
-The guardrails are still covered exhaustively (every rejection path) and the
-broker is mocked, even though neither is on a live path today. The dry-run
-smoke test was removed along with the runner it exercised.
+The guardrails are covered exhaustively (every rejection path), and
+`tests/test_paper_run.py` is an end-to-end dry-run smoke test against the real
+`paper_run.run()` path: it asserts zero real orders are placed, rejected
+orders never reach the broker, the `HALT` file and daily-loss kill switch
+both stop execution, and positions persist across runs.
 CI (`.github/workflows/tests.yml`) runs this suite on every push and PR; the
 daily paper run also runs it first and fails fast if it doesn't pass.
 
 ## Out of scope (v1)
 
-Options, crypto, shorting, real-time streaming, web UI.
+Options, crypto, real-time streaming, web UI. The rule-based strategies are
+long-only (bake-off winner, `config.yaml`). The LLM agent's `allow_short` is a
+config knob (`config.yaml: agent.allow_short`, default `true`) — shorting is
+not blanket out of scope there.

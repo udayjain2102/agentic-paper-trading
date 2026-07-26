@@ -124,6 +124,14 @@ def _append_decisions(eval_dir: Path, rows: list[dict]) -> None:
     # key -- readers should treat a missing key as unknown/legacy, not "ok".
     if not rows:
         return
+    ok_rows = [r for r in rows if r.get("status", "ok") == "ok"]
+    if ok_rows and all(r["target"] == 0.0 for r in ok_rows):
+        # This is exactly the failure mode that wasted ~260 calls: a config
+        # artifact (e.g. allow_short=False silently disabling half the
+        # decision space) can zero out every verdict without ever raising.
+        print(f"!! all {len(ok_rows)} genuine decisions this tick are flat "
+              f"(target=0.0) -- check for a config artifact (e.g. allow_short) "
+              f"suppressing non-flat decisions", file=sys.stderr)
     with (eval_dir / "decisions.jsonl").open("a") as f:
         for r in rows:
             f.write(json.dumps(r) + "\n")
@@ -203,8 +211,9 @@ def _positions(cfg, engine: str, bars: dict[str, pd.DataFrame],
             from .learn import lessons_from_runs
             from .memory import read_memory
 
-            lessons = read_memory() + "\n" + lessons_from_runs()
-            agent = AgentEngine(lessons=lessons)
+            lessons = (read_memory() + "\n" + lessons_from_runs()
+                       if cfg.agent.use_lessons else "")
+            agent = AgentEngine(lessons=lessons, allow_short=cfg.agent.allow_short)
         return _agent_positions_parallel(eval_dir, list(cfg.strategy.universe), bars, agent)
     from .strategies import build
 
@@ -323,7 +332,10 @@ def tick_and_reflect(cfg, eval_dir: Path, cost_bps: float | None = None, *,
 
     memory_text = read_memory(memory_path)
     if agent is None:
-        agent = AgentEngine(lessons=memory_text + "\n" + lessons_from_runs())
+        agent = AgentEngine(
+            lessons=(memory_text + "\n" + lessons_from_runs()
+                     if cfg.agent.use_lessons else ""),
+            allow_short=cfg.agent.allow_short)
 
     res = tick(cfg, eval_dir, cost_bps, engine=engine, fill=fill, fetch=fetch,
               today=today, cache_dir=cache_dir, agent=agent)

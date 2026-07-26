@@ -14,6 +14,11 @@ from .evaluate import load_run
 
 _ANN = 252
 
+# Same reasoning as evaluate.MIN_RETURN_DAYS_FOR_SHARPE: below this many
+# return-days, an annualized (sqrt(252)) Sharpe amplifies noise into a
+# meaningless number (observed: n=2 -> -15.48, n=6 -> +6.48).
+MIN_RETURN_DAYS_FOR_SHARPE = 20
+
 
 def _sharpe(x: np.ndarray) -> float:
     sd = x.std()
@@ -54,34 +59,41 @@ def _phi_inv(p: float) -> float:
            (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1)
 
 
-def fold_sharpe(net: pd.Series, fold: int = 60, step: int = 30) -> tuple[float, float]:
+def fold_sharpe(net: pd.Series, fold: int = 60, step: int = 30) -> tuple[float | None, float | None]:
     x = net.to_numpy(dtype=float)
-    srs = [_sharpe(x[i:i + fold]) for i in range(0, max(len(x) - fold + 1, 1), step)]
+    # only count folds with enough observations for the annualized Sharpe to
+    # mean anything -- a short trailing fold (e.g. the whole series when
+    # len(x) < fold) is exactly the n=6 -> +6.48 case from the audit.
+    srs = [
+        _sharpe(x[i:i + fold])
+        for i in range(0, max(len(x) - fold + 1, 1), step)
+        if len(x[i:i + fold]) >= MIN_RETURN_DAYS_FOR_SHARPE
+    ]
     srs = [s for s in srs if np.isfinite(s)]
     if not srs:
-        return 0.0, 0.0
+        return None, None
     return float(np.mean(srs)), float(np.std(srs))
 
 
-def bootstrap_sharpe_ci(net: pd.Series, n: int = 1000, seed: int = 0) -> tuple[float, float]:
+def bootstrap_sharpe_ci(net: pd.Series, n: int = 1000, seed: int = 0) -> tuple[float | None, float | None]:
     x = net.to_numpy(dtype=float)
-    if len(x) < 2:
-        return 0.0, 0.0
+    if len(x) < MIN_RETURN_DAYS_FOR_SHARPE:
+        return None, None
     rng = np.random.default_rng(seed)
     srs = np.array([_sharpe(rng.choice(x, size=len(x), replace=True)) for _ in range(n)])
     return float(np.percentile(srs, 2.5)), float(np.percentile(srs, 97.5))
 
 
-def deflated_sharpe(observed_sr: float, all_srs: list[float], net: pd.Series) -> float:
+def deflated_sharpe(observed_sr: float, all_srs: list[float], net: pd.Series) -> float | None:
     """Probabilistic Sharpe vs a benchmark inflated for M trials (Bailey & Lopez
     de Prado). Higher = more likely the Sharpe is real, not multiple-testing luck."""
     x = net.to_numpy(dtype=float)
     T = len(x)
     if T < 3:
-        return 0.0
+        return None
     sd = x.std()
     if sd == 0:
-        return 0.0
+        return None
     z = (x - x.mean()) / sd
     skew = float((z ** 3).mean())
     kurt = float((z ** 4).mean())  # non-excess
@@ -129,7 +141,7 @@ def robust_table(base_dir: str | Path) -> pd.DataFrame:
             "run_id": meta["run_id"], "engine": meta.get("engine", ""),
             "symbols": meta.get("symbols", []),
             "overlay": meta.get("overlay", "none"),
-            "point_sharpe": res.sharpe, "net": net,
+            "point_sharpe": res.sharpe, "net": net, "n_return_days": res.n_days,
         })
     if not runs:
         return pd.DataFrame()
@@ -145,6 +157,9 @@ def robust_table(base_dir: str | Path) -> pd.DataFrame:
             "run_id": r["run_id"], "engine": r["engine"], "overlay": r["overlay"],
             "point_sharpe": r["point_sharpe"], "fold_mean": fm, "fold_std": fs,
             "ci_lo": lo, "ci_hi": hi, "deflated": d,
-            "beats_baseline": bool(baseline_sr is not None and lo > baseline_sr),
+            "n_return_days": r["n_return_days"],
+            "beats_baseline": bool(
+                baseline_sr is not None and lo is not None and lo > baseline_sr
+            ),
         })
     return pd.DataFrame(rows).sort_values("deflated", ascending=False).reset_index(drop=True)

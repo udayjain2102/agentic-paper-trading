@@ -67,12 +67,16 @@ snapshot of the API and may have drifted.
    - `max_orders_per_run`: 1, not 5.
    - `total_deployed_max_usd`: enough for a couple of trades, not the full
      book.
-2. Set `LIVE=true` in `.env` (or the environment the runner/routine actually
-   reads it from — confirm this, don't assume).
-3. Run **one manual tick** (`python -m rhagent.runner`, or `STRATEGY_MODE=true`
-   for the locked-in strategy) with a human watching, not on a schedule yet.
-   Confirm in the Robinhood app that the order shown in `journal/runs.jsonl`
-   is the order that actually appears on the account.
+2. **`rhagent.runner` no longer exists, and `LIVE=true` gates nothing on the
+   current `paper_run.py` path** — verified this session (`config.py:47`
+   reads it into `cfg.dry_run`, which no order code consults). `paper_run.py`
+   hardcodes `MockBroker` unconditionally. Before any of this checklist can
+   apply, someone has to actually wire `McpBroker` into `paper_run.py` behind
+   a `LIVE` check — that's new code, not a config flip, and it isn't written
+   yet.
+3. Once that wiring exists: run **one manual tick** with a human watching,
+   not on a schedule yet. Confirm in the Robinhood app that the order shown
+   in the journal is the order that actually appears on the account.
 4. Only after that one tick matches expectations, put it back on a schedule
    (cron, GitHub Action, or routine) — and watch the first several scheduled
    runs closely before treating it as unattended.
