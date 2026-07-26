@@ -787,3 +787,54 @@ roughly 3-5 hours as a background job.
 
 The question the gate exists to answer — does this agent produce anything other than
 flat — remains unanswered.
+
+---
+
+## IC GATE RESULT — 2026-07-26
+
+Offline replay, `allow_short=True`, no lessons block, no lookahead. 1192 calls,
+18 dates with full universe coverage, 1170 usable observations.
+
+| Measure | n | mean IC | ICIR | t | 95% CI | days positive |
+|---|---|---|---|---|---|---|
+| IC_full (-1/0/+1) | 18 | -0.0178 | -0.095 | -0.40 | [-0.105, +0.069] | 6/18 |
+| IC_prod (-1 -> 0) | 18 | -0.0175 | -0.100 | -0.42 | [-0.099, +0.064] | 7/18 |
+| IC_longonly (+1/0) | 18 | +0.0004 | +0.003 | +0.01 | [-0.073, +0.074] | 9/18 |
+
+**The sign flipped between samples.** At n=8 the interim read +0.0278; at n=18 it
+is -0.0178. Reporting the interim as a result would have been an over-claim.
+
+### Verdict: no evidence of predictive signal
+
+Every CI spans zero. ICIR ~0. Long-only IC is +0.0004. This is NOT proof of
+absence -- with observed dispersion (std of daily IC ~0.10) detecting an effect of
+0.03 at 80% power needs ~105 days, and this is 18. But 18 days produced nothing,
+and the sign was unstable across sub-samples, which is what no signal looks like.
+
+### What it does settle
+
+1. **The agent is not degenerate.** 0/18 degenerate dates; targets spread
+   -1:500 / +1:590 / 0:102. It emits confident, varied, direction-flipping
+   cross-sectional views. The live record's "every genuine verdict was flat" was a
+   config artifact (`allow_short=False` zeroing ~40% of calls, plus a caution-heavy
+   lessons block), not a property of the model. The model has opinions; they do not
+   predict.
+
+2. **The ~5% production failure rate was rate-limit pressure, not model
+   flakiness.** 1 failure in 1192 calls (0.08%) under the concurrency limiter. The
+   contamination this plan was written to fix has largely dissolved as a side effect
+   of the runtime work, which means Step 3 (exclude failed days) is now a much
+   smaller problem than when it was specified.
+
+### Consequence for item 8 of the real-money bar
+
+"The agent beats or matches the rule baseline" has no supporting evidence and one
+adverse (if underpowered) reading. The honest position is that the rule is what
+would get funded, and the agent stays a research question resolved by the live
+forward record over ~5 months, not by more offline replay.
+
+### Validity limits
+
+This measured `allow_short=True` with NO lessons block. It is not the production
+agent. A production-config replay would be a different experiment, and given the
+result above it is not obviously worth the spend.
