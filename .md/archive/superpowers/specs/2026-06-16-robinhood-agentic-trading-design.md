@@ -1,3 +1,5 @@
+> **Archived 2026-07-26 — the v1 design; current architecture is .md/ARCHITECTURE.md.** Kept for history, not current state.
+
 # Robinhood Agentic Trading — Design v1
 
 **Date:** 2026-06-16

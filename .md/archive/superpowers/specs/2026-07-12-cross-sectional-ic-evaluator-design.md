@@ -1,3 +1,5 @@
+> **Archived 2026-07-26 — shipped as factor/ic.py — see ARCHITECTURE.md §2a.** Kept for history, not current state.
+
 # Cross-Sectional IC/ICIR Evaluator — Design
 
 Date: 2026-07-12

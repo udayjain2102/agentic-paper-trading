@@ -15,3 +15,7 @@ data/
 
 # Claude Code git worktrees (separate checkouts, not repo content)
 .claude/worktrees/
+
+# graphify output — local tooling artifact, unrelated to trading
+graphify-out/
+src/graphify-out/

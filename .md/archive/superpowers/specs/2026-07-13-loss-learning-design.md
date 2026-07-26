@@ -1,3 +1,5 @@
+> **Archived 2026-07-26 — shipped as overlay.py; WinProbGate/BucketFilter variants were later deleted — see ARCHITECTURE.md Loop D.** Kept for history, not current state.
+
 # Loss-Learning Bake-Off — Design Spec
 
 **Date:** 2026-07-13

@@ -1,3 +1,5 @@
+> **Archived 2026-07-26 — shipped as strategies/ + backtest.py + compare.py — see ARCHITECTURE.md §1b/§2b.** Kept for history, not current state.
+
 # Backtest & Strategy Selection Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

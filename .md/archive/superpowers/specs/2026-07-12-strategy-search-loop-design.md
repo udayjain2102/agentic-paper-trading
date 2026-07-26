@@ -1,3 +1,5 @@
+> **Archived 2026-07-26 — shipped as search/ — see ARCHITECTURE.md Loop A.** Kept for history, not current state.
+
 # Strategy Search Loop — Design
 
 Date: 2026-07-12

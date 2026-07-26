@@ -1,3 +1,5 @@
+> **Archived 2026-07-26 — shipped as papertrade.py + evaluate.py — see ARCHITECTURE.md Loop C.** Kept for history, not current state.
+
 # Paper-Trading & Evaluation Loop — Design
 
 Date: 2026-07-11

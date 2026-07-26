@@ -1,3 +1,5 @@
+> **Archived 2026-07-26 — the dashboard it planned shipped as scripts/make_dashboard.py, since revised further.** Kept for history, not current state.
+
 # Trading Control Panel Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

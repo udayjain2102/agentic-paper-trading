@@ -1,3 +1,8 @@
+> **Archived 2026-07-26 — superseded by `.md/AUDIT-2026-07-22.md`.** This
+> 2026-07-16 audit describes a broken daily CI pipeline and a 87% agent
+> parse-fail rate; both were fixed (PR #9 and PRs #36-#39). Kept for history,
+> not current state.
+
 # Findings — questioning everything against the original goal
 
 **Date:** 2026-07-16

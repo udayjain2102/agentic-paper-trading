@@ -1,3 +1,5 @@
+> **Archived 2026-07-26 — shipped as overlay.py ConvictionGate — see ARCHITECTURE.md Loop D.** Kept for history, not current state.
+
 # Loss-Learning Bake-Off — Phase 1 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

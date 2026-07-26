@@ -1,3 +1,5 @@
+> **Archived 2026-07-26 — shipped as strategies/ + backtest.py — see ARCHITECTURE.md §1b/§2b.** Kept for history, not current state.
+
 # Backtest & Strategy Selection — Design
 
 **Date:** 2026-07-06

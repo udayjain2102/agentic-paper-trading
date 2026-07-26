@@ -1,3 +1,5 @@
+> **Archived 2026-07-26 — WinProbGate lost the bake-off and was deleted in the 2026-07-17 cleanup (.md/archive/AUDIT-2026-07-17.md).** Kept for history, not current state.
+
 # Loss-Learning Phase 2 — WinProbGate Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.

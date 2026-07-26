@@ -1,3 +1,8 @@
+> **Archived 2026-07-26 — superseded by `.md/AUDIT-2026-07-22.md`.** This is
+> the fix checklist for the now-archived `FINDINGS.md`; nearly every item here
+> (green daily run, dead-track cleanup, grading doc, doc drift) is done. Kept
+> for history, not current state.
+
 # How to fix — the companion to FINDINGS.md
 
 Concrete steps, in order. Each fix says what to do, how long it takes, and how

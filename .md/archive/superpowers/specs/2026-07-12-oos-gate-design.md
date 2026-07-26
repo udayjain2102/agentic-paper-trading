@@ -1,3 +1,5 @@
+> **Archived 2026-07-26 — shipped as gate/ — see ARCHITECTURE.md Loop B.** Kept for history, not current state.
+
 # Out-of-Sample Gate + Multiple-Testing Correction — Design
 
 Date: 2026-07-12
