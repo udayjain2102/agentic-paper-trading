@@ -55,6 +55,16 @@ else
   echo "NVIDIA_API_KEY not set -- skipping agent tick"
 fi
 
+echo "== paper-trade tick (guardrail-gated funnel, dry-run only) =="
+# Turns today's target positions into orders through the guardrail funnel
+# (guardrails.py -> executor.py) against the persisted paper account under
+# journal/paper_account.json. Always a MockBroker -- no real order is
+# possible from this step. Non-fatal like the tick(s) above: a failure here
+# must never prevent the forward record (already computed above) from being
+# persisted.
+python -m rhagent.paper_run \
+  || echo "!! paper_run tick failed -- forward record still persisted" >&2
+
 echo "== persist cache + record to ${STATE_BRANCH} =="
 tmp="$(mktemp -d)"
 cleanup() { git worktree remove -f "${tmp}" 2>/dev/null || true; }
