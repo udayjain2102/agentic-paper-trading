@@ -15,3 +15,6 @@ data/
 
 # Claude Code git worktrees (separate checkouts, not repo content)
 .claude/worktrees/
+
+# graphify tool output (generated artifact, regenerate with `graphify`)
+graphify-out/

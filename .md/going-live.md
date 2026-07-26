@@ -9,6 +9,14 @@ live is a checklist, not a design discussion.
 **Do not start this checklist until the bar below is met.** If you're reading
 this because you're excited, not because the bar is met, stop and wait.
 
+> **Step 0, added 2026-07-25: there is no order path to switch on.** `runner.py`
+> and `executor.py` — the loop this runbook assumed you would set `LIVE=true`
+> on — were deleted as dead code. Before step 4 is even possible, someone has to
+> rebuild an order path that calls `guardrails.check_halted` at the top of the
+> run and `guardrails.validate_order` before every `broker.place_order`. Both
+> functions are still here and still exhaustively tested; nothing calls them.
+> Everything below is the checklist for the day *after* that path exists.
+
 ## 1. The trust bar (must be true before step 2)
 
 - The forward paper record (`journal/forward/<engine>/returns.csv`, as shown
@@ -69,10 +77,9 @@ snapshot of the API and may have drifted.
      book.
 2. Set `LIVE=true` in `.env` (or the environment the runner/routine actually
    reads it from — confirm this, don't assume).
-3. Run **one manual tick** (`python -m rhagent.runner`, or `STRATEGY_MODE=true`
-   for the locked-in strategy) with a human watching, not on a schedule yet.
-   Confirm in the Robinhood app that the order shown in `journal/runs.jsonl`
-   is the order that actually appears on the account.
+3. Run **one manual tick** of whatever order path you rebuilt (step 0), with a
+   human watching, not on a schedule yet. Confirm in the Robinhood app that the
+   order shown in the journal is the order that actually appears on the account.
 4. Only after that one tick matches expectations, put it back on a schedule
    (cron, GitHub Action, or routine) — and watch the first several scheduled
    runs closely before treating it as unattended.

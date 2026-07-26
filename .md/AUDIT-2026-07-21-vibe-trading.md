@@ -1,4 +1,11 @@
-# Learning from Vibe-Trading (HKUDS)
+# Audit — 2026-07-21: learning from Vibe-Trading (HKUDS)
+
+> **Historical record.** A one-day comparison study, kept for its conclusions.
+> Its "our code today" snapshots are stale: `data.py` now has the fallback
+> chain this study asked for, and `strategy_runner.py`, `runner.py`,
+> `guardrails.py`'s callers and `decision_pnl.py` have since been deleted
+> (decision scoring now lives in `forward._report_decision_quality`).
+> For how the system works now, see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 Source: https://github.com/HKUDS/Vibe-Trading
 Cloned + run side-by-side with our repo on 2026-07-21. Clone at
