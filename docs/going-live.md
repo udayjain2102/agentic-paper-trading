@@ -9,6 +9,16 @@ live is a checklist, not a design discussion.
 **Do not start this checklist until the bar below is met.** If you're reading
 this because you're excited, not because the bar is met, stop and wait.
 
+> **Step 0, updated 2026-07-27: the order path exists again, but it's still
+> mocked.** `paper_run.py` calls `guardrails.check_halted` at the top of the
+> run and, per order, routes through `executor.OrderExecutor` →
+> `guardrails.validate_order` before `broker.place_order` — this funnel runs
+> on every scheduled tick now (`scripts/paper_cron.sh`), not just in tests.
+> What still makes this a no-op for real money: `paper_run.py` constructs a
+> `MockBroker` unconditionally and never checks `LIVE`. Step 4 below is
+> therefore not a config flip — it's wiring `McpBroker` into `paper_run.py`
+> behind a `LIVE` check, which does not exist yet.
+
 ## 1. The trust bar (must be true before step 2)
 
 - The forward paper record (`journal/forward/<engine>/returns.csv`, as shown
@@ -67,13 +77,12 @@ snapshot of the API and may have drifted.
    - `max_orders_per_run`: 1, not 5.
    - `total_deployed_max_usd`: enough for a couple of trades, not the full
      book.
-2. **`rhagent.runner` no longer exists, and `LIVE=true` gates nothing on the
-   current `paper_run.py` path** — verified this session (`config.py:47`
-   reads it into `cfg.dry_run`, which no order code consults). `paper_run.py`
-   hardcodes `MockBroker` unconditionally. Before any of this checklist can
-   apply, someone has to actually wire `McpBroker` into `paper_run.py` behind
-   a `LIVE` check — that's new code, not a config flip, and it isn't written
-   yet.
+2. **`LIVE=true` gates nothing on the current `paper_run.py` path** — verified
+   against the merged code (`config.py` reads it into `cfg.dry_run`, which no
+   order code consults). `paper_run.py` hardcodes `MockBroker` unconditionally.
+   Before any of this checklist can apply, someone has to actually wire
+   `McpBroker` into `paper_run.py` behind a `LIVE` check — that's new code,
+   not a config flip, and it isn't written yet.
 3. Once that wiring exists: run **one manual tick** with a human watching,
    not on a schedule yet. Confirm in the Robinhood app that the order shown
    in the journal is the order that actually appears on the account.

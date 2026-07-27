@@ -14,34 +14,47 @@ real prices, and scores the resulting track record.
 > that can place a real order — and `McpBroker` (`broker.py:82`), the only
 > broker that talks to Robinhood, has zero callers anywhere in `src/`,
 > `scripts/*.sh`, or `.github/workflows/*.yml`. `LIVE=true` gates nothing on
-> this path: `config.py:47` reads it into `cfg.dry_run`, and no order code
-> consults `dry_run` — it only reaches `make_dashboard.py:270` for display.
-> Everything this repo does is read-only against market data.
+> this path: `config.py` reads it into `cfg.dry_run` (`is_live()`), and no
+> order code consults `dry_run` — it only reaches `make_dashboard.py` for
+> display. Everything this repo does is read-only against market data.
 
 ## How it actually runs
 
 The scheduled path is a GitHub Actions cron (`.github/workflows/daily-paper-run.yml`,
 Mon-Fri) that runs `scripts/paper_cron.sh`: it refreshes the price cache
 (Yahoo's keyless chart API by default; the Robinhood MCP only if
-`ROBINHOOD_MCP_URL`/`ROBINHOOD_MCP_TOKEN` secrets are set), ticks the forward
-paper-trade record (`rhagent.forward`), and — only if `NVIDIA_API_KEY` is
-set — runs one LLM-agent tick. Nothing here places a real order; this is a
-paper/dry-run system end to end unless you flip `LIVE=true` yourself.
+`ROBINHOOD_MCP_URL`/`ROBINHOOD_MCP_TOKEN` secrets are set), ticks three forward
+paper-trade records (`rhagent.forward`), runs `rhagent.paper_run` through the
+guardrail funnel (dry-run, `MockBroker` only), and renders the dashboard.
+Nothing here places a real order — there is no code path that can.
 
+The three records exist on purpose, on different cost/fill bases:
+
+| Record | Cost | Fill | Why |
+|---|---|---|---|
+| `mean_reversion` | 1 bp | `close` | The original record, pinned to its seed basis so its curve has no discontinuity. Flattering fills. |
+| `mean_reversion_real` | 7 bp | `next_open` | **The honest go-forward number** — a cost and a fill you could actually get. |
+| `agent` | config | config | The LLM engine, only when `NVIDIA_API_KEY` is set. |
 
 ## Layout
 
 | File | Role |
 |------|------|
-| `scripts/paper_cron.sh` | **The real scheduled entry point** — refresh, forward tick, optional agent tick. |
+| `scripts/paper_cron.sh` | **The real scheduled entry point** — refresh, three forward ticks, guardrail-gated `paper_run` tick, state push. |
 | `src/rhagent/refresh.py` | Historical bars: Yahoo by default, RH MCP if secrets are set. Cached to `data/*.csv`. |
-| `src/rhagent/forward.py` | Ticks the forward paper-trade record the scheduled run and dashboard read from. |
-| `src/rhagent/guardrails.py` | Pure, exhaustively-tested safety checks. |
-| `src/rhagent/broker.py` | The only code that touches the broker (`MockBroker` / `McpBroker`). |
-| `src/rhagent/mcp_session.py` | Connects to the Robinhood MCP (streamable HTTP). |
-| `config.yaml` | Guardrail limits + model config. |
+| `src/rhagent/forward.py` | Ticks the forward paper-trade records the scheduled run and dashboard read from. |
+| `src/rhagent/engine.py` | The two decision engines: `StrategyEngine` (rules) and `AgentEngine` (LLM). |
+| `src/rhagent/backtest.py` | `net_returns` — the one place a position series becomes a return series. |
+| `src/rhagent/evaluate.py` | Scorecard, failure buckets, SPY benchmark. |
 | `src/rhagent/strategies/` | Rule-based strategies (mean-reversion, momentum, linreg). |
-| `src/rhagent/backtest.py` | Offline backtest engine (equity curve + metrics). |
+| `src/rhagent/guardrails.py` | Pure, exhaustively-tested safety checks, called on every `paper_run` tick (see Safety). |
+| `src/rhagent/broker.py` | `MockBroker` / `McpBroker` — `paper_run.py` only ever constructs `MockBroker`; `McpBroker` has no caller. |
+| `src/rhagent/mcp_session.py` | Connects to the Robinhood MCP (streamable HTTP). Used for data, not orders. |
+| `scripts/make_dashboard.py` | Renders the record to a static HTML page, deployed to Vercel by CI. |
+| `config.yaml` | Guardrail limits, model config, and the locked-in strategy preset. |
+
+Full detail — every module, flag and known weak point — is in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Setup
 
@@ -62,13 +75,36 @@ that record (`origin/paper-state`) holds 10, 6, and 2 realized return-days
 across its three tracked strategies, and all three `trades.jsonl` files are
 0-1 bytes — zero trade records. The forward record is meant to be the thing
 that eventually earns a `LIVE=true` flip, but it does not yet have enough
-history to confirm or reject anything; see `docs/archive/FINDINGS.md` for the
+history to confirm or reject anything; see
+[`docs/archive/AUDIT-2026-07-16.md`](docs/archive/AUDIT-2026-07-16.md) for the
 original trust-ladder proposal.
 
-The IC/ICIR machinery under `factor/`, `search/`, and `gate/` (docs/ARCHITECTURE.md
-§2) is an offline research tool for *narrowing candidates* before they enter
-the bake-off above — it is not a competing grading system, and a strategy does
-not need to clear its gates to be promoted.
+The IC/ICIR machinery under `factor/`, `search/`, and `gate/`
+([`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §2) is an offline research
+tool for *narrowing candidates* before they enter the bake-off above — it is
+not a competing grading system, and a strategy does not need to clear its
+gates to be promoted. Its one real-data verdict so far was `viable: 0`.
+
+## The road to real money
+
+Trust is a ladder, and each rung is evidence, not code:
+
+1. **Forward record growing daily, unattended** — the system runs itself and
+   the numbers are honest. (This rung is met; the records are on `paper-state`.)
+2. **The record clears a bar defined in advance.** Months, not days, and the
+   bar written down *before* the data exists — e.g. "3+ months, positive net of
+   costs on the `mean_reversion_real` basis, max drawdown within the backtest's,
+   bootstrap CI lower bound above zero." At the current daily mean this takes
+   years, not weeks; that is the honest timeline.
+3. **The agent beats or matches the rule baseline** on the same cadence —
+   otherwise the honest conclusion is to fund the rule, not the agent.
+4. **Small real money behind the existing guardrail-gated order path**
+   (`paper_run.py`), with the `config.yaml` caps tightened further than their
+   defaults, and `MockBroker` swapped for a real one. See
+   [`docs/going-live.md`](docs/going-live.md) for the runbook.
+
+Longer reasoning behind this ladder:
+[`docs/archive/AUDIT-2026-07-16.md`](docs/archive/AUDIT-2026-07-16.md).
 
 ## Safety
 
@@ -92,7 +128,7 @@ assume the `LIVE` flag gates anything on this path; it does not (see above).
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest
+PYTHONPATH=src .venv/bin/python -m pytest -q
 ```
 
 The guardrails are covered exhaustively (every rejection path), and
@@ -105,7 +141,8 @@ daily paper run also runs it first and fails fast if it doesn't pass.
 
 ## Out of scope (v1)
 
-Options, crypto, real-time streaming, web UI. The rule-based strategies are
+Options, crypto, real-time streaming. The only UI is the static dashboard
+`scripts/make_dashboard.py` generates. The rule-based strategies are
 long-only (bake-off winner, `config.yaml`). The LLM agent's `allow_short` is a
 config knob (`config.yaml: agent.allow_short`, default `true`) — shorting is
 not blanket out of scope there.

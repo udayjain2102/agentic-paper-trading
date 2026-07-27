@@ -20,9 +20,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import threading
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -32,96 +29,86 @@ from .backtest import net_returns
 from .config import load
 from .data import get_bars
 
-# NVIDIA endpoint sustains ~18 req/min (burst then token-bucket, measured
-# live -- see docs/memory nvidia-rate-limit note). Symbols are decided
-# concurrently (they're independent), but every complete() call funnels
-# through one shared limiter so total request rate stays at/under that,
-# instead of relying on retry/backoff to paper over exceeding it.
-FORWARD_RATE_LIMIT_PER_MIN = 18
-FORWARD_MAX_WORKERS = 20
+_LEGACY = "legacy"
 
 
-class RateLimiter:
-    """Thread-safe call spacing: at most `per_minute` calls/min across callers.
+def _agent_positions(eval_dir: Path, bars: dict[str, pd.DataFrame],
+                     agent) -> tuple[dict[str, pd.Series], set]:
+    """Target-position series per symbol, plus the dates to exclude from returns.
 
-    Not a bursty token bucket -- a monotonic-clock lock that assigns each
-    caller the next free slot spaced 60/per_minute seconds apart. Simpler than
-    a bucket and sufficient here: the goal is "never exceed steady-state rate",
-    not "allow an initial burst". time_func/sleep_func are injectable so tests
-    can assert spacing without sleeping for real seconds.
+    ONE model call per uncached bar for the whole universe (agent.decide_all),
+    not one per symbol per bar: 65 sequential calls against NVIDIA's
+    burst-then-~18/min bucket is what produced the timeouts and ~50-minute ticks.
+
+    Agent decisions are non-deterministic and cost an API call, so past verdicts
+    are frozen to disk (eval_dir/pos_<sym>.csv, columns date,pos,status) and only
+    new bars are decided -- a second tick the same day makes zero calls.
+
+    EXCLUSION RULE: a date is dropped from the net-return series if ANY symbol's
+    decision for it is not status "ok". A failed call holds the prior position,
+    so its P&L is the P&L of an outage, not of a decision; and the net series is
+    the equal-weight basket mean, so a basket with one leg's verdict missing
+    isn't a basket decision at all. Rows with no status (pos_*.csv written before
+    the column existed, and the seeded anchor bars) are unknown/legacy, NOT "ok",
+    so they are excluded too -- the forward record starts at the first day the
+    agent actually answered for every name.
+
+    ponytail: one call per uncached bar; catch-up after a long gap costs N calls.
     """
+    syms = list(bars)
+    decided: dict[str, dict] = {}
+    stat: dict[str, dict] = {}
+    for s in syms:
+        cache = eval_dir / f"pos_{s}.csv"
+        if cache.exists():
+            prev = pd.read_csv(cache, parse_dates=["date"]).set_index("date")
+            decided[s] = dict(prev["pos"])
+            stat[s] = dict(prev["status"]) if "status" in prev else \
+                {ts: _LEGACY for ts in prev.index}
+        else:
+            # Anchor: don't back-decide a year of history (that's ~N API calls
+            # and isn't "forward"). Seed all but the latest bar flat; decide only
+            # new. Seeded bars are legacy, not "ok" -- nobody decided them.
+            decided[s] = {ts: 0.0 for ts in bars[s].index[:-1]}
+            stat[s] = {ts: _LEGACY for ts in bars[s].index[:-1]}
 
-    def __init__(self, per_minute: float, *, time_func=time.monotonic,
-                sleep_func=time.sleep) -> None:
-        self.min_interval = 60.0 / per_minute
-        self._lock = threading.Lock()
-        self._next_at = 0.0
-        self._time = time_func
-        self._sleep = sleep_func
-
-    def wait(self) -> None:
-        with self._lock:
-            now = self._time()
-            start = max(now, self._next_at)
-            self._next_at = start + self.min_interval
-        delay = start - now
-        if delay > 0:
-            self._sleep(delay)
-
-
-def _rate_limited(complete, limiter: RateLimiter):
-    def wrapped(prompt: str) -> str:
-        limiter.wait()
-        return complete(prompt)
-    return wrapped
-
-
-def _read_prev_positions(eval_dir: Path, symbol: str, bars: pd.DataFrame) -> pd.Series:
-    cache = eval_dir / f"pos_{symbol}.csv"
-    if cache.exists():
-        return pd.read_csv(cache, parse_dates=["date"]).set_index("date")["pos"]
-    # Anchor: don't back-decide a year of history (that's ~N API calls and
-    # isn't "forward"). Seed all but the latest bar as flat; decide only new.
-    return pd.Series(0.0, index=bars.index[:-1])
-
-
-def _decide_new_agent_rows(symbol: str, bars: pd.DataFrame, agent,
-                           prev: pd.Series) -> tuple[pd.Series, list[dict]]:
-    """Pure decide loop (no file I/O): bars for one symbol, strictly in order.
-
-    Sequentially dependent -- each bar's decision feeds the next bar's
-    current_pos -- so this must never be parallelized across bars. Symbols
-    are independent of each other and may run in their own thread/task.
-    """
-    pos = float(prev.iloc[-1]) if len(prev) else 0.0
-    decided = dict(prev)
+    cur = {s: 0.0 for s in syms}
     new_rows = []
-    for ts in bars.index:
-        if ts in decided:
-            pos = decided[ts]
-            continue
-        history = bars.loc[:ts]
-        d = agent.decide(symbol, history, pos)
-        pos = d.target
-        decided[ts] = pos
-        new_rows.append({"date": str(ts.date()), "symbol": symbol,
-                         "target": pos, "reason": d.reason,
-                         "status": getattr(d, "status", "ok")})
-    out = pd.Series(decided).reindex(bars.index).astype(float)
-    return out, new_rows
+    for ts in sorted(set().union(*(b.index for b in bars.values()))):
+        todo = [s for s in syms if ts in bars[s].index and ts not in decided[s]]
+        if todo:
+            ds = agent.decide_all(todo, {s: bars[s].loc[:ts] for s in todo},
+                                  {s: cur[s] for s in todo})
+            for s in todo:
+                d = ds[s]
+                decided[s][ts] = d.target
+                stat[s][ts] = getattr(d, "status", "ok")
+                new_rows.append({"date": str(ts.date()), "symbol": s,
+                                 "target": d.target, "reason": d.reason,
+                                 "status": stat[s][ts]})
+        for s in syms:
+            if ts in decided[s]:
+                cur[s] = decided[s][ts]
 
-
-def _write_agent_cache(eval_dir: Path, symbol: str, out: pd.Series) -> None:
-    out.rename_axis("date").rename("pos").to_csv(eval_dir / f"pos_{symbol}.csv")
-
-
-def _append_decisions(eval_dir: Path, rows: list[dict]) -> None:
+    out, excluded = {}, set()
+    for s in syms:
+        pos = pd.Series(decided[s]).reindex(bars[s].index).astype(float)
+        st = pd.Series(stat[s], dtype=object).reindex(bars[s].index).fillna(_LEGACY)
+        pd.DataFrame({"pos": pos, "status": st}).rename_axis("date").to_csv(
+            eval_dir / f"pos_{s}.csv")
+        out[s] = pos
+        excluded |= set(st.index[st != "ok"])
     # Append-only decisions log. `status` ("ok" vs "failed") makes a genuine
     # verdict distinguishable from a parse-fail/timeout/API-error fallback
     # without sniffing the reason string; agent performance metrics should
     # filter to status == "ok" rather than counting a failed tick as a real
     # flat decision. Rows written before this field existed have no "status"
     # key -- readers should treat a missing key as unknown/legacy, not "ok".
+    _append_decisions(eval_dir, new_rows)
+    return out, excluded
+
+
+def _append_decisions(eval_dir: Path, rows: list[dict]) -> None:
     if not rows:
         return
     ok_rows = [r for r in rows if r.get("status", "ok") == "ok"]
@@ -137,74 +124,11 @@ def _append_decisions(eval_dir: Path, rows: list[dict]) -> None:
             f.write(json.dumps(r) + "\n")
 
 
-def _agent_positions(eval_dir: Path, symbol: str, bars: pd.DataFrame,
-                     agent) -> pd.Series:
-    """Target-position series for `symbol`, deciding only bars not yet cached.
-
-    Single-symbol entry point (used directly by callers/tests that want one
-    symbol decided and written immediately, e.g. outside the daily tick's
-    multi-symbol dispatch). The concurrent multi-symbol path in `_positions`
-    reuses the same pure decide/write helpers but batches the decisions.jsonl
-    write across symbols instead of appending per-symbol.
-    """
-    prev = _read_prev_positions(eval_dir, symbol, bars)
-    out, new_rows = _decide_new_agent_rows(symbol, bars, agent, prev)
-    _write_agent_cache(eval_dir, symbol, out)
-    _append_decisions(eval_dir, new_rows)
-    return out
-
-
-def _agent_positions_parallel(eval_dir: Path, universe: list[str],
-                              bars: dict[str, pd.DataFrame], agent,
-                              rate_limit_per_min: float = FORWARD_RATE_LIMIT_PER_MIN,
-                              ) -> dict[str, pd.Series]:
-    """Decide every symbol's positions concurrently, one thread per symbol.
-
-    Symbols are independent (each has its own bar loop and cache file); only
-    the shared model client is rate-limited across all of them. Pre-builds
-    the client once (avoids the `if self.complete is None` lazy-init race in
-    AgentEngine.decide under threads) and wraps it once in a RateLimiter so
-    every symbol's calls share one budget. decisions.jsonl is written once at
-    the end, sorted by (date, symbol), so concurrent dispatch never produces
-    interleaved/nondeterministic log lines.
-    """
-    # Rate-limiting/pre-building only applies to AgentEngine-shaped agents
-    # (a `complete` attribute); test doubles that stub `decide()` directly
-    # (no model client at all) have nothing to rate-limit.
-    if hasattr(agent, "complete"):
-        if agent.complete is None:
-            agent.complete = agent._default_complete()
-        # Guard against double-wrapping if a caller reuses one `agent`
-        # instance across multiple ticks -- re-wrapping an already-limited
-        # complete() would stack redundant limiters without changing
-        # correctness, just latency.
-        if not getattr(agent, "_forward_rate_limited", False):
-            agent.complete = _rate_limited(agent.complete, RateLimiter(rate_limit_per_min))
-            agent._forward_rate_limited = True
-
-    def task(symbol: str):
-        prev = _read_prev_positions(eval_dir, symbol, bars[symbol])
-        out, rows = _decide_new_agent_rows(symbol, bars[symbol], agent, prev)
-        _write_agent_cache(eval_dir, symbol, out)
-        return symbol, out, rows
-
-    results: dict[str, pd.Series] = {}
-    all_rows: list[dict] = []
-    workers = min(len(universe), FORWARD_MAX_WORKERS) or 1
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = {ex.submit(task, s): s for s in universe}
-        for fut in as_completed(futures):
-            symbol, out, rows = fut.result()
-            results[symbol] = out
-            all_rows.extend(rows)
-
-    _append_decisions(eval_dir, sorted(all_rows, key=lambda r: (r["date"], r["symbol"])))
-    return results
-
-
 def _positions(cfg, engine: str, bars: dict[str, pd.DataFrame],
-               eval_dir: Path, agent=None) -> dict[str, pd.Series]:
-    """Per-symbol target-position series for the chosen engine."""
+               eval_dir: Path, agent=None) -> tuple[dict[str, pd.Series], set]:
+    """Per-symbol target-position series for the chosen engine, plus the dates
+    to exclude from the return series (agent-only; rule-based engines never
+    fail to decide, so their exclusion set is empty)."""
     if engine == "agent":
         if agent is None:
             from .engine import AgentEngine
@@ -214,7 +138,8 @@ def _positions(cfg, engine: str, bars: dict[str, pd.DataFrame],
             lessons = (read_memory() + "\n" + lessons_from_runs()
                        if cfg.agent.use_lessons else "")
             agent = AgentEngine(lessons=lessons, allow_short=cfg.agent.allow_short)
-        return _agent_positions_parallel(eval_dir, list(cfg.strategy.universe), bars, agent)
+        return _agent_positions(eval_dir, {s: bars[s] for s in cfg.strategy.universe},
+                                agent)
     from .strategies import build
 
     strat = build(engine, cfg.strategy.params)
@@ -232,7 +157,7 @@ def _positions(cfg, engine: str, bars: dict[str, pd.DataFrame],
             f"overlay {overlay!r} is not wired into the forward path "
             "(only 'conviction' is; use papertrade.py for the others)"
         )
-    return pos
+    return pos, set()
 
 
 def _net_series(cfg, engine: str, bars: dict[str, pd.DataFrame], cost_bps: float,
@@ -244,15 +169,18 @@ def _net_series(cfg, engine: str, bars: dict[str, pd.DataFrame], cost_bps: float
     with full coverage: ticking mid-update otherwise appends a thin partial-day
     mean (e.g. 3 of 66 names realized), which misrepresents the basket.
 
+    Days whose decisions weren't real decisions are dropped too -- see
+    _agent_positions for the exclusion rule.
+
     ponytail: strict full coverage means one chronically-missing name (a symbol
     the feed stops updating) freezes the whole record; upgrade by dropping dead
     names from the universe or switching to a coverage threshold.
     """
-    pos = _positions(cfg, engine, bars, eval_dir, agent)
+    pos, excluded = _positions(cfg, engine, bars, eval_dir, agent)
     legs = {s: net_returns(bars[s], pos[s], cost_bps, fill) for s in pos}
     df = pd.concat(legs, axis=1)
     full = df.notna().sum(axis=1) == len(df.columns)
-    return df[full].mean(axis=1)
+    return df[full & ~df.index.isin(excluded)].mean(axis=1)
 
 
 def tick(cfg, eval_dir: Path, cost_bps: float | None = None, *, engine: str | None = None,
@@ -278,14 +206,16 @@ def tick(cfg, eval_dir: Path, cost_bps: float | None = None, *, engine: str | No
     net = _net_series(cfg, engine, bars, cost_bps, eval_dir, agent, fill)
 
     ret_path = eval_dir / "returns.csv"
-    if ret_path.exists():
-        prev = pd.read_csv(ret_path, parse_dates=["date"])
-        last = prev["date"].max()
-        new = net[net.index > last]
+    prev = (pd.read_csv(ret_path, parse_dates=["date"]) if ret_path.exists()
+            else pd.DataFrame(columns=["date", "net"]))
+    if len(prev):
+        new = net[net.index > prev["date"].max()]
     else:
         # Anchor: first tick records only the latest realized day, so the curve
         # starts now rather than backfilling a year of history as "forward".
-        prev = pd.DataFrame(columns=["date", "net"])
+        # `len(prev)` not `exists()`: an agent run whose every candidate day was
+        # excluded writes an empty returns.csv, and max() of nothing is NaT --
+        # comparing against which drops every future day forever.
         new = net.tail(1)
 
     rows = pd.DataFrame({"date": new.index, "net": new.values})
@@ -381,11 +311,11 @@ def _report(eval_dir: Path) -> None:
 def _report_decision_quality(eval_dir: Path) -> None:
     """Print the share of ticks that were API/parse failures, not verdicts.
 
-    A failed tick holds the prior position, so its day still lands in the
-    return series -- the P&L is real, but it is the P&L of an outage, not of a
-    decision. Printing the failure rate next to the return keeps the headline
-    from being read as "the agent chose flat" when it means "the agent never
-    answered". Rows predating the `status` field are counted as unknown.
+    A failed tick is a forced hold, not a decision, so its date is excluded from
+    returns.csv entirely (see _agent_positions). This number is therefore the
+    cost of the outage in *coverage*, not in P&L: a high failure rate means the
+    forward record has holes, not that it is contaminated. Rows predating the
+    `status` field are counted as unknown.
     """
     log = eval_dir / "decisions.jsonl"
     if not log.exists():
@@ -408,7 +338,7 @@ def _report_decision_quality(eval_dir: Path) -> None:
           f"  ({failed} failed, {unknown} legacy/unknown)")
     if ok < total:
         print(f"  !! {(total - ok) / total:.0%} of ticks were not real decisions -- "
-              f"returns above include days the model never answered")
+              f"those days are excluded from the returns above (gaps, not P&L)")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -466,23 +396,55 @@ def _selfcheck() -> None:
         r2 = tick(cfg, ed, today=date(2026, 3, 20), cache_dir=cache)
         assert r2["appended"] == 0, r2          # idempotent same day
 
-        # agent path: injected complete() = no API; decisions cached to disk so
-        # a second tick decides zero new bars.
+        # agent path: injected complete() = no API. One call per *bar* for the
+        # whole universe (not per symbol), decisions cached to disk so a second
+        # tick decides zero new bars.
         from .engine import AgentEngine
         calls = {"n": 0}
         def complete(_prompt):
             calls["n"] += 1
-            return '{"target": 1, "reason": "test"}'
+            return '{"AAA": 1, "BBB": 1}'
         agent = AgentEngine(complete=complete)
         eda = Path(d) / "agent"
+
+        def seed(n):  # pretend only the first n bars have printed
+            for s, f in bars.items():
+                f.iloc[:n].to_csv(cache / f"{s}.csv", index_label="date")
+
+        seed(50)
         ta = tick(cfg, eda, today=date(2026, 3, 20), cache_dir=cache,
                   engine="agent", agent=agent)
-        assert ta["appended"] == 1, ta
-        n_after_first = calls["n"]
-        assert n_after_first > 0, "agent should have called the model"
+        # Anchor bars are seeded, not decided: nothing realized+decided yet.
+        assert ta["appended"] == 0, ta
+        assert calls["n"] == 1, calls  # 1 bar decided, 2 symbols, ONE call
         tick(cfg, eda, today=date(2026, 3, 20), cache_dir=cache,
              engine="agent", agent=agent)
-        assert calls["n"] == n_after_first, "cached bars must not re-call model"
+        assert calls["n"] == 1, "cached bars must not re-call model"
+
+        seed(51)  # a new bar prints -> one more call, and bar 50 is now realized
+        t2 = tick(cfg, eda, today=date(2026, 3, 20), cache_dir=cache,
+                  engine="agent", agent=agent)
+        assert calls["n"] == 2, calls
+        assert t2["appended"] == 1, t2
+
+        # a failed batched call must EXCLUDE its day, not book it as a flat hold
+        def boom(_prompt):
+            calls["n"] += 1
+            raise ValueError("model down")
+        agent.complete = boom
+        seed(52)  # bar 51 decided by a failing call
+        tick(cfg, eda, today=date(2026, 3, 20), cache_dir=cache,
+             engine="agent", agent=agent)
+        assert calls["n"] == 3, calls
+        assert list(pd.read_csv(eda / "pos_AAA.csv")["status"])[-1] == "failed"
+
+        agent.complete = complete
+        seed(53)  # bar 52 decided ok -> bar 51 is now realized, but it failed
+        t4 = tick(cfg, eda, today=date(2026, 3, 20), cache_dir=cache,
+                  engine="agent", agent=agent)
+        assert t4["appended"] == 0, "failed day must not enter returns.csv"
+        assert not (pd.read_csv(eda / "returns.csv", parse_dates=["date"])["date"]
+                    == bars["AAA"].index[51]).any()
     print("forward selfcheck ok")
 
 

@@ -25,30 +25,28 @@ the quant-strategy path only, not the LLM agent's.
 
 ## 1. The model
 
-### 1a. The LLM decision agent (`agent.py`)
+### 1a. The two decision engines (`engine.py`)
 
-A **manual agentic loop** (deliberately *not* an auto tool-runner) served by
-NVIDIA's OpenAI-compatible API (`nvidia/llama-3.3-nemotron-super-49b-v1.5`).
+There is no standalone tool-calling `agent.py` loop — that design was replaced.
+Both engines satisfy the same `DecisionEngine` Protocol —
+`decide(symbol, history, current_pos) -> Decision` — where `Decision` carries a
+`target` in `{-1, 0, +1}`, a `reason`, and a `status` (`"ok"` or `"failed"`).
+Neither proposes a broker order; they propose a *position*.
 
-Each run seeds the model with a system prompt and one instruction — *"Review the
-account and decide whether to trade right now"* — and exposes three tools:
-
-| Tool          | What it does                                                   |
-| ------------- | -------------------------------------------------------------- |
-| `get_account` | buying power, deployed capital, positions, realized P\&L today |
-| `get_quote`   | latest price for a symbol                                      |
-| `place_order` | propose `(symbol, side, notional_usd)`                         |
-
-The loop runs up to `max_turns` turns: call the model → if it emitted tool calls,
-dispatch each and feed results back → repeat until the model stops calling tools.
-The reason it is *manual* is the choke point: `place_order` is never sent to the
-broker. It is dispatched to `OrderExecutor`, which runs the guardrails first
-(§3). The model can reason however it likes, but a hard cap is enforced in code
-it cannot talk past.
-
-`run_scripted_session` is a no-API stand-in that walks the same dispatch path
-with a fixed plan (one order that clears the per-trade cap, one that's rejected)
-so the full pipeline can be exercised without an API key.
+- **`StrategyEngine`** wraps a rule-based `Strategy` (§1b) and returns
+  `strat.target(history)` with `strat.signal(history).iloc[-1]` as conviction.
+- **`AgentEngine`** asks Nemotron (`nvidia/llama-3.3-nemotron-super-49b-v1.5`
+  via NVIDIA's OpenAI-compatible API) for a verdict from a compact,
+  lookahead-free prompt (`last_close`, `momentum_5d`, `vol_20d`, `current_pos`,
+  and the lessons string). `decide_all(symbols, histories, current_pos)` is the
+  production entry point: **one model call decides every symbol in the
+  universe for a given bar**, not one call per symbol — 65 sequential calls
+  per bar against NVIDIA's burst-then-~18/min token bucket is what produced
+  the timeouts and ~50-minute ticks before this batching. If the call fails,
+  every symbol in that batch is `status="failed"`, holding `current_pos`; if
+  it answers but a symbol's verdict is missing or malformed, only that symbol
+  fails. `complete(prompt) -> str` is an injectable seam, so tests never hit
+  the API.
 
 ### 1b. The rule-based strategies (`strategies/`)
 
@@ -65,7 +63,7 @@ Every strategy implements one contract (`strategies/base.py`):
   computation. `linreg` does: instead of refitting an OLS for every past day only
   to keep the last, it fits **one** OLS for the current bar — bit-identical
   output, \~76× faster in the bar-by-bar loop, verified by equivalence checks.
-  `StrategyEngine.decide` (§4C) calls `target`, so the paper-trade loop pays the
+  `StrategyEngine.decide` calls `target`, so the paper-trade loop pays the
   single-step cost, not the full-series cost, every bar.
 
 | Strategy            | Signal                                                       | Position rule                                                                   |   |           |
@@ -84,11 +82,16 @@ rule-based strategies are long-only**: `config.yaml`'s locked preset (mean
 reversion) is the long-only bake-off winner, and the paper-trade CLI exposes no
 short toggle for it. The LLM agent is different: `AgentEngine.__init__` still
 defaults `allow_short=False` (`engine.py:134`), but `config.yaml`'s `agent.allow_short:
-true` is passed explicitly at both production call sites
-(`forward.py:215,335`), so the agent runs with shorting enabled today — a
-change from earlier, when both call sites omitted the kwarg and every
-production decision was long-only long-or-flat. A run can sweep the whole
-cached universe at once with `--symbols all`.
+true` is passed explicitly at every production `AgentEngine(...)` construction
+site (`forward.py`'s `_positions` and `tick_and_reflect`), so the agent runs
+with shorting enabled today — a change from earlier, when every production
+call site omitted the kwarg and every production decision was long-only
+long-or-flat. `config.yaml`'s `agent.use_lessons` (default `false`) is the
+matching knob for the lessons text fed into the prompt: when false, `forward.py`
+passes `lessons=""` instead of concatenating `memory.read_memory()` +
+`learn.lessons_from_runs()`, because that stale lessons text (frozen since
+2026-07-15, "avoid holding=long setups") was the other half of the all-flat
+cause. A run can sweep the whole cached universe at once with `--symbols all`.
 
 ### 1c. The trade setup — the live preset
 
@@ -424,11 +427,24 @@ forward numbers match the ranking path exactly.
   exact vectorized twin, `overlay.apply_conviction` (proven bit-identical); the
   forward path applies it whenever `strategy.overlay == "conviction"`, so the
   go-forward record uses the same gate the bake-off crowned.
-- **Data refresh.** `get_bars` is cache-first and never refetches, so a live loop
-  updates the cache itself. `refresh.py` merges fresh MCP historicals into
-  `data/<SYM>.csv` (dedup by date, dropping volume-0 snapshot placeholders) two ways:
-  a payload piped in from Claude's interactive MCP session, or `--fetch`, which pulls
-  the whole universe headlessly over the MCP (`ROBINHOOD_MCP_URL`/`TOKEN`).
+- **Exclusion rule for the agent engine.** `_agent_positions` decides every
+  symbol for a bar with one `decide_all` call (§1a) and freezes each verdict
+  to `eval_dir/pos_<sym>.csv` (columns `date,pos,status`). A date is dropped
+  from the net-return series if **any** symbol's decision for it is not
+  `status == "ok"` — a failed call holds the prior position, so that P&L
+  belongs to an outage, not a decision, and the net series is the basket
+  mean, so one leg's verdict missing isn't a basket decision at all. Rows
+  with no status (pre-`status`-column caches, and the seeded anchor bars) are
+  legacy/unknown, treated the same as failed.
+- **Data refresh.** `get_bars` is cache-first and never refetches, so a live
+  loop updates the cache itself. The fetch chain degrades Robinhood MCP →
+  Yahoo's keyless v8 chart API → absent; it never fabricates a number. In
+  practice CI always lands on Yahoo, because the MCP's OAuth only completes
+  inside an interactive Claude session and `ROBINHOOD_MCP_URL`/`TOKEN` are
+  unset there. `refresh.py --fetch` merges fresh bars into `data/<SYM>.csv`
+  (dedup by date, dropping volume-0 snapshot placeholders); a stale cache is
+  used silently, `update_cache` is last-row-wins on a date collision, and a
+  symbol the source can't serve is skipped with a stderr line, run still green.
 - **Durable cadence.** A weekday GitHub Actions workflow (`daily-paper-run.yml` →
   `scripts/paper_cron.sh`) runs `refresh --fetch` + tick on GitHub's runners, so the
   record grows without a live laptop or Claude session. The cumulative cache and
@@ -532,3 +548,32 @@ fooling yourself. Collected in one place:
 
 The throughline: at every layer the system assumes an apparent edge is noise
 until it clears a bar, and it makes the bar *higher* the more you searched.
+
+---
+
+## 7. Known weak points
+
+Named here so nobody has to rediscover them.
+
+- **The forward record is tiny.** At this daily mean, distinguishing the
+  conviction gate from zero takes years of data, not weeks. No pre-committed
+  keep/kill criterion is written down yet.
+- **`paper-state` is the only copy** of the track record, with no backup.
+  The unauthenticated Vercel trigger endpoint that could once append to it
+  (`deploy_api/trigger-run.js`) has been deleted; `research-run.yml` is now
+  `workflow_dispatch`-only.
+- **The agent's failure mode is excluded, not silent, but still lossy.** A
+  failed `decide_all` call marks every symbol in that batch `status="failed"`
+  and holds `current_pos`; the forward record then drops that date entirely
+  (§1a's exclusion rule) rather than booking it as a flat verdict. That is
+  more honest than silently counting it as a real decision, but a chronic
+  outage still starves the record of days without raising anywhere except a
+  decisions.jsonl scan.
+- **The universe is survivorship-selected**: today's mega-caps, chosen recently.
+- **`--overlay bucket|winprob`** is still an accepted `papertrade` CLI choice
+  but `build_overlay` raises `KeyError` on both — leftovers from the deleted
+  overlays (Loop D above).
+- **The world model was never built.** `MarketSource`/`FillModel` (§5) are
+  the seams it would attach to; synthetic price paths, market impact and
+  counterfactual replay are all unimplemented. Do not read the seams as a
+  feature.

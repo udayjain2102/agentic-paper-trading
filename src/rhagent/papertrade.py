@@ -359,7 +359,8 @@ def main(argv: list[str] | None = None) -> int:
     # dates -- so one stale file silently clips the whole run's window.
     from .config import load
 
-    cfg_strategy = load().strategy
+    cfg = load()
+    cfg_strategy = cfg.strategy
     if args.symbols.strip().lower() == "all":
         symbols = sorted(cfg_strategy.universe)
     else:
@@ -377,7 +378,7 @@ def main(argv: list[str] | None = None) -> int:
         from .learn import lessons_from_runs
 
         lessons = "" if args.no_lessons else lessons_from_runs(args.out_dir)
-        engine = AgentEngine(lessons=lessons)
+        engine = AgentEngine(lessons=lessons, allow_short=cfg.agent.allow_short)
     else:
         engine = StrategyEngine(build(args.engine, {}))  # long-only (shorting disabled)
 

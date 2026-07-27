@@ -20,7 +20,7 @@ def test_config_allow_short_defaults_true():
     assert cfg.agent.allow_short is True
 
 
-def test_positions_wires_allow_short_into_agent_engine(monkeypatch):
+def test_positions_wires_allow_short_into_agent_engine(monkeypatch, tmp_path):
     idx = pd.date_range("2025-01-01", periods=30, freq="B")
     close = pd.Series(np.linspace(100, 90, 30), index=idx)  # steady downtrend
     bars = {"AAA": pd.DataFrame({"open": close, "high": close, "low": close,
@@ -32,14 +32,14 @@ def test_positions_wires_allow_short_into_agent_engine(monkeypatch):
     )
 
     def fake_complete(_prompt):
-        return '{"target": -1, "reason": "short test"}'
+        return '{"AAA": -1}'  # decide_all's batched shape: {symbol: target}
 
     monkeypatch.setattr(
         "rhagent.engine.AgentEngine._default_complete",
         lambda self: fake_complete,
     )
 
-    pos = forward._positions(cfg, "agent", bars, Path("/tmp"))
+    pos, _excluded = forward._positions(cfg, "agent", bars, tmp_path)
     # allow_short=True reached the engine iff a -1 target actually survives
     # (engine.py zeroes -1 targets when allow_short=False).
     assert (pos["AAA"] == -1.0).any()
@@ -89,7 +89,7 @@ def test_use_lessons_false_sends_no_lessons_block(monkeypatch, tmp_path):
 
     def fake_complete(prompt):
         seen.append(prompt)
-        return '{"target": 1, "reason": "ok"}'
+        return '{"AAA": 1}'
 
     monkeypatch.setattr("rhagent.engine.AgentEngine._default_complete",
                         lambda self: fake_complete)

@@ -66,7 +66,10 @@ def run(
         return {"halted": True, "reason": reason, "orders": 0, "accepted": 0}
 
     eval_dir = Path("journal/forward") / cfg.strategy.name
-    pos_by_symbol = _positions(cfg, cfg.strategy.name, bars, eval_dir)
+    # _positions also returns an exclusion set (dates an agent engine didn't
+    # genuinely decide for every symbol); irrelevant here -- this tick only
+    # wants today's target position, not the forward return series.
+    pos_by_symbol, _excluded = _positions(cfg, cfg.strategy.name, bars, eval_dir)
     orders = orders_from_positions(
         pos_by_symbol,
         held=set(account.positions),
