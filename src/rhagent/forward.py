@@ -340,6 +340,7 @@ def _report(eval_dir: Path) -> None:
     print(f"  sharpe         {sharpe}")
     print(f"  max_drawdown   {a['max_drawdown']:.2%}")
     _report_decision_quality(eval_dir)
+    _report_record_consistency(eval_dir)
 
 
 def _report_decision_quality(eval_dir: Path) -> None:
@@ -357,17 +358,12 @@ def _report_decision_quality(eval_dir: Path) -> None:
     (date, symbol) -- otherwise a since-resolved failure keeps inflating the
     failure count forever.
     """
-    log = eval_dir / "decisions.jsonl"
-    if not log.exists():
+    latest = _latest_decisions(eval_dir)
+    if not latest:
         return
-    latest: dict[tuple, str | None] = {}
-    for line in log.read_text().splitlines():
-        if not line.strip():
-            continue
-        r = json.loads(line)
-        latest[(r["date"], r["symbol"])] = r.get("status")
     ok = failed = unknown = 0
-    for status in latest.values():
+    for row in latest.values():
+        status = row.get("status")
         if status == "ok":
             ok += 1
         elif status is None:
@@ -375,13 +371,65 @@ def _report_decision_quality(eval_dir: Path) -> None:
         else:
             failed += 1
     total = ok + failed + unknown
-    if not total:
-        return
     print(f"  decisions      {ok}/{total} genuine verdicts"
           f"  ({failed} failed, {unknown} legacy/unknown)")
     if ok < total:
         print(f"  !! {(total - ok) / total:.0%} of ticks were not real decisions -- "
               f"those days are excluded from the returns above (gaps, not P&L)")
+
+
+def _latest_decisions(eval_dir: Path) -> dict[tuple[str, str], dict]:
+    """Latest decisions.jsonl row per (date, symbol) -- see the append-only /
+    retry note on _report_decision_quality. Empty dict if there's no log yet."""
+    log = eval_dir / "decisions.jsonl"
+    if not log.exists():
+        return {}
+    latest: dict[tuple[str, str], dict] = {}
+    for line in log.read_text().splitlines():
+        if not line.strip():
+            continue
+        r = json.loads(line)
+        latest[(r["date"], r["symbol"])] = r
+    return latest
+
+
+def _report_record_consistency(eval_dir: Path) -> None:
+    """Compare decisions.jsonl (the append-only log) against pos_<SYM>.csv
+    (the cache the code actually reads) and print any (date, symbol) where
+    they disagree. This is the check that would have caught #41: the two
+    silently diverged for weeks because nothing ever cross-checked them.
+
+    Seeded/legacy bars (no decisions.jsonl row at all) are expected and NOT a
+    divergence -- nobody decided them. Only rows that both sides claim to
+    know about, but describe differently, are reported.
+    """
+    latest = _latest_decisions(eval_dir)
+    problems = []
+    for cache in sorted(eval_dir.glob("pos_*.csv")):
+        sym = cache.name[len("pos_"):-len(".csv")]
+        df = pd.read_csv(cache, dtype={"date": str})
+        for _, row in df.iterrows():
+            key = (row["date"], sym)
+            dec = latest.pop(key, None)
+            csv_status = row["status"] if pd.notna(row.get("status")) else _LEGACY
+            if dec is None:
+                if csv_status != _LEGACY:
+                    problems.append(f"{key}: pos_{sym}.csv has status={csv_status} "
+                                     f"but decisions.jsonl has no row")
+                continue
+            if dec.get("status", "ok") != csv_status:
+                problems.append(f"{key}: status differs -- decisions.jsonl="
+                                 f"{dec.get('status', 'ok')} pos_{sym}.csv={csv_status}")
+            elif dec["target"] != row["pos"]:
+                problems.append(f"{key}: target/pos differ -- decisions.jsonl="
+                                 f"{dec['target']} pos_{sym}.csv={row['pos']}")
+    # anything left in `latest` is a decision with no matching pos_<SYM>.csv row
+    problems += [f"{key}: decisions.jsonl has a row but pos_{key[1]}.csv has none"
+                 for key in latest]
+    if problems:
+        print(f"  !! decisions.jsonl / pos_*.csv disagree on {len(problems)} row(s):")
+        for p in problems[:20]:
+            print(f"     {p}")
 
 
 def main(argv: list[str] | None = None) -> int:
