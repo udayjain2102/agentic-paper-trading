@@ -18,6 +18,28 @@ import pandas as pd
 from .strategies.base import Strategy
 
 
+# decide_all's chunk size sits between the two failure modes measured against
+# the real NVIDIA API on 2026-07-27 (see report to the task that added this):
+#   - too big (65, the whole universe in one call): a single prompt asking for
+#     65 verdicts never finishes inside any timeout tuned off real latency --
+#     nemotron-super's hidden reasoning tokens scale with symbol count, and the
+#     call either times out or exhausts max_tokens before emitting JSON.
+#   - too small (1, one call per symbol): 65 sequential calls/bar against
+#     NVIDIA's burst-then-~18-calls/min bucket is exactly what produced the
+#     original timeouts (see decide_all's own docstring / 2026-07-21 incident).
+# 13 divides the 65-symbol universe into exactly 5 calls/bar. Measured
+# real-API latency for 12-13-symbol chunks: 63-91s across 4 calls (2026-07-27),
+# so CHUNK_TIMEOUT_S below is 2x the worst observed, not a guess.
+CHUNK_SIZE = 13
+CHUNK_TIMEOUT_S = 180
+# completion_tokens observed for working 12-13-symbol chunks: 1055-1602 (same
+# measurement run). cfg.agent.max_tokens (2000) is sized for ONE symbol's
+# preamble + JSON; a 13-symbol chunk at that cap truncated at exactly 2000
+# tokens with empty content (confirmed 2026-07-27). Scale linearly off the
+# single-symbol budget with headroom rather than hardcoding a second constant.
+_TOKENS_PER_EXTRA_SYMBOL = 200
+
+
 class TruncatedResponse(Exception):
     """Raised when the model hit max_tokens before finishing its answer.
 
@@ -27,7 +49,9 @@ class TruncatedResponse(Exception):
     content=None, logged as parse-fail, for 109 of 130 bad decisions)."""
 
 
-def nvidia_complete(max_tokens: int | None = None, model: str = "") -> Callable[[str], str]:
+def nvidia_complete(
+    max_tokens: int | None = None, model: str = "", timeout: float = 45,
+) -> Callable[[str], str]:
     """Build an NVIDIA OpenAI-compatible `complete(prompt) -> text` callable.
 
     Shared client-building seam: AgentEngine's decision calls and memory.reflect's
@@ -35,6 +59,8 @@ def nvidia_complete(max_tokens: int | None = None, model: str = "") -> Callable[
     nemotron-super's chain-of-thought from ballooning latency (see AgentEngine
     docstring for why). max_tokens=None (like model="") defers to cfg.agent so
     config.yaml's value actually reaches the API call instead of a hardcoded default.
+    timeout defaults to 45s (right for a single-symbol prompt); decide_all's
+    chunked calls pass a larger, measured value -- see CHUNK_SIZE/CHUNK_TIMEOUT_S.
     """
     from openai import OpenAI
 
@@ -46,7 +72,7 @@ def nvidia_complete(max_tokens: int | None = None, model: str = "") -> Callable[
     # SDK's own default retries (max_retries, unset here) already back off on
     # 429/5xx/timeout, so there is nothing for a hand-rolled layer to add.
     client = OpenAI(
-        api_key=cfg.nvidia_api_key, base_url=cfg.nvidia_base_url, timeout=45,
+        api_key=cfg.nvidia_api_key, base_url=cfg.nvidia_base_url, timeout=timeout,
     )
     model = model or cfg.agent.model
     max_tokens = max_tokens or cfg.agent.max_tokens
@@ -140,6 +166,7 @@ class AgentEngine:
         self.name = name
         self.allow_short = allow_short
         self.max_tokens = max_tokens
+        self._chunk_complete: Callable[[str], str] | None = None
 
     def _default_complete(self) -> Callable[[str], str]:
         """Lazy NVIDIA OpenAI client — built once, on first decide().
@@ -153,6 +180,21 @@ class AgentEngine:
         budget there, not here.
         """
         return nvidia_complete(max_tokens=self.max_tokens, model=self.model)
+
+    def _default_complete_chunk(self) -> Callable[[str], str]:
+        """Lazy NVIDIA client for decide_all's chunked calls: same model, but a
+        larger timeout and max_tokens sized for CHUNK_SIZE symbols per call
+        rather than one -- see the CHUNK_SIZE comment for the measurements
+        behind both numbers. Separate from _default_complete (and cached
+        separately) so decide()'s single-symbol calls keep the tighter,
+        config-driven budget/timeout that already works for them."""
+        from .config import load
+
+        base_tokens = self.max_tokens or load().agent.max_tokens
+        chunk_tokens = base_tokens + _TOKENS_PER_EXTRA_SYMBOL * CHUNK_SIZE
+        return nvidia_complete(
+            max_tokens=chunk_tokens, model=self.model, timeout=CHUNK_TIMEOUT_S,
+        )
 
     def _features(self, symbol: str, history: pd.DataFrame, current_pos: float) -> str:
         """The one line of model input for a symbol. Shared by the single-symbol
@@ -235,30 +277,43 @@ class AgentEngine:
 
     def decide_all(self, symbols: list[str], histories: dict[str, pd.DataFrame],
                    current_pos: dict[str, float]) -> dict[str, Decision]:
-        """One model call for the whole universe, same semantics as decide().
+        """One model call per CHUNK_SIZE-symbol group, same semantics as decide().
 
         65 sequential per-symbol calls per bar against NVIDIA's burst-then-~18/min
-        bucket is what produced the timeouts (and therefore the failed holds).
-        The features are one short line each, so the whole universe fits in one
-        prompt. Failure semantics are preserved exactly: if the call fails every
-        symbol is status="failed" holding current_pos; if the call answers but
-        omits or malforms one symbol, only that symbol fails.
+        bucket is what produced the original timeouts; one call for the whole
+        65-symbol universe is what replaced them (#41) -- and that one call never
+        finishes (measured: times out or exhausts max_tokens before emitting
+        JSON). CHUNK_SIZE (see module-level comment) is the middle ground: a few
+        calls/bar, each small enough to finish inside a timeout that was actually
+        measured against the real API. Failure semantics are preserved exactly
+        and PER CHUNK: if a chunk's call fails, every symbol in that chunk is
+        status="failed" holding current_pos; if a chunk's call answers but omits
+        or malforms one symbol, only that symbol fails -- other chunks are
+        unaffected either way.
         """
-        if self.complete is None:
-            self.complete = self._default_complete()
-        try:
-            obj = self._extract(self.complete(self._prompt_all(symbols, histories, current_pos)))
-        except Exception as e:
-            reason = f"agent: {_fail_reason(e)}"
-            return {s: Decision(target=float(current_pos[s]), reason=reason,
-                                status="failed") for s in symbols}
-        out = {}
-        for s in symbols:
+        if self.complete is None and self._chunk_complete is None:
+            self._chunk_complete = self._default_complete_chunk()
+        complete = self.complete or self._chunk_complete
+
+        out: dict[str, Decision] = {}
+        for i in range(0, len(symbols), CHUNK_SIZE):
+            chunk = symbols[i:i + CHUNK_SIZE]
+            chunk_histories = {s: histories[s] for s in chunk}
+            chunk_pos = {s: current_pos[s] for s in chunk}
             try:
-                out[s] = Decision(target=self._target(obj[s]), reason="agent: batch verdict")
+                obj = self._extract(complete(self._prompt_all(chunk, chunk_histories, chunk_pos)))
             except Exception as e:
-                out[s] = Decision(target=float(current_pos[s]),
-                                  reason=f"agent: {_fail_reason(e)}", status="failed")
+                reason = f"agent: {_fail_reason(e)}"
+                for s in chunk:
+                    out[s] = Decision(target=float(current_pos[s]), reason=reason,
+                                      status="failed")
+                continue
+            for s in chunk:
+                try:
+                    out[s] = Decision(target=self._target(obj[s]), reason="agent: batch verdict")
+                except Exception as e:
+                    out[s] = Decision(target=float(current_pos[s]),
+                                      reason=f"agent: {_fail_reason(e)}", status="failed")
         return out
 
 
