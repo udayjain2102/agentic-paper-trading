@@ -18,6 +18,8 @@ load_dotenv()  # pick up .env (gitignored) so keys don't have to be exported
 class AgentConfig:
     model: str
     max_tokens: int
+    allow_short: bool = True
+    use_lessons: bool = False
 
 
 @dataclass(frozen=True)

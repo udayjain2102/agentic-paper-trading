@@ -1,4 +1,4 @@
-> **Archived 2026-07-26 — WinProbGate lost the bake-off and was deleted in the 2026-07-17 cleanup (.md/archive/AUDIT-2026-07-17.md).** Kept for history, not current state.
+> **Archived 2026-07-26 — WinProbGate lost the bake-off and was deleted in the 2026-07-17 cleanup (docs/archive/AUDIT-2026-07-17.md).** Kept for history, not current state.
 
 # Loss-Learning Phase 2 — WinProbGate Implementation Plan
 

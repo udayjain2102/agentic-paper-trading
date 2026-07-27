@@ -30,6 +30,8 @@ import pandas as pd  # noqa: E402
 
 from rhagent.config import load as load_config  # noqa: E402
 from rhagent.evaluate import (  # noqa: E402
+    MIN_RETURN_DAYS_FOR_SHARPE,
+    MIN_TRADES_FOR_RATE_STATS,
     _bucket_labels,
     aggregate,
     load_run,
@@ -171,6 +173,7 @@ def _win_score(run_dir: Path) -> dict:
         "n": a["n_trades"], "won": won, "lost": lost, "wr": a["win_rate"], "pf": a["profit_factor"],
         "avgWin": a["avg_win"], "avgLoss": a["avg_loss"], "sharpe": a["sharpe"], "dd": a["max_drawdown"],
         "avgHold": a["avg_holding_bars"], "gw": gw, "gl": gl,
+        "nDays": a["n_return_days"],
         "spy": spy_benchmark(net.index),
     }
 
@@ -226,11 +229,28 @@ def _bakeoff_data(base_dir: Path, engine: str) -> list[dict]:
     order = {"none": 0, "conviction": 1, "bucket": 2, "winprob": 3}
     rows = []
     for overlay, grp in df.groupby(df["overlay"].fillna("none").replace("", "none")):
-        best = grp.loc[grp["deflated"].idxmax()]
+        # fold/bootstrap stats are None for short records (too few 60-day
+        # folds / a too-short series for the bootstrap) -- rank by deflated
+        # where it exists, else just take the first row rather than crashing.
+        best = (
+            grp.loc[grp["deflated"].idxmax()] if grp["deflated"].notna().any() else grp.iloc[0]
+        )
+
+        def _f(v):
+            # DataFrame column: a None mixed with real floats upcasts to NaN,
+            # not Python None -- pd.isna() catches both, `is None` alone would
+            # miss the NaN case.
+            return None if pd.isna(v) else float(v)
+
+        fold_mean, fold_std = _f(best["fold_mean"]), _f(best["fold_std"])
+        ci_lo, ci_hi = _f(best["ci_lo"]), _f(best["ci_hi"])
+        n_days = int(best["n_return_days"])
         rows.append({
-            "overlay": overlay, "point": float(best["point_sharpe"]), "deflated": float(best["deflated"]),
-            "fold": f"{best['fold_mean']:.2f}±{best['fold_std']:.2f}",
-            "ci": f"[{best['ci_lo']:.2f}, {best['ci_hi']:.2f}]",
+            "overlay": overlay, "point": float(best["point_sharpe"]), "deflated": _f(best["deflated"]),
+            "nDays": n_days,
+            "fold": f"{fold_mean:.2f}±{fold_std:.2f}" if fold_mean is not None and fold_std is not None
+                    else f"n/a ({n_days}d, too few 60d folds)",
+            "ci": f"[{ci_lo:.2f}, {ci_hi:.2f}]" if ci_lo is not None and ci_hi is not None else f"n/a ({n_days}d)",
             "beats": bool(best["beats_baseline"]),
         })
     rows.sort(key=lambda r: order.get(r["overlay"], 99))
@@ -241,6 +261,21 @@ def _equity_curve(run_dir: Path) -> tuple[list[float], list[str]]:
     _, _, net = load_run(run_dir)
     equity = (1.0 + net.astype(float)).cumprod()
     return [float(v) for v in equity.tolist()], [str(d)[:10] for d in equity.index]
+
+
+def _rejected_order_count(journal_path: Path = Path("journal/paper_orders.jsonl")) -> int:
+    """Real count of order_rejected events ever journaled by executor.py.
+    Absent file means the paper-run journal has never been written -- that is
+    genuinely zero rejections, not a fabricated figure."""
+    if not journal_path.exists():
+        return 0
+    n = 0
+    for line in journal_path.read_text().splitlines():
+        if not line.strip():
+            continue
+        if json.loads(line).get("event") == "order_rejected":
+            n += 1
+    return n
 
 
 def _agent_reflections() -> list[str]:
@@ -267,7 +302,16 @@ def _build_control_room_data(base_dir: Path) -> dict:
         "winRunId": str(load_run(locked_dir)[0]["run_id"]),
         "lockedEngine": cfg.strategy.name if cfg.strategy else "",
         "lockedOverlay": cfg.strategy.overlay if cfg.strategy else "",
-        "guardrails": {"live": not cfg.dry_run, "halt": HALT_FILE.exists()},
+        # "live" is hardcoded False, not read from cfg.dry_run: cfg.dry_run is
+        # read by nothing on any order path (paper_run.py always constructs
+        # MockBroker; McpBroker has zero callers), so cfg.dry_run governs
+        # nothing real. Rendering it would be a flag that lies about safety.
+        "guardrails": {"live": False, "halt": HALT_FILE.exists(),
+                       "rejectedOrders": _rejected_order_count()},
+        # Why a cell reads "n/a" instead of a number: fewer trades/return-days
+        # than these floors, per rhagent.evaluate.
+        "thresholds": {"minTrades": MIN_TRADES_FOR_RATE_STATS,
+                       "minReturnDays": MIN_RETURN_DAYS_FOR_SHARPE},
         "forward": {
             "agent": _forward_leg(_agent_leg_dir(forward_dir), today),
             "baseline": _forward_leg(forward_dir / "mean_reversion", today),
@@ -481,10 +525,12 @@ const ACTIONS_URL = DATA.actionsUrl;
 const ST = { chartMode: 'cum', hoverIdx: null, engine: 'all', runSort: 'id', runDir: -1, tradeFilter: 'all', copied: -1, ledgerAll: false };
 const LEDGER_PREVIEW = 10;
 
-function money(x, dp = 2) { const s = x < 0 ? '-' : ''; return s + '$' + Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp }); }
-function pct(x, dp = 2) { return (x >= 0 ? '+' : '') + (x * 100).toFixed(dp) + '%'; }
-function pctAbs(x, dp = 1) { return (x * 100).toFixed(dp) + '%'; }
-function num(x) { return x >= 999 ? '∞' : x.toFixed(2); }
+// None from the metrics layer means "not enough data" -- these never coerce
+// null/undefined to 0. Every formatter falls through to an em-dash instead.
+function money(x, dp = 2) { if (x == null) return '—'; const s = x < 0 ? '-' : ''; return s + '$' + Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp }); }
+function pct(x, dp = 2) { if (x == null) return '—'; return (x >= 0 ? '+' : '') + (x * 100).toFixed(dp) + '%'; }
+function pctAbs(x, dp = 1) { if (x == null) return '—'; return (x * 100).toFixed(dp) + '%'; }
+function num(x) { if (x == null) return '—'; return x >= 999 ? '∞' : x.toFixed(2); }
 function engineColor(e) { return { mean_reversion: 'var(--accent)', momentum: 'var(--warn)', linreg: 'var(--purple)', agent: 'var(--up)' }[e] || 'var(--muted)'; }
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
@@ -492,7 +538,7 @@ function renderHeaderPills() {
   const g = DATA.guardrails;
   const el = document.getElementById('cr-headerpills');
   el.innerHTML = `
-    <span style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:${g.live ? 'rgba(5,196,107,.1)' : 'rgba(255,176,32,.12)'};border:1px solid ${g.live ? 'rgba(5,196,107,.28)' : 'rgba(255,176,32,.3)'};color:${g.live ? 'var(--up)' : 'var(--warn)'};font-size:11px;font-weight:600;font-family:'IBM Plex Mono',monospace"><span style="width:6px;height:6px;border-radius:50%;background:currentColor"></span>${g.live ? 'LIVE · TRADING' : 'PAPER · DRY-RUN'}</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:rgba(255,176,32,.12);border:1px solid rgba(255,176,32,.3);color:var(--warn);font-size:11px;font-weight:600;font-family:'IBM Plex Mono',monospace" title="Every broker construction on every order path is MockBroker; no code path can place a real order."><span style="width:6px;height:6px;border-radius:50%;background:currentColor"></span>NO LIVE ORDER PATH</span>
     <span style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:${g.halt ? 'rgba(255,92,92,.12)' : 'rgba(5,196,107,.1)'};border:1px solid ${g.halt ? 'var(--down)' : 'rgba(5,196,107,.28)'};color:${g.halt ? 'var(--down)' : 'var(--up)'};font-size:11px;font-weight:600;font-family:'IBM Plex Mono',monospace">HALT · ${g.halt ? 'SET' : 'CLEAR'}</span>
     <a href="${ACTIONS_URL}" style="display:inline-flex"><img src="${ACTIONS_URL}/badge.svg?branch=main" alt="daily paper-run status"></a>
     <span style="padding:5px 11px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-size:11px;font-family:'IBM Plex Mono',monospace">upd ${esc(DATA.updated)}</span>`;
@@ -587,9 +633,9 @@ function renderKpis() {
     { label: 'Forward balance', value: money(f.notional + f.pnl), color: 'var(--fg)', bar: 'var(--accent)', sub: `${f.days} day(s) tracked · net ${pct(f.ret)}` },
     { label: 'Locked-config return', value: pct(S.ret), color: 'var(--up)', bar: 'var(--up)', sub: `${esc(DATA.lockedEngine)} + ${esc(DATA.lockedOverlay)} · in-sample` },
     { label: 'Win rate', value: pctAbs(S.wr, 1), color: 'var(--up)', bar: 'var(--up)', sub: `${S.won}W / ${S.lost}L` },
-    { label: 'Profit factor', value: S.pf.toFixed(2), color: 'var(--up)', bar: 'var(--up)', sub: `${money(S.gw, 0)} / ${money(S.gl, 0)}` },
-    { label: 'Max drawdown', value: pctAbs(S.dd, 2), color: 'var(--down)', bar: 'var(--down)', sub: `${S.avgHold.toFixed(1)} bar avg hold` },
-    { label: 'System health', value: DATA.guardrails.halt ? 'HALTED' : 'ARMED', color: DATA.guardrails.halt ? 'var(--down)' : 'var(--up)', bar: DATA.guardrails.halt ? 'var(--down)' : 'var(--up)', sub: '5 guardrails · 0 breaches' },
+    { label: 'Profit factor', value: num(S.pf), color: 'var(--up)', bar: 'var(--up)', sub: `${money(S.gw, 0)} / ${money(S.gl, 0)}` },
+    { label: 'Max drawdown', value: pctAbs(S.dd, 2), color: 'var(--down)', bar: 'var(--down)', sub: S.avgHold != null ? `${S.avgHold.toFixed(1)} bar avg hold` : `avg hold n/a — needs ${DATA.thresholds.minTrades}+ trades, have ${S.n}` },
+    { label: 'System health', value: DATA.guardrails.halt ? 'HALTED' : 'ARMED', color: DATA.guardrails.halt ? 'var(--down)' : 'var(--up)', bar: DATA.guardrails.halt ? 'var(--down)' : 'var(--up)', sub: `${DATA.guardrails.rejectedOrders} order rejection(s) logged all-time` },
   ];
   document.getElementById('cr-kpis').innerHTML = kpis.map(k => `
     <div style="background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;position:relative;overflow:hidden">
@@ -678,7 +724,7 @@ function renderBakeoff() {
       <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace">
         <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px"><span style="width:44px;height:5px;background:var(--bg);border-radius:3px;overflow:hidden;border:1px solid var(--line)"><span style="display:block;height:100%;width:${(b.point / maxPoint * 100).toFixed(0)}%;background:${b.beats ? 'var(--up)' : 'var(--muted)'}"></span></span>${b.point.toFixed(2)}</div>
       </td>
-      <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--muted)">${b.deflated.toFixed(2)}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--muted)">${num(b.deflated)}</td>
       <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--muted)">${esc(b.fold)}</td>
       <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--muted)">${esc(b.ci)}</td>
       <td style="padding:9px 10px;border-bottom:1px solid var(--line);text-align:center">${b.beats ? '✓ beats' : '—'}</td>
@@ -724,12 +770,13 @@ function renderRuns() {
 function renderScorecard() {
   const S = DATA.winScore;
   document.getElementById('cr-winid').textContent = DATA.winRunId;
+  const T = DATA.thresholds;
   const tiles = [
     { label: 'total return', value: pct(S.ret), color: 'var(--up)' },
-    { label: 'sharpe', value: S.sharpe.toFixed(2), color: 'var(--fg)' },
+    { label: S.sharpe == null ? `sharpe — needs ${T.minReturnDays}+ return days, have ${S.nDays}` : 'sharpe', value: num(S.sharpe), color: 'var(--fg)' },
     { label: 'max drawdown', value: pctAbs(S.dd, 2), color: 'var(--down)' },
     { label: 'trades', value: String(S.n), color: 'var(--fg)' },
-    { label: 'profit factor', value: S.pf.toFixed(2), color: 'var(--up)' },
+    { label: S.pf == null ? `profit factor — needs ${T.minTrades}+ trades, have ${S.n}` : 'profit factor', value: num(S.pf), color: 'var(--up)' },
   ];
   document.getElementById('cr-scoretiles').innerHTML = tiles.map(t => `
     <div style="background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:13px 15px">

@@ -5,13 +5,13 @@ Branch: `main` | Repo: `udayjain2102/papertrading-model-` | Mode: SELECTIVE EXPA
 
 ## Context
 
-Stated goal (`.md/FINDINGS.md`): *build agentic trading, teach it step by step what
+Stated goal (`docs/archive/FINDINGS.md`): *build agentic trading, teach it step by step what
 works and what doesn't through paper trading, have it paper-trade live markets on its
 own — and eventually earn enough trust to be given real money.*
 
 ### What the 2026-07-22 audit found, and what has since been fixed
 
-`.md/AUDIT-2026-07-22.md` is the most accurate document in the repo. PRs #36–#39
+`docs/archive/AUDIT-2026-07-22.md` is the most accurate document in the repo. PRs #36–#39
 landed on 2026-07-22 and closed four of its findings. Verified against `origin/main`
 and `origin/paper-state` on 2026-07-25:
 

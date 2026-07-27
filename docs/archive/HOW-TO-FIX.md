@@ -1,4 +1,4 @@
-> **Archived 2026-07-26 — superseded by `.md/AUDIT-2026-07-22.md`.** This is
+> **Archived 2026-07-26 — superseded by `docs/archive/AUDIT-2026-07-22.md`.** This is
 > the fix checklist for the now-archived `FINDINGS.md`; nearly every item here
 > (green daily run, dead-track cleanup, grading doc, doc drift) is done. Kept
 > for history, not current state.
@@ -15,7 +15,7 @@ everything else can happen at leisure once the record is growing.
 
 The workflow fails at "paper-state not found on origin" and both MCP secrets
 are empty. Two one-time setup steps were never done; they're documented in
-`.md/paper-cron-setup.md`. Condensed:
+`docs/paper-cron-setup.md`. Condensed:
 
 **1a. Add the two repo secrets.**
 GitHub → repo **Settings → Secrets and variables → Actions**:

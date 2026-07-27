@@ -1,3 +1,10 @@
+> **Archived, not current.** This describes the `runner.py`/`agent.py`
+> tool-loop architecture and a 30-minute cron. `runner.py` and the
+> standalone `agent.py` no longer exist in `src/rhagent/`; the scheduled
+> path today is `paper_run.py` on a Mon-Fri daily cron (see
+> `docs/ARCHITECTURE.md` and the README). Kept for historical context on the
+> pre-refactor design.
+
 # Big Picture: How the Agent Thinks
 
 Two decision brains — an LLM agent and a quant strategy pipeline — propose
