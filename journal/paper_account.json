@@ -1,5 +1,5 @@
 {
-  "cash_usd": 3500.0,
+  "cash_usd": 3250.0,
   "date": "2026-07-27",
   "positions": {
     "AMZN": {
@@ -25,6 +25,10 @@
     "ORCL": {
       "cost_basis_usd": 250.0,
       "shares": 2.174102136223874
+    },
+    "TSLA": {
+      "cost_basis_usd": 250.0,
+      "shares": 0.7955069395162245
     }
   },
   "realized_pnl_today_usd": 0.0

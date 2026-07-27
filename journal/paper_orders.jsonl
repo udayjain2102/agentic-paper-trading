@@ -25,3 +25,7 @@
 {"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "TXN", "ts": "2026-07-27T08:22:13.649755+00:00"}
 {"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "WMT", "ts": "2026-07-27T08:22:13.649806+00:00"}
 {"event": "paper_run_end", "n_accepted": 2, "n_orders": 6, "ts": "2026-07-27T08:22:13.650109+00:00"}
+{"event": "order_rejected", "notional_usd": 250.44681790530973, "reason": "Order $250.45 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "INTC", "ts": "2026-07-27T14:20:05.550734+00:00"}
+{"event": "order_rejected", "notional_usd": 263.0228837386808, "reason": "Order $263.02 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "ORCL", "ts": "2026-07-27T14:20:05.550882+00:00"}
+{"broker_order_id": "mock-1", "event": "order_placed", "notional_usd": 250.0, "side": "buy", "status": "filled", "symbol": "TSLA", "ts": "2026-07-27T14:20:05.550958+00:00"}
+{"event": "paper_run_end", "n_accepted": 1, "n_orders": 3, "ts": "2026-07-27T14:20:05.551279+00:00"}
