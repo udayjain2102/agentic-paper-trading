@@ -31,6 +31,15 @@ from .data import get_bars
 
 _LEGACY = "legacy"
 
+# ponytail: bound on how many distinct failed bars get retried in one tick,
+# oldest-first. Each retried bar is a fresh agent.decide_all call for every
+# symbol still failed on it (~90s/chunk, ~7-8min for the full 65-name
+# universe) -- an unbounded catch-up after a week-long outage would blow the
+# GitHub Actions job budget. 5 bars (~a trading week) caps worst case at
+# well under an hour while still draining a normal-length outage in a few
+# ticks; raise if outages start regularly exceeding it.
+RETRY_BOUND = 5
+
 
 def _agent_positions(eval_dir: Path, bars: dict[str, pd.DataFrame],
                      agent) -> tuple[dict[str, pd.Series], set]:
@@ -44,6 +53,16 @@ def _agent_positions(eval_dir: Path, bars: dict[str, pd.DataFrame],
     are frozen to disk (eval_dir/pos_<sym>.csv, columns date,pos,status) and only
     new bars are decided -- a second tick the same day makes zero calls.
 
+    RETRY RULE: a cached status=="ok" row is frozen forever -- a genuine verdict
+    is never re-decided. A cached status=="failed" row (timeout/parse/API error)
+    is NOT frozen: it is dropped back into "not yet decided" so the next tick
+    retries it, bounded to the oldest RETRY_BOUND failed dates per tick so one
+    long outage can't trigger an unbounded catch-up burst. Rows with no status
+    at all (pos_*.csv written before the column existed, and the seeded anchor
+    bars) are legacy -- excluded from returns like a failure, but never
+    retried, or the first tick after this change would try to back-decide a
+    year of seeded history at real API cost.
+
     EXCLUSION RULE: a date is dropped from the net-return series if ANY symbol's
     decision for it is not status "ok". A failed call holds the prior position,
     so its P&L is the P&L of an outage, not of a decision; and the net series is
@@ -52,8 +71,6 @@ def _agent_positions(eval_dir: Path, bars: dict[str, pd.DataFrame],
     the column existed, and the seeded anchor bars) are unknown/legacy, NOT "ok",
     so they are excluded too -- the forward record starts at the first day the
     agent actually answered for every name.
-
-    ponytail: one call per uncached bar; catch-up after a long gap costs N calls.
     """
     syms = list(bars)
     decided: dict[str, dict] = {}
@@ -71,6 +88,18 @@ def _agent_positions(eval_dir: Path, bars: dict[str, pd.DataFrame],
             # new. Seeded bars are legacy, not "ok" -- nobody decided them.
             decided[s] = {ts: 0.0 for ts in bars[s].index[:-1]}
             stat[s] = {ts: _LEGACY for ts in bars[s].index[:-1]}
+
+    # Un-freeze the oldest RETRY_BOUND failed dates (across the whole
+    # universe) so this tick's todo-selection below picks them back up.
+    # status=="failed" only -- legacy (no status) is left alone.
+    failed_dates = sorted({ts for s in syms for ts, st in stat[s].items()
+                           if st == "failed"})
+    retry = set(failed_dates[:RETRY_BOUND])
+    for s in syms:
+        for ts in retry:
+            if stat[s].get(ts) == "failed":
+                del decided[s][ts]
+                del stat[s][ts]
 
     cur = {s: 0.0 for s in syms}
     new_rows = []
@@ -321,15 +350,24 @@ def _report_decision_quality(eval_dir: Path) -> None:
     cost of the outage in *coverage*, not in P&L: a high failure rate means the
     forward record has holes, not that it is contaminated. Rows predating the
     `status` field are counted as unknown.
+
+    decisions.jsonl is append-only, and a failed (date, symbol) is now
+    retryable (see _agent_positions), so a later tick can append a second,
+    resolved row for the same (date, symbol). Tally only the latest row per
+    (date, symbol) -- otherwise a since-resolved failure keeps inflating the
+    failure count forever.
     """
     log = eval_dir / "decisions.jsonl"
     if not log.exists():
         return
-    ok = failed = unknown = 0
+    latest: dict[tuple, str | None] = {}
     for line in log.read_text().splitlines():
         if not line.strip():
             continue
-        status = json.loads(line).get("status")
+        r = json.loads(line)
+        latest[(r["date"], r["symbol"])] = r.get("status")
+    ok = failed = unknown = 0
+    for status in latest.values():
         if status == "ok":
             ok += 1
         elif status is None:
@@ -457,9 +495,21 @@ def _selfcheck() -> None:
         seed(53)  # bar 52 decided ok -> bar 51 is now realized, but it failed
         t4 = tick(cfg, eda, today=date(2026, 3, 20), cache_dir=cache,
                   engine="agent", agent=agent)
-        assert t4["appended"] == 0, "failed day must not enter returns.csv"
-        assert not (pd.read_csv(eda / "returns.csv", parse_dates=["date"])["date"]
-                    == bars["AAA"].index[51]).any()
+        # bar 51's failure is retried this tick (one call) alongside the
+        # genuinely new bar 52 (another call) -> both resolve ok, so bar 51
+        # is no longer excluded and enters returns.csv.
+        assert calls["n"] == 5, calls
+        assert t4["appended"] == 1, t4
+        assert (pd.read_csv(eda / "returns.csv", parse_dates=["date"])["date"]
+                == bars["AAA"].index[51]).any()
+        assert list(pd.read_csv(eda / "pos_AAA.csv")["status"])[51] == "ok"
+
+        # a status=="ok" row must stay frozen forever: re-ticking makes no
+        # further calls even though the same bars are still cached.
+        n_before = calls["n"]
+        tick(cfg, eda, today=date(2026, 3, 20), cache_dir=cache,
+             engine="agent", agent=agent)
+        assert calls["n"] == n_before, "an ok verdict must never be re-decided"
     print("forward selfcheck ok")
 
 
