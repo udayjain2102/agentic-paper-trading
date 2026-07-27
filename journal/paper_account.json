@@ -1,5 +1,5 @@
 {
-  "cash_usd": 4500.0,
+  "cash_usd": 4000.0,
   "date": "2026-07-27",
   "positions": {
     "AMZN": {
@@ -9,6 +9,14 @@
     "AXP": {
       "cost_basis_usd": 250.0,
       "shares": 0.766471440377794
+    },
+    "CMCSA": {
+      "cost_basis_usd": 250.0,
+      "shares": 11.40510944935489
+    },
+    "GOOGL": {
+      "cost_basis_usd": 250.0,
+      "shares": 0.7818853056721045
     }
   },
   "realized_pnl_today_usd": 0.0
