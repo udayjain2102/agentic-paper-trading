@@ -289,7 +289,15 @@ class ControlHandler(http.server.BaseHTTPRequestHandler):
 
 
 def main() -> int:
-    server = http.server.ThreadingHTTPServer((HOST, PORT), ControlHandler)
+    try:
+        server = http.server.ThreadingHTTPServer((HOST, PORT), ControlHandler)
+    except OSError as e:
+        # Overwhelmingly this is "address already in use" from a panel left
+        # running in another terminal. The raw socket traceback buries that.
+        print(f"[control] cannot bind {HOST}:{PORT} -- {e}\n"
+              f"  in use? find it:  lsof -nP -iTCP:{PORT} -sTCP:LISTEN\n"
+              f"  then:             kill <PID>", file=sys.stderr)
+        return 1
     print(f"[control] serving on http://{HOST}:{PORT} (loopback only)")
     try:
         server.serve_forever()
