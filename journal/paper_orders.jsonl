@@ -1,0 +1,11 @@
+{"broker_order_id": "mock-1", "event": "order_placed", "notional_usd": 250.0, "side": "buy", "status": "filled", "symbol": "AMZN", "ts": "2026-07-27T07:40:57.181295+00:00"}
+{"broker_order_id": "mock-2", "event": "order_placed", "notional_usd": 250.0, "side": "buy", "status": "filled", "symbol": "AXP", "ts": "2026-07-27T07:40:57.181527+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "CMCSA", "ts": "2026-07-27T07:40:57.181601+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "GOOGL", "ts": "2026-07-27T07:40:57.181656+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "INTC", "ts": "2026-07-27T07:40:57.181706+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "ORCL", "ts": "2026-07-27T07:40:57.181753+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "QCOM", "ts": "2026-07-27T07:40:57.181797+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "TSLA", "ts": "2026-07-27T07:40:57.181842+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "TXN", "ts": "2026-07-27T07:40:57.181886+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "WMT", "ts": "2026-07-27T07:40:57.181930+00:00"}
+{"event": "paper_run_end", "n_accepted": 2, "n_orders": 10, "ts": "2026-07-27T07:40:57.182139+00:00"}

@@ -1,0 +1,15 @@
+{
+  "cash_usd": 4500.0,
+  "date": "2026-07-27",
+  "positions": {
+    "AMZN": {
+      "cost_basis_usd": 250.0,
+      "shares": 1.0770755217035253
+    },
+    "AXP": {
+      "cost_basis_usd": 250.0,
+      "shares": 0.766471440377794
+    }
+  },
+  "realized_pnl_today_usd": 0.0
+}
