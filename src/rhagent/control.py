@@ -101,6 +101,14 @@ def _fmt(v, dp=4):
     return "n/a" if v is None else f"{v:.{dp}f}"
 
 
+def _fmt_sharpe(m: dict) -> str:
+    from .evaluate import MIN_RETURN_DAYS_FOR_SHARPE
+
+    if m["sharpe"] is not None:
+        return f"{m['sharpe']:.2f}"
+    return f"n/a (needs {MIN_RETURN_DAYS_FOR_SHARPE} return-days, have {m['n_return_days']})"
+
+
 _CONFIG_KNOBS = [
     ("cost_bps", r"(cost_bps:\s*)([0-9.]+)"),
     ("per_trade_max_usd", r"(per_trade_max_usd:\s*)([0-9.]+)"),
@@ -153,7 +161,7 @@ class ControlApp:
                 f"<tr><td>{escape(r['name'])}</td><td>{escape(meta.get('engine',''))}</td>"
                 f"<td>{escape(str(meta.get('start',''))[:10])} → {escape(str(meta.get('end',''))[:10])}</td>"
                 f"<td>{m['n_trades']} trades / {m['n_return_days']} days</td>"
-                f"<td>{_fmt(m['total_return'], 4)}</td><td>{_fmt(m['sharpe'], 2)}</td>"
+                f"<td>{_fmt(m['total_return'], 4)}</td><td>{escape(_fmt_sharpe(m))}</td>"
                 f"<td>{_fmt(m['max_drawdown'], 4)}</td><td>{escape(pos)}</td></tr>"
             )
         dec_rows = "".join(

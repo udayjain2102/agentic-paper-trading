@@ -296,14 +296,19 @@ def tick_and_reflect(cfg, eval_dir: Path, cost_bps: float | None = None, *,
 
 
 def _report(eval_dir: Path) -> None:
-    from .evaluate import aggregate, load_run
+    from .evaluate import MIN_RETURN_DAYS_FOR_SHARPE, aggregate, load_run
 
     meta, trades, net = load_run(eval_dir)
     a = aggregate(trades, net)
     print(f"forward record: {meta['engine']} {','.join(meta['symbols'])}  "
           f"{meta['start'][:10]} -> {meta['end'][:10]}  ({a['n_trades'] or len(net)} days)")
+    # sharpe is None until the sample supports it (evaluate.MIN_RETURN_DAYS_FOR_SHARPE);
+    # print why rather than a number the sample can't carry -- and never crash the
+    # tick over a report line.
+    sharpe = (f"{a['sharpe']:.2f}" if a["sharpe"] is not None
+              else f"n/a (needs {MIN_RETURN_DAYS_FOR_SHARPE} return-days, have {a['n_return_days']})")
     print(f"  total_return   {a['total_return']:+.2%}")
-    print(f"  sharpe         {a['sharpe']:.2f}")
+    print(f"  sharpe         {sharpe}")
     print(f"  max_drawdown   {a['max_drawdown']:.2%}")
     _report_decision_quality(eval_dir)
 
@@ -365,7 +370,17 @@ def main(argv: list[str] | None = None) -> int:
         res = tick_and_reflect(cfg, eval_dir, args.cost_bps, engine=engine,
                                fill=args.fill_mode)
         print(f"tick: appended {res['appended']} day(s), {res['total_days']} total")
-    _report(eval_dir)
+    # The tick above already wrote run.json/trades.jsonl/returns.csv to disk --
+    # _report only prints a summary of what's already persisted. A bug in this
+    # cosmetic print path must never turn into a nonzero exit: paper_cron.sh
+    # runs this call unguarded (set -euo pipefail) and only pushes the
+    # refreshed state to the paper-state branch at the very end of the script,
+    # so a crash here would silently drop a whole day of forward record even
+    # though the tick itself succeeded (see GH Actions run 30246319323).
+    try:
+        _report(eval_dir)
+    except Exception as e:
+        print(f"!! report failed (non-fatal, tick already persisted): {e}", file=sys.stderr)
     return 0
 
 

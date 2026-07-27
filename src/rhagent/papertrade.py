@@ -294,16 +294,36 @@ class PaperTrader:
 
 
 def _print_report(run_dir: Path) -> None:
-    from .evaluate import aggregate, failure_buckets, load_run
+    from .evaluate import (
+        MIN_RETURN_DAYS_FOR_SHARPE,
+        MIN_TRADES_FOR_RATE_STATS,
+        aggregate,
+        failure_buckets,
+        load_run,
+    )
 
     meta, trades, net = load_run(run_dir)
     print(f"run_id: {meta['run_id']}")
     print(f"engine: {meta['engine']}  symbols: {','.join(meta['symbols'])}")
 
+    # win_rate/avg_win/avg_loss/profit_factor/avg_holding_bars are None below
+    # MIN_TRADES_FOR_RATE_STATS trades; sharpe is None below
+    # MIN_RETURN_DAYS_FOR_SHARPE return-days -- print why rather than crash on
+    # a bare format spec (see evaluate.aggregate docstring).
     a = aggregate(trades, net)
     print("\naggregate stats")
     for k, v in a.items():
-        print(f"  {k:<18}{v:>12.4f}" if isinstance(v, float) else f"  {k:<18}{v:>12}")
+        if v is None:
+            reason = (
+                f"n/a (needs {MIN_RETURN_DAYS_FOR_SHARPE} return-days, have {a['n_return_days']})"
+                if k == "sharpe" else
+                f"n/a (needs {MIN_TRADES_FOR_RATE_STATS} trades, have {a['n_trades']})"
+            )
+            print(f"  {k:<18}{reason:>12}")
+        elif isinstance(v, float):
+            print(f"  {k:<18}{v:>12.4f}")
+        else:
+            print(f"  {k:<18}{v:>12}")
 
     b = failure_buckets(trades)
     print("\nfailure buckets (by loss share)")
