@@ -279,7 +279,8 @@ section{margin-top:30px}
 .col{display:flex;flex-direction:column;gap:14px}
 .hdr{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
 .tile{background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:13px 15px}
-.tile .v{font-size:20px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.01em}
+.tile .v{font-size:20px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.01em;overflow-wrap:anywhere}
+.tile .v.sm{font-size:13px;line-height:1.35}
 .tile .k{font-size:11px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
 .chipbar{display:flex;gap:5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px;flex-wrap:wrap}
 .chip{border:none;cursor:pointer;font:600 12px 'IBM Plex Sans',sans-serif;padding:6px 13px;border-radius:7px;background:transparent;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
@@ -327,7 +328,7 @@ th.c,td.c{text-align:center}
 
   <section class="two" style="grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr)">
     <div class="card">
-      <h3>Guardrails · armed</h3><div class="sub">Hard caps enforced in code — the model cannot talk its way past them.</div>
+      <h3>Guardrails · armed</h3><div class="sub">Hard caps enforced in code: the model cannot talk its way past them.</div>
       <div id="guardrails" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))"></div>
     </div>
     <div class="card">
@@ -351,7 +352,7 @@ th.c,td.c{text-align:center}
       <span class="tag" style="background:rgba(255,176,32,.14);color:var(--warn)">IN-SAMPLE</span>
       <div style="flex:1"></div>
     </div>
-    <div class="sub">Measured over the same window the strategy was selected on — selection-biased, not out-of-sample evidence.</div>
+    <div class="sub">Measured over the same window the strategy was selected on, which is selection-biased, not out-of-sample evidence.</div>
     <div id="scoretiles" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))"></div>
     <div id="scorespy" class="mu" style="margin-top:12px;font-size:11.5px"></div>
   </section>
@@ -413,12 +414,18 @@ const ud = x => x >= 0 ? 'var(--up)' : 'var(--down)';
 // A metric below its sample-size floor (see evaluate.py's MIN_TRADES_FOR_RATE_STATS
 // / MIN_RETURN_DAYS_FOR_SHARPE) comes through as null, not a fake 0 -- render that
 // honestly instead of crashing on `null.toFixed()` or silently showing "$0.00".
-const naOr = (v, fmt, need, have, unit) => v == null ? `n/a — needs ${need}+ ${unit}, have ${have}` : fmt(v);
+const naOr = (v, fmt, need, have, unit) => v == null ? `n/a - needs ${need}+ ${unit}, have ${have}` : fmt(v);
 const engineColor = e => ({ mean_reversion: 'var(--accent)', momentum: 'var(--warn)', linreg: 'var(--purple)', agent: 'var(--up)' }[e] || 'var(--muted)');
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // one tile, one chip row, one bucket bar — reused by every panel.
-const tile = (v, k, color) => `<div class="tile"><div class="v" style="color:${color || 'var(--fg)'}">${esc(v)}</div><div class="k">${esc(k)}</div></div>`;
+// `small` shrinks the value type for long unbreakable strings (a model slug),
+// which at 20px wraps to 6 lines and drags the whole tile row taller with it.
+const tile = (v, k, color, small) => `<div class="tile"><div class="v${small ? ' sm' : ''}" style="color:${color || 'var(--fg)'}">${esc(v)}</div><div class="k">${esc(k)}</div></div>`;
+// A 65-name universe printed in full floods every panel it appears in; collapse
+// it the way _run_row already does and keep the full list in the tooltip.
+const universe = syms => !syms || !syms.length ? 'no symbols'
+  : syms.length <= 5 ? syms.join(', ') : `universe (${syms.length})`;
 const chips = (attr, items, active) => items.map(([id, label, dot]) =>
   `<button class="chip" ${attr}="${esc(id)}" aria-pressed="${id === active}">${dot ? `<span class="dot" style="color:${dot}"></span>` : ''}${esc(label)}</button>`).join('');
 const bucketRow = (b, nKey, color) => `<div>
@@ -437,21 +444,26 @@ function renderHeaderPills() {
 
 function renderVerdict() {
   const { agent, baseline: base, real } = DATA.forward;
-  const days = agent.days || base.days || 0;
-  let badge = 'TOO EARLY TO CALL', note = `Forward track has ${days} day(s) logged. Verdict needs weeks of OOS data.`;
+  // Both legs need their own tracked days: a leg with 0 days sits at exactly
+  // $0.00, which would otherwise "beat" a real leg that is merely down a little.
+  const days = Math.min(agent.days, base.days);
+  let badge = 'TOO EARLY TO CALL',
+    note = agent.days && base.days
+      ? `Shortest track has ${days} day(s) logged. Verdict needs weeks of OOS data.`
+      : `${!agent.days ? 'Agent' : 'Baseline'} leg has no forward days logged yet, so there is nothing to compare.`;
   if (days >= 5) {
     badge = agent.pnl > base.pnl ? 'AGENT LEADS' : base.pnl > agent.pnl ? 'BASELINE LEADS' : 'TIED';
     note = `Forward P&L over the tracked window: ${badge.toLowerCase()}.`;
   }
   const fill = leg => `${leg.fillMode === 'next_open' ? 'next-open' : 'same-close'} fill @ ${leg.costBps}bp`;
-  const sub = leg => `${leg.days} day(s) · bal ${money(leg.notional + leg.pnl, 0)} · net ${pct(leg.ret)} · ${(leg.symbols || []).join(', ') || '—'} · ${fill(leg)}`;
+  const sub = leg => `${leg.days} day(s) · bal ${money(leg.notional + leg.pnl, 0)} · net ${pct(leg.ret)} · ${universe(leg.symbols)} · ${fill(leg)}`;
   const spyLine = leg => leg.spy && leg.spy.start
     ? `SPY buy&amp;hold ${leg.spy.start}→${leg.spy.end}: <b style="color:var(--fg)">${pct(leg.spy.return)}</b>`
     : 'SPY buy&amp;hold: not enough tracked days yet';
   const side = (leg, title, color, align) => `<div style="padding:22px 26px;display:flex;flex-direction:column;gap:6px;text-align:${align}">
       <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:${color};font-weight:600">${title}</div>
       <div class="m" style="font-size:34px;font-weight:700;letter-spacing:-.02em">${money(leg.pnl)}</div>
-      <div class="m mu" style="font-size:12px">${esc(sub(leg))}</div>
+      <div class="m mu" style="font-size:12px" title="${esc((leg.symbols || []).join(', '))}">${esc(sub(leg))}</div>
       <div class="m mu" style="font-size:11px">${spyLine(leg)}</div></div>`;
   const banner = (color, bg, html) => `<div class="note" style="margin-top:8px;font-size:13px;color:var(--fg);background:${bg};border:1px solid ${color}">${html}</div>`;
   $('verdict').innerHTML = `
@@ -464,7 +476,7 @@ function renderVerdict() {
       ${side(base, 'Mean-Reversion Baseline', 'var(--purple)', 'right')}
     </div>
     ${banner('rgba(5,196,107,.22)', 'rgba(5,196,107,.06)', `<b style="color:var(--up)">Research winner locked:</b> ${esc(DATA.lockedEngine)}, gated by the <b>${esc(DATA.lockedOverlay || 'no')}</b> overlay. This is the config the forward track is now paper-trading.`)}
-    ${real.days ? banner('rgba(77,184,255,.22)', 'rgba(77,184,255,.06)', `<b style="color:var(--accent)">Honest-fill record (mean_reversion_real):</b> ${money(real.pnl)} over ${esc(sub(real))}. The baseline above is ${fill(base)} — flattering by comparison, kept only because its track record predates this fill.`) : ''}
+    ${real.days ? banner('rgba(77,184,255,.22)', 'rgba(77,184,255,.06)', `<b style="color:var(--accent)">Honest-fill record (mean_reversion_real):</b> ${money(real.pnl)} over ${esc(sub(real))}. The baseline above is ${fill(base)}, flattering by comparison, kept only because its track record predates this fill.`) : ''}
     <div class="mu" style="margin-top:8px;font-size:11px">SPY benchmark is buy-and-hold over each leg's own tracked window; the strategy is not always fully invested, so this isn't an apples-to-apples exposure comparison.</div>`;
 }
 
@@ -507,10 +519,11 @@ function renderGuardrails() {
   $('guardrails').innerHTML = [
     ['per-trade max', money(g.per_trade_max_usd, 0)], ['total deployed max', money(g.total_deployed_max_usd, 0)],
     ['new positions / run', g.max_new_positions_per_run], ['orders / run', g.max_orders_per_run],
-    ['daily realized-loss kill', money(g.daily_loss_limit_usd, 0)], ['model', g.model.split('/').pop()],
+    ['daily realized-loss kill', money(g.daily_loss_limit_usd, 0)],
     // real, journaled count -- never a hardcoded number.
     ['order rejections (all-time)', String(g.rejectedOrders)],
-  ].map(([k, v]) => tile(v, k, 'var(--up)')).join('');
+    ['model', g.model.split('/').pop(), true],
+  ].map(([k, v, small]) => tile(v, k, 'var(--up)', small)).join('');
 }
 
 function renderBakeoff() {
@@ -521,7 +534,7 @@ function renderBakeoff() {
     <td class="l" style="color:${b.beats ? 'var(--up)' : 'var(--fg)'};font-weight:${b.beats ? 700 : 500}">${esc(b.overlay)}</td>
     <td><div style="display:flex;align-items:center;justify-content:flex-end;gap:8px"><span class="bar" style="width:44px;height:5px"><i style="width:${(b.point / maxPoint * 100).toFixed(0)}%;background:${b.beats ? 'var(--up)' : 'var(--muted)'}"></i></span>${b.point.toFixed(2)}</div></td>
     <td class="mu">${b.deflated == null ? `n/a (${b.nDays}d)` : b.deflated.toFixed(2)}</td><td class="mu">${esc(b.fold)}</td><td class="mu">${esc(b.ci)}</td>
-    <td class="c">${b.beats ? '✓ beats' : '—'}</td></tr>`).join('');
+    <td class="c">${b.beats ? '✓ beats' : 'no'}</td></tr>`).join('');
 }
 
 const RUN_COLS = [['id', 'run'], ['engine', 'engine'], ['overlay', 'overlay'], ['n', 'trades'], ['wr', 'win %'], ['pf', 'PF'], ['pnl', 'P&L'], ['ret', 'return']];
@@ -543,7 +556,7 @@ function renderRuns() {
     return `<tr class="row" data-open="${esc(r.id)}" style="background:${win ? 'rgba(5,196,107,.06)' : 'transparent'};border-left:3px solid ${win ? 'var(--up)' : 'transparent'}">
       <td class="l"><span style="color:var(--accent)">${esc(r.sid)}</span>${win ? '<span style="color:var(--up);font-weight:700;font-size:10px;margin-left:6px">◆ LOCKED</span>' : ''}</td>
       <td class="l"><span class="dot" style="display:inline-block;color:${engineColor(r.engine)}"></span> ${esc(r.engine)}</td>
-      <td class="l mu">${esc(r.overlay || '—')}</td><td>${r.n}</td>
+      <td class="l mu">${esc(r.overlay || 'none')}</td><td>${r.n}</td>
       <td title="${r.wr == null ? `needs ${DATA.thresholds.minTrades}+ trades, have ${r.n}` : ''}">${r.wr == null ? 'n/a' : pctAbs(r.wr, 1)}</td>
       <td title="${r.pf == null ? `needs ${DATA.thresholds.minTrades}+ trades, have ${r.n}` : ''}">${r.pf == null ? 'n/a' : num(r.pf)}</td>
       <td style="color:${ud(r.pnl)};font-weight:600">${signed(r.pnl, 0)}</td>
@@ -572,7 +585,7 @@ function renderScorecard() {
   $('winid').textContent = S.id;
   $('scoretiles').innerHTML = SCORE_TILES(S).map(([k, v, c]) => tile(v, k, c)).join('');
   $('scorespy').textContent = spy && spy.start
-    ? `SPY buy-and-hold over the same window (${spy.start} → ${spy.end}): ${pct(spy.return)} — vs strategy total return ${pct(S.ret)}. The strategy is not always fully invested, so this isn't apples-to-apples on exposure.`
+    ? `SPY buy-and-hold over the same window (${spy.start} → ${spy.end}): ${pct(spy.return)} vs strategy total return ${pct(S.ret)}. The strategy is not always fully invested, so this isn't apples-to-apples on exposure.`
     : 'SPY buy-and-hold benchmark unavailable for this window (price cache does not cover it).';
 }
 
@@ -649,7 +662,7 @@ function renderDrawer() {
           </div>
         </div>
         <div class="note" style="margin-top:16px;background:rgba(77,184,255,.06);border:1px solid rgba(77,184,255,.22)">${win
-          ? 'This is the config the forward paper track is now trading — its per-trade ledger is in the Trade ledger panel.'
+          ? 'This is the config the forward paper track is now trading. Its per-trade ledger is in the Trade ledger panel.'
           : `Per-trade ledger for this run: rhagent.evaluate --run ${esc(r.id)}`}</div>
       </div>
     </aside>`;
@@ -663,7 +676,7 @@ async function triggerResearchRun() {
   try {
     const r = await fetch('/api/trigger-run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     const body = r.ok ? {} : await r.json().catch(() => ({}));
-    status.textContent = r.ok ? 'triggered — running on GitHub Actions' : 'failed: ' + (body.error || r.status);
+    status.textContent = r.ok ? 'triggered, running on GitHub Actions' : 'failed: ' + (body.error || r.status);
     status.style.color = r.ok ? 'var(--up)' : 'var(--down)';
   } catch (e) {
     status.textContent = 'failed: ' + e.message;
@@ -705,7 +718,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && ST.selecte
 
 def render_control_room(base_dir: Path) -> str:
     data = _build_data(base_dir)
-    title = f"Trading Control Room — {len(data['runs'])} research runs"
+    title = f"Trading Control Room - {len(data['runs'])} research runs"
     return (_TEMPLATE.replace("__TITLE__", escape(title))
             .replace("__DATA_JSON__", json.dumps(data)))
 
