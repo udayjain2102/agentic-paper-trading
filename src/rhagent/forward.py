@@ -32,7 +32,7 @@ from .data import get_bars
 _LEGACY = "legacy"
 
 # ponytail: bound on how many distinct failed bars get retried in one tick,
-# oldest-first. Each retried bar is a fresh agent.decide_all call for every
+# newest-first. Each retried bar is a fresh agent.decide_all call for every
 # symbol still failed on it (~90s/chunk, ~7-8min for the full 65-name
 # universe) -- an unbounded catch-up after a week-long outage would blow the
 # GitHub Actions job budget. 5 bars (~a trading week) caps worst case at
@@ -56,8 +56,10 @@ def _agent_positions(eval_dir: Path, bars: dict[str, pd.DataFrame],
     RETRY RULE: a cached status=="ok" row is frozen forever -- a genuine verdict
     is never re-decided. A cached status=="failed" row (timeout/parse/API error)
     is NOT frozen: it is dropped back into "not yet decided" so the next tick
-    retries it, bounded to the oldest RETRY_BOUND failed dates per tick so one
-    long outage can't trigger an unbounded catch-up burst. Rows with no status
+    retries it, bounded to the newest RETRY_BOUND failed dates per tick so one
+    long outage can't trigger an unbounded catch-up burst. Newest-first because
+    tick() can still append a recent healed date; see its interior-gap filter.
+    Rows with no status
     at all (pos_*.csv written before the column existed, and the seeded anchor
     bars) are legacy -- excluded from returns like a failure, but never
     retried, or the first tick after this change would try to back-decide a
@@ -92,8 +94,11 @@ def _agent_positions(eval_dir: Path, bars: dict[str, pd.DataFrame],
     # Un-freeze the oldest RETRY_BOUND failed dates (across the whole
     # universe) so this tick's todo-selection below picks them back up.
     # status=="failed" only -- legacy (no status) is left alone.
+    # Newest-first: a recent failed date is the one still inside its recording
+    # window, so it gets the budget first. Oldest-first spent it on dates that
+    # tick() could no longer append anyway.
     failed_dates = sorted({ts for s in syms for ts, st in stat[s].items()
-                           if st == "failed"})
+                           if st == "failed"}, reverse=True)
     retry = set(failed_dates[:RETRY_BOUND])
     for s in syms:
         for ts in retry:
@@ -238,7 +243,18 @@ def tick(cfg, eval_dir: Path, cost_bps: float | None = None, *, engine: str | No
     prev = (pd.read_csv(ret_path, parse_dates=["date"]) if ret_path.exists()
             else pd.DataFrame(columns=["date", "net"]))
     if len(prev):
-        new = net[net.index > prev["date"].max()]
+        # Newer than everything recorded, PLUS interior gaps -- dates inside the
+        # recorded range that aren't in prev. A date excluded for a failed
+        # decision heals on a later tick (see _agent_positions' RETRY RULE), and
+        # a plain `> max()` filter would silently drop it the moment any later
+        # date recorded first: the retry window would be one tick, not
+        # RETRY_BOUND. Interior-only is what keeps that safe for the rule-based
+        # engines, whose net has no exclusions and carries a full year of
+        # history -- backfilling before prev's first date would turn a year of
+        # backtest into "forward record" on the second tick.
+        seen = set(prev["date"])
+        new = net[(net.index > prev["date"].max())
+                  | ((net.index > prev["date"].min()) & ~net.index.isin(seen))]
     else:
         # Anchor: first tick records only the latest realized day, so the curve
         # starts now rather than backfilling a year of history as "forward".
@@ -551,6 +567,56 @@ def _selfcheck() -> None:
         assert (pd.read_csv(eda / "returns.csv", parse_dates=["date"])["date"]
                 == bars["AAA"].index[51]).any()
         assert list(pd.read_csv(eda / "pos_AAA.csv")["status"])[51] == "ok"
+
+        # A bar that fails its retry TOO must still land once it finally
+        # resolves -- even though a later bar recorded ahead of it in the
+        # meantime. This is the case a plain `> prev.max()` append filter drops
+        # forever, making RETRY_BOUND a lie (retry window = 1 tick, not 5).
+        start_before = pd.read_csv(eda / "returns.csv",
+                                   parse_dates=["date"])["date"].min()
+        agent.complete = boom
+        seed(54)  # bar 53 decided by a failing call
+        tick(cfg, eda, today=date(2026, 3, 20), cache_dir=cache,
+             engine="agent", agent=agent)
+        assert list(pd.read_csv(eda / "pos_AAA.csv")["status"])[53] == "failed"
+
+        # The precondition for the drop: bar 53's RETRY keeps failing while
+        # newer bars succeed and record, moving prev["date"].max() past 53 and
+        # stranding it. Bars are decided in ascending date order, so the oldest
+        # outstanding bar (53) is always the first call of a tick.
+        def fail_oldest(prompt):
+            calls["n"] += 1
+            if fail_oldest.first:
+                fail_oldest.first = False
+                raise ValueError("retry down")
+            return complete(prompt)
+
+        for n in (55, 56):  # 53's retry fails again each time; 54 then 55 land
+            fail_oldest.first = True
+            agent.complete = fail_oldest
+            seed(n)
+            tick(cfg, eda, today=date(2026, 3, 20), cache_dir=cache,
+                 engine="agent", agent=agent)
+        st = list(pd.read_csv(eda / "pos_AAA.csv")["status"])
+        assert st[53] == "failed" and st[54] == "ok", st[53:55]
+        recorded = pd.read_csv(eda / "returns.csv", parse_dates=["date"])["date"]
+        assert recorded.max() > bars["AAA"].index[53], (
+            "test precondition: a later bar must record ahead of stranded 53")
+
+        agent.complete = complete
+        seed(57)  # bar 53 finally resolves, now behind the record's high-water mark
+        tick(cfg, eda, today=date(2026, 3, 20), cache_dir=cache,
+             engine="agent", agent=agent)
+        rec = set(pd.read_csv(eda / "returns.csv", parse_dates=["date"])["date"])
+        assert bars["AAA"].index[53] in rec, (
+            "a bar that failed twice must still enter returns.csv once it "
+            f"resolves; got {sorted(rec)}")
+        assert list(pd.read_csv(eda / "pos_AAA.csv")["status"])[53] == "ok"
+
+        # ...but never backfill BEFORE the record's first date: the anchor bars
+        # are legacy, and a rule-based net carries a full year of history.
+        first = pd.read_csv(eda / "returns.csv", parse_dates=["date"])["date"].min()
+        assert first == start_before, f"record start moved back to {first}"
 
         # a status=="ok" row must stay frozen forever: re-ticking makes no
         # further calls even though the same bars are still cached.
