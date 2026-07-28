@@ -1,6 +1,6 @@
 {
-  "cash_usd": 3250.0,
-  "date": "2026-07-27",
+  "cash_usd": 3498.2398138864073,
+  "date": "2026-07-28",
   "positions": {
     "AMZN": {
       "cost_basis_usd": 250.0,
@@ -18,10 +18,6 @@
       "cost_basis_usd": 250.0,
       "shares": 0.7818853056721045
     },
-    "INTC": {
-      "cost_basis_usd": 250.0,
-      "shares": 2.7079722793155065
-    },
     "ORCL": {
       "cost_basis_usd": 250.0,
       "shares": 2.174102136223874
@@ -31,5 +27,5 @@
       "shares": 0.7955069395162245
     }
   },
-  "realized_pnl_today_usd": 0.0
+  "realized_pnl_today_usd": -1.7601861135928232
 }
