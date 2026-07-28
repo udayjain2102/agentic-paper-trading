@@ -218,3 +218,37 @@ def test_agent_positions_log_decisions_with_reason(tmp_path):
     assert agent.calls == 1
     n2 = len((tmp_path / "decisions.jsonl").read_text().splitlines())
     assert n2 == len(lines)
+
+
+def test_memory_chars_reports_what_the_engine_held_not_the_file(tmp_path):
+    """run.json is an audit trail of the education the agent actually got.
+    With use_lessons off (the production default -- see config.yaml) the
+    lessons string is empty, so a fat agent_memory.md on disk must not be
+    reported as memory the agent received."""
+    import json
+    from datetime import date
+
+    from rhagent.engine import AgentEngine
+
+    mem = tmp_path / "agent_memory.md"
+    append_reflection(mem, "2026-07-20", "a long prior lesson " * 20)
+    assert len(read_memory(mem)) > 100, "fixture must have real content on disk"
+
+    cache, eval_dir = tmp_path / "cache", tmp_path / "fwd"
+    cache.mkdir()
+    idx = pd.date_range("2026-01-01", periods=12, freq="B")
+    close = pd.Series(range(100, 100 + len(idx)), index=idx, dtype=float)
+    pd.DataFrame({"open": close, "high": close, "low": close, "close": close,
+                  "volume": 1e6}, index=idx).to_csv(cache / "AAA.csv",
+                                                    index_label="date")
+
+    cfg = _cfg(["AAA"])
+    cfg.agent.use_lessons = False
+    forward.tick_and_reflect(
+        cfg, eval_dir, today=date(2026, 3, 20), cache_dir=cache, engine="agent",
+        agent=AgentEngine(complete=lambda _p: '{"AAA": 1}', lessons=""),
+        reflect_complete=lambda _p: "", memory_path=str(mem))
+
+    meta = json.loads((eval_dir / "run.json").read_text())
+    assert meta["memory_chars"] == 0, (
+        f"reported {meta['memory_chars']} chars of memory the agent never saw")

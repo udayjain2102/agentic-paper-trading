@@ -124,7 +124,7 @@ def _agent_positions(eval_dir: Path, bars: dict[str, pd.DataFrame],
             if ts in decided[s]:
                 cur[s] = decided[s][ts]
 
-    out, excluded = {}, set()
+    out, excluded, pending = {}, set(), set()
     for s in syms:
         pos = pd.Series(decided[s]).reindex(bars[s].index).astype(float)
         st = pd.Series(stat[s], dtype=object).reindex(bars[s].index).fillna(_LEGACY)
@@ -132,6 +132,21 @@ def _agent_positions(eval_dir: Path, bars: dict[str, pd.DataFrame],
             eval_dir / f"pos_{s}.csv")
         out[s] = pos
         excluded |= set(st.index[st != "ok"])
+        pending |= set(st.index[st == "failed"])
+    # SUCCESSOR RULE: net[T] is a function of pos[T-1] as well as pos[T] --
+    # net_returns takes turnover from pos.diff(), and in next_open mode that
+    # turnover also selects close-to-close vs open-to-close fills. So scoring
+    # the day AFTER a failed day against the held-over position bakes in a
+    # number the retry will later invalidate: measured 106bp of drift at
+    # next_open (7bp at close, which is only the cost term). Hold the successor
+    # out until its predecessor settles -- a hole, not a contaminated value,
+    # same principle as the exclusion rule itself. From "failed" only: legacy
+    # rows are never retried (see the un-freeze above), so their positions
+    # cannot change and their successors cannot go stale.
+    if pending:
+        idx = pd.Index(sorted(set().union(*(b.index for b in bars.values()))))
+        nxt = idx.get_indexer(sorted(pending)) + 1
+        excluded |= set(idx[nxt[nxt < len(idx)]])
     # Append-only decisions log. `status` ("ok" vs "failed") makes a genuine
     # verdict distinguishable from a parse-fail/timeout/API-error fallback
     # without sniffing the reason string; agent performance metrics should
@@ -255,6 +270,15 @@ def tick(cfg, eval_dir: Path, cost_bps: float | None = None, *, engine: str | No
         seen = set(prev["date"])
         new = net[(net.index > prev["date"].max())
                   | ((net.index > prev["date"].min()) & ~net.index.isin(seen))]
+        # A recorded day must stay reproducible from the positions and prices it
+        # came from. Report drift, never rewrite it: cost_bps/fill are
+        # CLI-overridable, so a --cost-bps debugging tick that silently re-priced
+        # the overlap would be a worse integrity hole than the one being caught.
+        both = prev.set_index("date")["net"].reindex(net.index).dropna()
+        drift = (net.reindex(both.index) - both).abs()
+        for d in drift[drift > 1e-9].index:
+            print(f"!! recorded {d.date()} = {both[d]:+.5f} but recomputes to "
+                  f"{net[d]:+.5f} -- record kept, investigate", file=sys.stderr)
     else:
         # Anchor: first tick records only the latest realized day, so the curve
         # starts now rather than backfilling a year of history as "forward".
@@ -334,7 +358,11 @@ def tick_and_reflect(cfg, eval_dir: Path, cost_bps: float | None = None, *,
             print(f"!! reflection failed (non-fatal): {e}", file=sys.stderr)
 
     meta = res["meta"]
-    meta["memory_chars"] = len(memory_text)
+    # What the engine actually held, not what was merely read off disk. With
+    # use_lessons false (config.yaml explains why) the lessons string is empty,
+    # and an injected agent never saw memory_path at all -- reporting the file's
+    # length either way credits the agent with an education it did not get.
+    meta["memory_chars"] = len(getattr(agent, "lessons", ""))
     meta["reflected"] = reflected
     (eval_dir / "run.json").write_text(json.dumps(meta, indent=2, sort_keys=True))
     return res
@@ -591,7 +619,9 @@ def _selfcheck() -> None:
                 raise ValueError("retry down")
             return complete(prompt)
 
-        for n in (55, 56):  # 53's retry fails again each time; 54 then 55 land
+        # Three bars, not two: 53 stays failed, so the SUCCESSOR RULE also holds
+        # 54 out, and it takes one more bar before anything records ahead of 53.
+        for n in (55, 56, 57):
             fail_oldest.first = True
             agent.complete = fail_oldest
             seed(n)
@@ -604,13 +634,16 @@ def _selfcheck() -> None:
             "test precondition: a later bar must record ahead of stranded 53")
 
         agent.complete = complete
-        seed(57)  # bar 53 finally resolves, now behind the record's high-water mark
+        seed(58)  # bar 53 finally resolves, now behind the record's high-water mark
         tick(cfg, eda, today=date(2026, 3, 20), cache_dir=cache,
              engine="agent", agent=agent)
         rec = set(pd.read_csv(eda / "returns.csv", parse_dates=["date"])["date"])
         assert bars["AAA"].index[53] in rec, (
             "a bar that failed twice must still enter returns.csv once it "
             f"resolves; got {sorted(rec)}")
+        # ...and so must its successor, held out by the SUCCESSOR RULE until
+        # bar 53 settled. Both land together, computed from final positions.
+        assert bars["AAA"].index[54] in rec, sorted(rec)
         assert list(pd.read_csv(eda / "pos_AAA.csv")["status"])[53] == "ok"
 
         # ...but never backfill BEFORE the record's first date: the anchor bars

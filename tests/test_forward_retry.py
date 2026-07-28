@@ -154,3 +154,38 @@ def test_retry_is_bounded():
     for p in eval_dir.glob("*"):
         p.unlink()
     eval_dir.rmdir()
+
+
+def test_failed_bar_holds_its_successor_out_but_legacy_does_not():
+    """SUCCESSOR RULE: net[T] depends on pos[T-1] via turnover, so the day after
+    an unsettled day can't be scored yet. Legacy rows are never retried, so
+    their positions can't change and their successors are safe."""
+    idx = pd.date_range("2026-01-01", periods=10, freq="B")
+    bars = {"AAA": _bars(idx, 1)}
+    eval_dir = Path("/tmp/rhagent_test_successor_rule")
+    eval_dir.mkdir(exist_ok=True)
+
+    failed_ts, next_ts = idx[3], idx[4]
+    # Everything decided ok except one failed bar in the middle. Bound the
+    # retry out of the way so the failed row stays failed for this assertion.
+    df = pd.DataFrame({"date": idx, "pos": 0.0, "status": "ok"})
+    df.loc[df["date"] == failed_ts, "status"] = "failed"
+    df.to_csv(eval_dir / "pos_AAA.csv", index=False)
+
+    def boom(_prompt):
+        raise ValueError("still down")
+    _, excluded = forward._agent_positions(eval_dir, bars, AgentEngine(complete=boom))
+    assert failed_ts in excluded
+    assert next_ts in excluded, "the day after an unsettled day must be held out"
+
+    # Same shape, but the row is legacy rather than failed -> successor is fine.
+    df = pd.DataFrame({"date": idx, "pos": 0.0, "status": "ok"})
+    df.loc[df["date"] == failed_ts, "status"] = "legacy"
+    df.to_csv(eval_dir / "pos_AAA.csv", index=False)
+    _, excluded = forward._agent_positions(eval_dir, bars, AgentEngine(complete=boom))
+    assert failed_ts in excluded
+    assert next_ts not in excluded, "legacy never changes, so it can't stale its successor"
+
+    for p in eval_dir.glob("*"):
+        p.unlink()
+    eval_dir.rmdir()
