@@ -38,6 +38,13 @@ _LEGACY = "legacy"
 # GitHub Actions job budget. 5 bars (~a trading week) caps worst case at
 # well under an hour while still draining a normal-length outage in a few
 # ticks; raise if outages start regularly exceeding it.
+#
+# No per-date attempt cap, deliberately. Newest-first ordering already retires
+# an unhealable date structurally, and a cap is measurably WORSE at the rate
+# actually observed (it retires transient failures that would have healed).
+# Trigger to revisit: one (date, symbol) pair in decisions.jsonl with 3+
+# attempts still failing. That log is append-only, so the evidence accrues
+# without new code -- it's a grep, not a judgement call.
 RETRY_BOUND = 5
 
 
@@ -57,8 +64,8 @@ def _agent_positions(eval_dir: Path, bars: dict[str, pd.DataFrame],
     is never re-decided. A cached status=="failed" row (timeout/parse/API error)
     is NOT frozen: it is dropped back into "not yet decided" so the next tick
     retries it, bounded to the newest RETRY_BOUND failed dates per tick so one
-    long outage can't trigger an unbounded catch-up burst. Newest-first because
-    tick() can still append a recent healed date; see its interior-gap filter.
+    long outage can't trigger an unbounded catch-up burst. Newest-first so an
+    unhealable date can't hold a slot forever -- see the ordering comment below.
     Rows with no status
     at all (pos_*.csv written before the column existed, and the seeded anchor
     bars) are legacy -- excluded from returns like a failure, but never
@@ -91,12 +98,24 @@ def _agent_positions(eval_dir: Path, bars: dict[str, pd.DataFrame],
             decided[s] = {ts: 0.0 for ts in bars[s].index[:-1]}
             stat[s] = {ts: _LEGACY for ts in bars[s].index[:-1]}
 
-    # Un-freeze the oldest RETRY_BOUND failed dates (across the whole
+    # Un-freeze the newest RETRY_BOUND failed dates (across the whole
     # universe) so this tick's todo-selection below picks them back up.
     # status=="failed" only -- legacy (no status) is left alone.
-    # Newest-first: a recent failed date is the one still inside its recording
-    # window, so it gets the budget first. Oldest-first spent it on dates that
-    # tick() could no longer append anyway.
+    # Newest-first. NOT because old dates are unrecordable -- tick()'s
+    # interior-gap filter makes any interior date recordable again -- but
+    # because oldest-first head-of-line blocks: a date no retry can fix (a
+    # prompt that always overflows, a dead symbol) sits at the queue head
+    # forever holding a slot, and five of them starve every later failure
+    # permanently. That is an absorbing state, reached at any nonzero rate of
+    # unhealable failures -- modelled, oldest-first collapses from 5.0 to 0.5
+    # recorded days/week once ~5% of failures are unhealable, and past that
+    # point the rate stops mattering at all. Newest-first evicts an unhealable
+    # date automatically once five newer failures exist, and its own risk (a
+    # transient old failure starved during a burst) is self-limiting: the retry
+    # set is recomputed from scratch every tick, so a skipped date returns as
+    # soon as the backlog drains. That needs arrival to exceed service --
+    # ~0.67 failed dates/day against ~4/day of capacity -- and only bites above
+    # a ~70% per-chunk failure rate, 3.5x anything observed.
     failed_dates = sorted({ts for s in syms for ts, st in stat[s].items()
                            if st == "failed"}, reverse=True)
     retry = set(failed_dates[:RETRY_BOUND])

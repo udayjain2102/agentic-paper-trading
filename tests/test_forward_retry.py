@@ -207,3 +207,40 @@ def test_drift_report_catches_moved_and_vanished_days():
         prev, pd.Series([0.01, 0.02, 0.03], index=idx[:3])) == 1
     assert forward._report_drift(
         pd.DataFrame(columns=["date", "net"]), pd.Series(dtype=float)) == 0
+
+
+def test_retry_serves_the_newest_failed_dates_not_the_oldest():
+    """Selection order only bites above RETRY_BOUND simultaneous failures, which
+    nothing else reaches -- the selfcheck's failing-call cases exploit ascending
+    bar PROCESSING order, which is independent of selection. Pins newest-first:
+    oldest-first head-of-line blocks on an unhealable date and starves every
+    later one, an absorbing state; newest-first evicts it."""
+    import json
+
+    idx = pd.date_range("2026-01-01", periods=12, freq="B")
+    bars = {s: _bars(idx, i) for i, s in enumerate(_SYMS)}
+    failed = list(idx[2:10])  # 8 > RETRY_BOUND
+    eval_dir = Path("/tmp/rhagent_test_retry_order")
+    eval_dir.mkdir(exist_ok=True)
+    for p in eval_dir.glob("*"):
+        p.unlink()
+    for s in _SYMS:
+        pd.DataFrame({
+            "date": idx, "pos": 0.0,
+            "status": ["failed" if t in failed else "ok" for t in idx],
+        }).to_csv(eval_dir / f"pos_{s}.csv", index=False)
+
+    forward._agent_positions(eval_dir, bars, _agent())
+
+    rows = [json.loads(l) for l
+            in (eval_dir / "decisions.jsonl").read_text().splitlines() if l.strip()]
+    retried = sorted({r["date"] for r in rows})
+    assert len(retried) == forward.RETRY_BOUND, retried
+    expected = sorted(str(t.date()) for t in failed[-forward.RETRY_BOUND:])
+    assert retried == expected, (
+        f"retry must serve the NEWEST {forward.RETRY_BOUND} failed dates; "
+        f"got {retried}, want {expected}")
+
+    for p in eval_dir.glob("*"):
+        p.unlink()
+    eval_dir.rmdir()
