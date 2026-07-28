@@ -232,6 +232,32 @@ def _net_series(cfg, engine: str, bars: dict[str, pd.DataFrame], cost_bps: float
     return df[full & ~df.index.isin(excluded)].mean(axis=1)
 
 
+def _report_drift(prev: pd.DataFrame, net: pd.Series) -> int:
+    """Warn when an already-recorded day no longer reproduces. Returns the count.
+
+    Two ways a recorded day can stop matching: its value moved (positions healed
+    after a retry, or the price cache was revised under it), or it fell out of
+    the recomputed series entirely (newly excluded, or newly failing the
+    full-coverage filter because a refresh dropped a symbol's bar). The second
+    is the likelier one and a value comparison alone cannot see it.
+    """
+    if not len(prev):
+        return 0
+    recorded = prev.set_index("date")["net"]
+    recorded = recorded[~recorded.index.duplicated()]
+    n = 0
+    both = recorded.reindex(net.index).dropna()
+    for d in (net.reindex(both.index) - both).abs().pipe(lambda s: s[s > 1e-9]).index:
+        print(f"!! recorded {d.date()} = {both[d]:+.5f} but recomputes to "
+              f"{net[d]:+.5f} -- record kept, investigate", file=sys.stderr)
+        n += 1
+    for d in sorted(set(recorded.index) - set(net.index)):
+        print(f"!! recorded {d.date()} is no longer in the recomputed series "
+              f"-- record kept, investigate", file=sys.stderr)
+        n += 1
+    return n
+
+
 def tick(cfg, eval_dir: Path, cost_bps: float | None = None, *, engine: str | None = None,
          fill: str | None = None, fetch=None, today=None, cache_dir="data",
          agent=None) -> dict:
@@ -270,15 +296,6 @@ def tick(cfg, eval_dir: Path, cost_bps: float | None = None, *, engine: str | No
         seen = set(prev["date"])
         new = net[(net.index > prev["date"].max())
                   | ((net.index > prev["date"].min()) & ~net.index.isin(seen))]
-        # A recorded day must stay reproducible from the positions and prices it
-        # came from. Report drift, never rewrite it: cost_bps/fill are
-        # CLI-overridable, so a --cost-bps debugging tick that silently re-priced
-        # the overlap would be a worse integrity hole than the one being caught.
-        both = prev.set_index("date")["net"].reindex(net.index).dropna()
-        drift = (net.reindex(both.index) - both).abs()
-        for d in drift[drift > 1e-9].index:
-            print(f"!! recorded {d.date()} = {both[d]:+.5f} but recomputes to "
-                  f"{net[d]:+.5f} -- record kept, investigate", file=sys.stderr)
     else:
         # Anchor: first tick records only the latest realized day, so the curve
         # starts now rather than backfilling a year of history as "forward".
@@ -291,6 +308,18 @@ def tick(cfg, eval_dir: Path, cost_bps: float | None = None, *, engine: str | No
     combined = pd.concat([prev, rows], ignore_index=True).drop_duplicates("date")
     combined = combined.sort_values("date")
     combined.to_csv(ret_path, index=False)
+
+    # AFTER the write, and swallowed: a recorded day should stay reproducible
+    # from the positions and prices it came from, but this is a report line and
+    # a report line must never cost a day of the forward record (see the
+    # paper_cron persist-last ordering). Report drift, never rewrite it --
+    # cost_bps/fill are CLI-overridable, so a --cost-bps debugging tick that
+    # silently re-priced the overlap would be a worse integrity hole than the
+    # one being caught.
+    try:
+        _report_drift(prev, net)
+    except Exception as e:  # noqa: BLE001 -- reporting must not break the tick
+        print(f"!! drift check failed (non-fatal): {e}", file=sys.stderr)
 
     meta = {
         "run_id": eval_dir.name,

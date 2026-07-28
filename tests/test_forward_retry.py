@@ -189,3 +189,21 @@ def test_failed_bar_holds_its_successor_out_but_legacy_does_not():
     for p in eval_dir.glob("*"):
         p.unlink()
     eval_dir.rmdir()
+
+
+def test_drift_report_catches_moved_and_vanished_days():
+    """A recorded day must stay reproducible. Two ways it stops: its value moves
+    (a retry healed the positions under it, or the price cache was revised), or
+    it drops out of the recomputed series entirely. A value comparison alone
+    cannot see the second, which is the likelier one."""
+    idx = pd.date_range("2026-01-01", periods=4, freq="B")
+    prev = pd.DataFrame({"date": idx, "net": [0.01, 0.02, 0.03, 0.04]})
+
+    assert forward._report_drift(
+        prev, pd.Series([0.01, 0.02, 0.03, 0.04], index=idx)) == 0
+    assert forward._report_drift(
+        prev, pd.Series([0.01, 0.99, 0.03, 0.04], index=idx)) == 1
+    assert forward._report_drift(
+        prev, pd.Series([0.01, 0.02, 0.03], index=idx[:3])) == 1
+    assert forward._report_drift(
+        pd.DataFrame(columns=["date", "net"]), pd.Series(dtype=float)) == 0
