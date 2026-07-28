@@ -1,7 +1,11 @@
 {
-  "cash_usd": 3498.2398138864073,
+  "cash_usd": 2998.2398138864073,
   "date": "2026-07-28",
   "positions": {
+    "AMD": {
+      "cost_basis_usd": 250.0,
+      "shares": 0.505101512949207
+    },
     "AMZN": {
       "cost_basis_usd": 250.0,
       "shares": 1.0770755217035253
@@ -21,6 +25,10 @@
     "ORCL": {
       "cost_basis_usd": 250.0,
       "shares": 2.174102136223874
+    },
+    "SPY": {
+      "cost_basis_usd": 250.0,
+      "shares": 0.3382537862994169
     },
     "TSLA": {
       "cost_basis_usd": 250.0,
