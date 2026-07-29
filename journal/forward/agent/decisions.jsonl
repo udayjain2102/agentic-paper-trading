@@ -167,3 +167,16 @@
 {"date": "2026-07-27", "symbol": "MA", "target": -1.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}
 {"date": "2026-07-27", "symbol": "MCD", "target": -1.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}
 {"date": "2026-07-27", "symbol": "MDT", "target": 0.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}
+{"date": "2026-07-27", "symbol": "HD", "target": -1.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}
+{"date": "2026-07-27", "symbol": "HON", "target": 1.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}
+{"date": "2026-07-27", "symbol": "IBM", "target": 1.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}
+{"date": "2026-07-27", "symbol": "INTC", "target": -1.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}
+{"date": "2026-07-27", "symbol": "JNJ", "target": 1.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}
+{"date": "2026-07-27", "symbol": "JPM", "target": 1.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}
+{"date": "2026-07-27", "symbol": "KO", "target": 1.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}
+{"date": "2026-07-27", "symbol": "LIN", "target": 0.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}
+{"date": "2026-07-27", "symbol": "LLY", "target": 1.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}
+{"date": "2026-07-27", "symbol": "LOW", "target": 0.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}
+{"date": "2026-07-27", "symbol": "MA", "target": -1.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}
+{"date": "2026-07-27", "symbol": "MCD", "target": -1.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}
+{"date": "2026-07-27", "symbol": "MDT", "target": 0.0, "reason": "agent: truncated: hit max_tokens=4600 (completion_tokens=4600) before finishing -- raise cfg.agent.max_tokens", "status": "failed"}

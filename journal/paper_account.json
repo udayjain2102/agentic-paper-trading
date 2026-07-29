@@ -1,6 +1,6 @@
 {
   "cash_usd": 2998.2398138864073,
-  "date": "2026-07-28",
+  "date": "2026-07-29",
   "positions": {
     "AMD": {
       "cost_basis_usd": 250.0,
@@ -35,5 +35,5 @@
       "shares": 0.7955069395162245
     }
   },
-  "realized_pnl_today_usd": -1.7601861135928232
+  "realized_pnl_today_usd": 0.0
 }

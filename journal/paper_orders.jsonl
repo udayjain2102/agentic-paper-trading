@@ -42,3 +42,7 @@
 {"broker_order_id": "mock-2", "event": "order_placed", "notional_usd": 250.0, "side": "buy", "status": "filled", "symbol": "SPY", "ts": "2026-07-28T13:07:44.836054+00:00"}
 {"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "TXN", "ts": "2026-07-28T13:07:44.836113+00:00"}
 {"event": "paper_run_end", "n_accepted": 2, "n_orders": 5, "ts": "2026-07-28T13:07:44.836449+00:00"}
+{"event": "order_rejected", "notional_usd": 260.03648674388353, "reason": "Order $260.04 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "CMCSA", "ts": "2026-07-29T13:10:40.459442+00:00"}
+{"event": "order_rejected", "notional_usd": 260.67484945065905, "reason": "Order $260.67 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "ORCL", "ts": "2026-07-29T13:10:40.459617+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2278.32, over cap $2000.00.", "side": "buy", "symbol": "TXN", "ts": "2026-07-29T13:10:40.459692+00:00"}
+{"event": "paper_run_end", "n_accepted": 0, "n_orders": 3, "ts": "2026-07-29T13:10:40.460037+00:00"}
