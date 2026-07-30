@@ -32,14 +32,38 @@ import pandas as pd
 from .data import _normalize, _read_csv, rows_to_df
 
 
-def update_cache(payload: dict, cache_dir: str | Path = "data") -> dict[str, int]:
+def update_cache(payload: dict, cache_dir: str | Path = "data", today=None) -> dict[str, int]:
     """Merge MCP historicals `payload` into the CSV cache. Returns {symbol: n_rows}.
 
     A bar with volume==0 is treated as a placeholder snapshot and dropped, so an
     intraday snapshot never overwrites a real settled bar for the same date.
+
+    A bar dated `today` is dropped too, for a costlier reason than volume==0:
+    the 2026-07-27 incident. A cron run landed mid-session (14:20 UTC, three
+    hours late) and cached AAPL's still-open 07-27 bar (volume 4.4M) as if
+    closed; the *next* run's settled 07-27 bar (volume 49.6M, an 11x gap) then
+    silently overwrote it, but by then forward.py had already scored 07-24
+    against the half-finished price and baked a wrong return into the
+    permanent record. `--days 10` means the cache itself self-heals on the
+    very next run once the session closes -- the damage isn't a bad cache
+    entry, it's whatever day already got SCORED against one. So don't
+    conclude from a healthy-looking cache that this guard is redundant.
+    `today` defaults to a UTC clock, not local: comparing a US-session bar's
+    date against UTC is safe (at 01:00 UTC on the 30th, New York is still the
+    29th evening, so the settled 07-29 bar, dated < 07-30, survives), and
+    GitHub Actions runners are UTC anyway -- but an explicit UTC default
+    keeps this correct even if this is ever invoked from a non-UTC box (e.g.
+    a laptop cron), rather than relying on the caller's local clock. On the
+    normal pre-open run today's bar doesn't exist in the payload yet, so this
+    is a no-op.
     """
+    from datetime import datetime, timezone
+
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
+    if today is None:
+        today = datetime.now(timezone.utc).date()
+    today_str = today.isoformat() if hasattr(today, "isoformat") else str(today)
 
     results = payload.get("data", payload).get("results", []) or []
     symbols = [r["symbol"] for r in results if r.get("symbol")]
@@ -47,7 +71,29 @@ def update_cache(payload: dict, cache_dir: str | Path = "data") -> dict[str, int
 
     out: dict[str, int] = {}
     for sym, rows in fresh.items():
-        new = rows_to_df([r for r in rows if r.get("volume", 0) != 0])
+        settled = []
+        for r in rows:
+            if r.get("volume", 0) == 0:
+                continue
+            if r["date"] >= today_str:
+                print(
+                    f"!! refresh: dropping unsettled {sym} bar dated {r['date']} "
+                    f"(today={today_str} UTC) -- mid-session fetch, not a closed bar",
+                    file=sys.stderr,
+                )
+                continue
+            settled.append(r)
+        if not settled:
+            # Every row filtered out (all volume==0, or a payload whose only bar
+            # is today's -- a mid-session run on a newly-added symbol). Leave the
+            # existing cache alone rather than calling rows_to_df([]), which
+            # raises KeyError 'date' on an empty frame. That crash would be
+            # expensive out of proportion to the cause: refresh is the FIRST step
+            # in paper_cron.sh under `set -euo pipefail`, so it would kill the
+            # run before any tick, throwing away days that were computable.
+            out[sym] = 0
+            continue
+        new = rows_to_df(settled)
         path = cache_dir / f"{sym}.csv"
         if path.exists():
             old = _read_csv(path)
@@ -135,15 +181,19 @@ def fetch_and_update(cache_dir="data", symbols=None, days=10, today=None,
     `fetch_raw(batch, start, end) -> raw payload` is injectable so the batching
     and merge can be exercised without a live MCP (the network call is the only
     part that can't run offline).
+
+    `today` defaults to UTC (see update_cache's docstring for why) and is
+    reused as the update_cache unsettled-bar cutoff below, so injecting it
+    here also drives the guard in tests without touching the real clock.
     """
     import contextlib
-    from datetime import date, timedelta
+    from datetime import datetime, timedelta, timezone
 
     from .config import load
 
     cfg = load()
     symbols = list(symbols or cfg.strategy.universe)
-    today = today or date.today()
+    today = today or datetime.now(timezone.utc).date()
     start = (today - timedelta(days=days)).isoformat()
     end = today.isoformat()
 
@@ -161,7 +211,7 @@ def fetch_and_update(cache_dir="data", symbols=None, days=10, today=None,
     with session_cm as session:
         get = fetch_raw or (lambda batch, s, e: _fetch_raw(session, batch, s, e))
         for i in range(0, len(symbols), 10):
-            counts.update(update_cache(get(symbols[i:i + 10], start, end), cache_dir))
+            counts.update(update_cache(get(symbols[i:i + 10], start, end), cache_dir, today=today))
     return counts
 
 
