@@ -33,11 +33,27 @@ _LEGACY = "legacy"
 
 # ponytail: bound on how many distinct failed bars get retried in one tick,
 # newest-first. Each retried bar is a fresh agent.decide_all call for every
-# symbol still failed on it (~90s/chunk, ~7-8min for the full 65-name
-# universe) -- an unbounded catch-up after a week-long outage would blow the
-# GitHub Actions job budget. 5 bars (~a trading week) caps worst case at
-# well under an hour while still draining a normal-length outage in a few
-# ticks; raise if outages start regularly exceeding it.
+# symbol still failed on it -- an unbounded catch-up after a week-long outage
+# would blow the GitHub Actions job budget. 5 bars (~a trading week) drains a
+# normal-length outage in a few ticks; raise if outages start regularly
+# exceeding it.
+#
+# Per-bar cost, ~90s/call measured against the real API (see CHUNK_SIZE
+# comment in engine.py): normally 5 calls (one per CHUNK_SIZE=13 chunk),
+# ~7-8min. decide_all's split-retry (engine.py's ABANDON RULE) adds calls
+# only for a chunk that truncates, and aborts every OTHER chunk/split in the
+# same decide_all call the instant one symbol is confirmed failed -- so a
+# single pathological chunk costs at most 2*ceil(log2(13))+1 = 9 calls, not
+# the 25 an unbounded split tree would, and doesn't compound with sibling
+# chunks. Worst case for one bar is the 4 chunks called (and succeeding)
+# before the pathological one, plus that chunk's own 9: 13 calls, ~19.5min
+# at measured latency (up to ~39min at the enforced CHUNK_TIMEOUT_S=180
+# ceiling if those calls run slow rather than truncating fast). That is
+# WORSE than the "well under an hour" this comment used to claim for 5
+# bars -- 5 x 19.5min ~= 97min if every retried bar hits a maximally
+# pathological chunk. That combination hasn't been observed (2026-07-27 was
+# one chunk on one bar); if it starts happening, lower RETRY_BOUND or
+# CHUNK_SIZE rather than let this arithmetic go stale again.
 #
 # No per-date attempt cap, deliberately. Newest-first ordering already retires
 # an unhealable date structurally, and a cap is measurably WORSE at the rate
@@ -46,6 +62,13 @@ _LEGACY = "legacy"
 # attempts still failing. That log is append-only, so the evidence accrues
 # without new code -- it's a grep, not a judgement call.
 RETRY_BOUND = 5
+
+# A recorded day recomputed from unchanged positions and unchanged prices is
+# bit-identical, so any nonzero difference is a real input change, not roundoff
+# -- this is a "not exactly equal" guard with slack for float replay, not a
+# materiality threshold. One constant, because the warning prints the tolerance
+# it used: two literals would eventually disagree and the report would lie.
+_DRIFT_TOL = 1e-9
 
 
 def _agent_positions(eval_dir: Path, bars: dict[str, pd.DataFrame],
@@ -266,9 +289,11 @@ def _report_drift(prev: pd.DataFrame, net: pd.Series) -> int:
     recorded = recorded[~recorded.index.duplicated()]
     n = 0
     both = recorded.reindex(net.index).dropna()
-    for d in (net.reindex(both.index) - both).abs().pipe(lambda s: s[s > 1e-9]).index:
-        print(f"!! recorded {d.date()} = {both[d]:+.5f} but recomputes to "
-              f"{net[d]:+.5f} -- record kept, investigate", file=sys.stderr)
+    diff = (net.reindex(both.index) - both).abs()
+    for d in diff[diff > _DRIFT_TOL].index:
+        print(f"!! recorded {d.date()} = {both[d]:+.9f} but recomputes to "
+              f"{net[d]:+.9f} (diff {diff[d]:.2e} > tol {_DRIFT_TOL:.0e}) -- "
+              f"record kept, investigate", file=sys.stderr)
         n += 1
     for d in sorted(set(recorded.index) - set(net.index)):
         print(f"!! recorded {d.date()} is no longer in the recomputed series "

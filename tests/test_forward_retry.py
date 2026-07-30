@@ -209,6 +209,21 @@ def test_drift_report_catches_moved_and_vanished_days():
         pd.DataFrame(columns=["date", "net"]), pd.Series(dtype=float)) == 0
 
 
+def test_drift_report_renders_distinct_strings_for_a_close_pair(capsys):
+    """A pair that differs only below the old 5-decimal print precision (e.g.
+    -0.00016 vs -0.000160001) must still render as two distinct strings in the
+    warning -- the reader needs to see the drift, not just be told it exists."""
+    idx = pd.date_range("2026-01-01", periods=1, freq="B")
+    prev = pd.DataFrame({"date": idx, "net": [-0.00016]})
+    recomputed = pd.Series([-0.00016 + 2e-9], index=idx)
+
+    assert forward._report_drift(prev, recomputed) == 1
+    err = capsys.readouterr().err
+    line = [l for l in err.splitlines() if "recorded" in l][0]
+    recorded_str, recomputed_str = line.split("=")[1].split("but recomputes to")
+    assert recorded_str.strip() != recomputed_str.split("(")[0].strip()
+
+
 def test_retry_serves_the_newest_failed_dates_not_the_oldest():
     """Selection order only bites above RETRY_BOUND simultaneous failures, which
     nothing else reaches -- the selfcheck's failing-call cases exploit ascending
