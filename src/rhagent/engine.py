@@ -30,6 +30,17 @@ from .strategies.base import Strategy
 # 13 divides the 65-symbol universe into exactly 5 calls/bar. Measured
 # real-API latency for 12-13-symbol chunks: 63-91s across 4 calls (2026-07-27),
 # so CHUNK_TIMEOUT_S below is 2x the worst observed, not a guess.
+#
+# 2026-07-27 also showed one specific 13-symbol chunk (HD..MDT) truncate on
+# every one of 4 retries, at completion_tokens=4600 == the budget exactly --
+# while the other 4 chunks of the same size, same bar, succeeded first try
+# (52/65 symbols ok). That's a per-chunk outlier, not evidence chunk_size=13
+# is generally too big: shrinking CHUNK_SIZE for everyone would buy the 4
+# working chunks nothing and cost extra calls/bar against an ~18/min bucket
+# that's already the tighter constraint (see the "too small" bullet above).
+# decide_all now retries a truncated chunk by splitting it in half at the
+# SAME token budget (see _decide_chunk) instead -- that fixes the one chunk
+# that needs it without taxing the four that don't. CHUNK_SIZE stays 13.
 CHUNK_SIZE = 13
 CHUNK_TIMEOUT_S = 180
 # completion_tokens observed for working 12-13-symbol chunks: 1055-1602 (same
@@ -285,36 +296,101 @@ class AgentEngine:
         finishes (measured: times out or exhausts max_tokens before emitting
         JSON). CHUNK_SIZE (see module-level comment) is the middle ground: a few
         calls/bar, each small enough to finish inside a timeout that was actually
-        measured against the real API. Failure semantics are preserved exactly
-        and PER CHUNK: if a chunk's call fails, every symbol in that chunk is
-        status="failed" holding current_pos; if a chunk's call answers but omits
-        or malforms one symbol, only that symbol fails -- other chunks are
-        unaffected either way.
+        measured against the real API.
+
+        Failure semantics, PER CHUNK, unchanged for everything except truncation:
+        if a chunk's call fails for a non-truncation reason (timeout, rate limit,
+        HTTP error, parse failure), every symbol in that chunk is status="failed"
+        holding current_pos, and there is no retry -- only truncation is caused
+        by chunk size, so only truncation is worth retrying by splitting. If a
+        chunk's call answers but omits or malforms one symbol, only that symbol
+        fails. If a chunk's call hits TruncatedResponse, the chunk is split in
+        half and each half is retried recursively down to a single symbol
+        (_decide_chunk below) using the SAME complete() closure -- its token
+        budget is fixed by CHUNK_SIZE at construction (see
+        _default_complete_chunk), not recomputed from the smaller chunk, so
+        halving the symbol count doubles the effective per-symbol headroom
+        instead of reproducing the same budget-per-symbol ratio that failed. A
+        split that still truncates at a single symbol leaves that symbol
+        status="failed" -- the day is correctly excluded rather than booking a
+        fake flat hold for a symbol the model never actually verdicted.
+
+        ABANDON RULE: the only caller (forward.py's _agent_positions) excludes
+        the WHOLE bar the moment any one symbol on it isn't status=="ok" -- so
+        once a split has confirmed one symbol failed (bottomed out at size 1
+        and still truncated), the bar is already lost and no further call in
+        THIS decide_all invocation can save it. `stop` is a one-item box shared
+        across every chunk/split in this call: the first confirmed failure
+        fills it, and every chunk/split entered afterwards (including chunks
+        not yet started) marks its symbols failed without spending a call.
+        That bounds one decide_all call to at most 2*ceil(log2(CHUNK_SIZE))+1
+        calls for the chunk that finds the confirmed failure (9, for
+        CHUNK_SIZE=13 -- see _decide_chunk), plus 1 call for each chunk that
+        was already fully answered before it, instead of the 2*CHUNK_SIZE-1
+        (25) a full unbounded split tree would cost. See forward.py's
+        RETRY_BOUND comment for what that means for one tick's job budget.
         """
         if self.complete is None and self._chunk_complete is None:
             self._chunk_complete = self._default_complete_chunk()
         complete = self.complete or self._chunk_complete
 
         out: dict[str, Decision] = {}
+        stop: list[str] = []  # non-empty once a symbol is confirmed failed
         for i in range(0, len(symbols), CHUNK_SIZE):
             chunk = symbols[i:i + CHUNK_SIZE]
-            chunk_histories = {s: histories[s] for s in chunk}
-            chunk_pos = {s: current_pos[s] for s in chunk}
-            try:
-                obj = self._extract(complete(self._prompt_all(chunk, chunk_histories, chunk_pos)))
-            except Exception as e:
-                reason = f"agent: {_fail_reason(e)}"
-                for s in chunk:
-                    out[s] = Decision(target=float(current_pos[s]), reason=reason,
-                                      status="failed")
-                continue
-            for s in chunk:
-                try:
-                    out[s] = Decision(target=self._target(obj[s]), reason="agent: batch verdict")
-                except Exception as e:
-                    out[s] = Decision(target=float(current_pos[s]),
-                                      reason=f"agent: {_fail_reason(e)}", status="failed")
+            self._decide_chunk(chunk, histories, current_pos, complete, out, stop)
         return out
+
+    def _decide_chunk(self, chunk: list[str], histories: dict[str, pd.DataFrame],
+                      current_pos: dict[str, float], complete: Callable[[str], str],
+                      out: dict[str, Decision], stop: list[str]) -> None:
+        """One batched call for `chunk`; on TruncatedResponse, split in half and
+        recurse (same `complete`, so the same fixed token budget -- see
+        decide_all's docstring) down to a single symbol. Any other exception, or
+        a single-symbol chunk that still truncates, fails the chunk in place --
+        and a single-symbol truncation also fills `stop` (see decide_all's
+        ABANDON RULE) so no sibling split or later chunk spends another call."""
+        if stop:
+            reason = (f"agent: abandoned -- bar already excluded because "
+                      f"{stop[0]} failed by truncation even at 1 symbol/call")
+            for s in chunk:
+                out[s] = Decision(target=float(current_pos[s]), reason=reason, status="failed")
+            return
+        chunk_histories = {s: histories[s] for s in chunk}
+        chunk_pos = {s: current_pos[s] for s in chunk}
+        try:
+            obj = self._extract(complete(self._prompt_all(chunk, chunk_histories, chunk_pos)))
+        except TruncatedResponse as e:
+            if len(chunk) == 1:
+                s = chunk[0]
+                out[s] = Decision(target=float(current_pos[s]),
+                                  reason=f"agent: {_fail_reason(e)}", status="failed")
+                stop.append(s)
+                return
+            mid = len(chunk) // 2
+            self._decide_chunk(chunk[:mid], histories, current_pos, complete, out, stop)
+            self._decide_chunk(chunk[mid:], histories, current_pos, complete, out, stop)
+            return
+        except Exception as e:
+            # Deliberately does NOT fill `stop`, though this failure excludes the
+            # bar just as surely as a confirmed truncation does. A size-1
+            # truncation is deterministic (2026-07-27: 4 identical attempts on
+            # the same 13 symbols), so further calls on that bar are provably
+            # wasted. A timeout/rate-limit/HTTP failure is transient, and NOT
+            # abandoning after one lets the remaining chunks answer and freeze
+            # as "ok" -- so the next tick retries those 13 symbols instead of
+            # re-deciding all 65. Abandoning here would cost calls, not save
+            # them.
+            reason = f"agent: {_fail_reason(e)}"
+            for s in chunk:
+                out[s] = Decision(target=float(current_pos[s]), reason=reason, status="failed")
+            return
+        for s in chunk:
+            try:
+                out[s] = Decision(target=self._target(obj[s]), reason="agent: batch verdict")
+            except Exception as e:
+                out[s] = Decision(target=float(current_pos[s]),
+                                  reason=f"agent: {_fail_reason(e)}", status="failed")
 
 
 def _fail_reason(e: Exception) -> str:
