@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import json
 import re
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Callable, Protocol
 
@@ -18,37 +21,25 @@ import pandas as pd
 from .strategies.base import Strategy
 
 
-# decide_all's chunk size sits between the two failure modes measured against
-# the real NVIDIA API on 2026-07-27 (see report to the task that added this):
-#   - too big (65, the whole universe in one call): a single prompt asking for
-#     65 verdicts never finishes inside any timeout tuned off real latency --
-#     nemotron-super's hidden reasoning tokens scale with symbol count, and the
-#     call either times out or exhausts max_tokens before emitting JSON.
-#   - too small (1, one call per symbol): 65 sequential calls/bar against
-#     NVIDIA's burst-then-~18-calls/min bucket is exactly what produced the
-#     original timeouts (see decide_all's own docstring / 2026-07-21 incident).
-# 13 divides the 65-symbol universe into exactly 5 calls/bar. Measured
-# real-API latency for 12-13-symbol chunks: 63-91s across 4 calls (2026-07-27),
-# so CHUNK_TIMEOUT_S below is 2x the worst observed, not a guess.
-#
-# 2026-07-27 also showed one specific 13-symbol chunk (HD..MDT) truncate on
-# every one of 4 retries, at completion_tokens=4600 == the budget exactly --
-# while the other 4 chunks of the same size, same bar, succeeded first try
-# (52/65 symbols ok). That's a per-chunk outlier, not evidence chunk_size=13
-# is generally too big: shrinking CHUNK_SIZE for everyone would buy the 4
-# working chunks nothing and cost extra calls/bar against an ~18/min bucket
-# that's already the tighter constraint (see the "too small" bullet above).
-# decide_all now retries a truncated chunk by splitting it in half at the
-# SAME token budget (see _decide_chunk) instead -- that fixes the one chunk
-# that needs it without taxing the four that don't. CHUNK_SIZE stays 13.
-CHUNK_SIZE = 13
-CHUNK_TIMEOUT_S = 180
-# completion_tokens observed for working 12-13-symbol chunks: 1055-1602 (same
-# measurement run). cfg.agent.max_tokens (2000) is sized for ONE symbol's
-# preamble + JSON; a 13-symbol chunk at that cap truncated at exactly 2000
-# tokens with empty content (confirmed 2026-07-27). Scale linearly off the
-# single-symbol budget with headroom rather than hardcoding a second constant.
-_TOKENS_PER_EXTRA_SYMBOL = 200
+# NVIDIA's endpoint is a burst-then-~18-requests/min token bucket. Every real
+# model call in this process goes through _pace() before it starts, so N
+# concurrent workers can never exceed that rate no matter how fast the endpoint
+# answers -- pacing at the client seam, not at the worker count, means the limit
+# holds even if latency drops. Injected `complete` callables (tests) bypass this
+# entirely, which is what keeps the unit tests instant.
+RATE_LIMIT_PER_MIN = 18
+_pace_lock = threading.Lock()
+_next_call_at = 0.0
+
+
+def _pace() -> None:
+    global _next_call_at
+    with _pace_lock:
+        now = time.monotonic()
+        wait = max(0.0, _next_call_at - now)
+        _next_call_at = max(now, _next_call_at) + 60.0 / RATE_LIMIT_PER_MIN
+    if wait:
+        time.sleep(wait)
 
 
 class TruncatedResponse(Exception):
@@ -61,7 +52,7 @@ class TruncatedResponse(Exception):
 
 
 def nvidia_complete(
-    max_tokens: int | None = None, model: str = "", timeout: float = 45,
+    max_tokens: int | None = None, model: str = "", timeout: float = 90,
 ) -> Callable[[str], str]:
     """Build an NVIDIA OpenAI-compatible `complete(prompt) -> text` callable.
 
@@ -70,8 +61,8 @@ def nvidia_complete(
     nemotron-super's chain-of-thought from ballooning latency (see AgentEngine
     docstring for why). max_tokens=None (like model="") defers to cfg.agent so
     config.yaml's value actually reaches the API call instead of a hardcoded default.
-    timeout defaults to 45s (right for a single-symbol prompt); decide_all's
-    chunked calls pass a larger, measured value -- see CHUNK_SIZE/CHUNK_TIMEOUT_S.
+    timeout defaults to 90s -- measured single-symbol latency (2026-07-31) ranged
+    11-60s, so 45s would fail the slow tail; 90s is 1.5x the worst observed.
     """
     from openai import OpenAI
 
@@ -89,6 +80,7 @@ def nvidia_complete(
     max_tokens = max_tokens or cfg.agent.max_tokens
 
     def complete(prompt: str) -> str:
+        _pace()
         resp = client.chat.completions.create(
             model=model,
             max_tokens=max_tokens,
@@ -177,7 +169,6 @@ class AgentEngine:
         self.name = name
         self.allow_short = allow_short
         self.max_tokens = max_tokens
-        self._chunk_complete: Callable[[str], str] | None = None
 
     def _default_complete(self) -> Callable[[str], str]:
         """Lazy NVIDIA OpenAI client — built once, on first decide().
@@ -191,21 +182,6 @@ class AgentEngine:
         budget there, not here.
         """
         return nvidia_complete(max_tokens=self.max_tokens, model=self.model)
-
-    def _default_complete_chunk(self) -> Callable[[str], str]:
-        """Lazy NVIDIA client for decide_all's chunked calls: same model, but a
-        larger timeout and max_tokens sized for CHUNK_SIZE symbols per call
-        rather than one -- see the CHUNK_SIZE comment for the measurements
-        behind both numbers. Separate from _default_complete (and cached
-        separately) so decide()'s single-symbol calls keep the tighter,
-        config-driven budget/timeout that already works for them."""
-        from .config import load
-
-        base_tokens = self.max_tokens or load().agent.max_tokens
-        chunk_tokens = base_tokens + _TOKENS_PER_EXTRA_SYMBOL * CHUNK_SIZE
-        return nvidia_complete(
-            max_tokens=chunk_tokens, model=self.model, timeout=CHUNK_TIMEOUT_S,
-        )
 
     def _features(self, symbol: str, history: pd.DataFrame, current_pos: float) -> str:
         """The one line of model input for a symbol. Shared by the single-symbol
@@ -235,21 +211,6 @@ class AgentEngine:
             "reasoning, no markdown fences, no text before or after it: "
             '{"target": -1 | 0 | 1, "reason": "<=15 words"} where target is '
             "the desired position (-1 short, 0 flat, 1 long)."
-        )
-
-    def _prompt_all(self, symbols: list[str], histories: dict[str, pd.DataFrame],
-                    current_pos: dict[str, float]) -> str:
-        rows = "\n".join(self._features(s, histories[s], current_pos[s]) for s in symbols)
-        return (
-            f"You are a trading agent deciding today's position in {len(symbols)} "
-            "symbols at once. One line of features per symbol:\n"
-            f"{rows}\n"
-            f"{self._lessons_block()}"
-            "Respond with ONLY one flat JSON object and nothing else -- no "
-            "reasoning, no markdown fences, no nested objects, no text before or "
-            'after it: {"SYM": -1 | 0 | 1, ...} mapping every one of the '
-            f"{len(symbols)} symbols above to its desired position "
-            "(-1 short, 0 flat, 1 long)."
         )
 
     def _extract(self, raw: str) -> dict:
@@ -286,111 +247,50 @@ class AgentEngine:
             reason = _fail_reason(e)
         return Decision(target=target, reason=f"agent: {reason}", status=status)
 
+    MAX_WORKERS = 8
+
     def decide_all(self, symbols: list[str], histories: dict[str, pd.DataFrame],
                    current_pos: dict[str, float]) -> dict[str, Decision]:
-        """One model call per CHUNK_SIZE-symbol group, same semantics as decide().
+        """One model call PER SYMBOL, fanned out across MAX_WORKERS threads.
 
-        65 sequential per-symbol calls per bar against NVIDIA's burst-then-~18/min
-        bucket is what produced the original timeouts; one call for the whole
-        65-symbol universe is what replaced them (#41) -- and that one call never
-        finishes (measured: times out or exhausts max_tokens before emitting
-        JSON). CHUNK_SIZE (see module-level comment) is the middle ground: a few
-        calls/bar, each small enough to finish inside a timeout that was actually
-        measured against the real API.
+        Not a batched call. Batching multiple symbols into one prompt was
+        measured and rejected (docs/revamp-plan-2026-07-25.md, T0, 2026-07-26):
+        nemotron-super's response verbosity is independent of how many symbols
+        you ask about -- it emits 1-2k+ tokens of preamble either way -- so a
+        multi-symbol call is not cheaper per symbol, just likelier to blow
+        max_tokens or the timeout. Shipping it anyway (CHUNK_SIZE=13) cost the
+        forward record a week: re-measured 2026-07-31, a 13-symbol chunk failed
+        1 call in 3 (one 180s timeout; the two that answered burned 2219 and
+        3379 of a 4600-token budget), while 10/10 single-symbol calls succeeded
+        using 240-965 of a 2000-token budget.
 
-        Failure semantics, PER CHUNK, unchanged for everything except truncation:
-        if a chunk's call fails for a non-truncation reason (timeout, rate limit,
-        HTTP error, parse failure), every symbol in that chunk is status="failed"
-        holding current_pos, and there is no retry -- only truncation is caused
-        by chunk size, so only truncation is worth retrying by splitting. If a
-        chunk's call answers but omits or malforms one symbol, only that symbol
-        fails. If a chunk's call hits TruncatedResponse, the chunk is split in
-        half and each half is retried recursively down to a single symbol
-        (_decide_chunk below) using the SAME complete() closure -- its token
-        budget is fixed by CHUNK_SIZE at construction (see
-        _default_complete_chunk), not recomputed from the smaller chunk, so
-        halving the symbol count doubles the effective per-symbol headroom
-        instead of reproducing the same budget-per-symbol ratio that failed. A
-        split that still truncates at a single symbol leaves that symbol
-        status="failed" -- the day is correctly excluded rather than booking a
-        fake flat hold for a symbol the model never actually verdicted.
+        The blast radius is what actually matters here. forward.py's
+        _agent_positions excludes a whole bar from the record if ANY symbol on
+        it isn't status=="ok", so with 13 symbols per call one bad call killed
+        the day: at 5 calls/bar and a 30% per-call failure rate only 0.7**5 =
+        17% of days were admitted, which is the observed 1-day-in-4. Per-symbol
+        calls make one failure cost one symbol, so the same per-call failure
+        rate has to beat 65 independent coin flips instead of 5 -- and the
+        per-call rate itself drops, because a single-symbol prompt is the
+        configuration that measures reliable.
 
-        ABANDON RULE: the only caller (forward.py's _agent_positions) excludes
-        the WHOLE bar the moment any one symbol on it isn't status=="ok" -- so
-        once a split has confirmed one symbol failed (bottomed out at size 1
-        and still truncated), the bar is already lost and no further call in
-        THIS decide_all invocation can save it. `stop` is a one-item box shared
-        across every chunk/split in this call: the first confirmed failure
-        fills it, and every chunk/split entered afterwards (including chunks
-        not yet started) marks its symbols failed without spending a call.
-        That bounds one decide_all call to at most 2*ceil(log2(CHUNK_SIZE))+1
-        calls for the chunk that finds the confirmed failure (9, for
-        CHUNK_SIZE=13 -- see _decide_chunk), plus 1 call for each chunk that
-        was already fully answered before it, instead of the 2*CHUNK_SIZE-1
-        (25) a full unbounded split tree would cost. See forward.py's
-        RETRY_BOUND comment for what that means for one tick's job budget.
+        Concurrency is across SYMBOLS ONLY, which is safe because symbols are
+        independent; bars within a symbol are sequentially dependent (pos feeds
+        the next bar's current_pos) and stay sequential in forward.py's caller
+        loop. Rate is bounded by _pace() at the client seam, not by MAX_WORKERS
+        -- the pool size only has to be large enough to keep the paced rate
+        saturated at observed latency (18/min x ~21s median = ~6.3 calls in
+        flight; 8 leaves headroom for the 60s tail).
+
+        decide() swallows its own exceptions and returns status="failed", so no
+        worker can raise and every symbol always gets a Decision.
         """
-        if self.complete is None and self._chunk_complete is None:
-            self._chunk_complete = self._default_complete_chunk()
-        complete = self.complete or self._chunk_complete
-
-        out: dict[str, Decision] = {}
-        stop: list[str] = []  # non-empty once a symbol is confirmed failed
-        for i in range(0, len(symbols), CHUNK_SIZE):
-            chunk = symbols[i:i + CHUNK_SIZE]
-            self._decide_chunk(chunk, histories, current_pos, complete, out, stop)
-        return out
-
-    def _decide_chunk(self, chunk: list[str], histories: dict[str, pd.DataFrame],
-                      current_pos: dict[str, float], complete: Callable[[str], str],
-                      out: dict[str, Decision], stop: list[str]) -> None:
-        """One batched call for `chunk`; on TruncatedResponse, split in half and
-        recurse (same `complete`, so the same fixed token budget -- see
-        decide_all's docstring) down to a single symbol. Any other exception, or
-        a single-symbol chunk that still truncates, fails the chunk in place --
-        and a single-symbol truncation also fills `stop` (see decide_all's
-        ABANDON RULE) so no sibling split or later chunk spends another call."""
-        if stop:
-            reason = (f"agent: abandoned -- bar already excluded because "
-                      f"{stop[0]} failed by truncation even at 1 symbol/call")
-            for s in chunk:
-                out[s] = Decision(target=float(current_pos[s]), reason=reason, status="failed")
-            return
-        chunk_histories = {s: histories[s] for s in chunk}
-        chunk_pos = {s: current_pos[s] for s in chunk}
-        try:
-            obj = self._extract(complete(self._prompt_all(chunk, chunk_histories, chunk_pos)))
-        except TruncatedResponse as e:
-            if len(chunk) == 1:
-                s = chunk[0]
-                out[s] = Decision(target=float(current_pos[s]),
-                                  reason=f"agent: {_fail_reason(e)}", status="failed")
-                stop.append(s)
-                return
-            mid = len(chunk) // 2
-            self._decide_chunk(chunk[:mid], histories, current_pos, complete, out, stop)
-            self._decide_chunk(chunk[mid:], histories, current_pos, complete, out, stop)
-            return
-        except Exception as e:
-            # Deliberately does NOT fill `stop`, though this failure excludes the
-            # bar just as surely as a confirmed truncation does. A size-1
-            # truncation is deterministic (2026-07-27: 4 identical attempts on
-            # the same 13 symbols), so further calls on that bar are provably
-            # wasted. A timeout/rate-limit/HTTP failure is transient, and NOT
-            # abandoning after one lets the remaining chunks answer and freeze
-            # as "ok" -- so the next tick retries those 13 symbols instead of
-            # re-deciding all 65. Abandoning here would cost calls, not save
-            # them.
-            reason = f"agent: {_fail_reason(e)}"
-            for s in chunk:
-                out[s] = Decision(target=float(current_pos[s]), reason=reason, status="failed")
-            return
-        for s in chunk:
-            try:
-                out[s] = Decision(target=self._target(obj[s]), reason="agent: batch verdict")
-            except Exception as e:
-                out[s] = Decision(target=float(current_pos[s]),
-                                  reason=f"agent: {_fail_reason(e)}", status="failed")
+        if self.complete is None:
+            self.complete = self._default_complete()
+        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as pool:
+            futures = {s: pool.submit(self.decide, s, histories[s], current_pos[s])
+                       for s in symbols}
+        return {s: f.result() for s, f in futures.items()}
 
 
 def _fail_reason(e: Exception) -> str:

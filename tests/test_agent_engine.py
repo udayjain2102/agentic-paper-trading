@@ -39,8 +39,8 @@ def test_allow_short_clamps():
 
 
 def test_decide_all_is_one_call_and_isolates_per_symbol_failures():
-    """The batched path: one prompt for the universe, decide()'s failure
-    semantics preserved per symbol."""
+    """The per-symbol path: one call PER symbol, each prompt mentioning only
+    its own symbol, decide()'s failure semantics preserved per symbol."""
     hists = {s: _hist([10, 11, 12, 13, 14, 15, 16]) for s in ("AAA", "BBB", "CCC")}
     syms = list(hists)
     cur = {"AAA": 0.0, "BBB": 1.0, "CCC": -1.0}
@@ -48,15 +48,15 @@ def test_decide_all_is_one_call_and_isolates_per_symbol_failures():
 
     def fake(prompt):
         calls.append(prompt)
-        # BBB omitted, CCC out of range -> only those two fail
-        return 'here you go: {"AAA": -1, "CCC": 7}'
+        return json.dumps({"target": -1, "reason": "go short"})
 
     out = AgentEngine(complete=fake).decide_all(syms, hists, cur)
-    assert len(calls) == 1                      # ONE call for three symbols
-    assert all(s in calls[0] for s in syms)     # every symbol's features in it
-    assert out["AAA"].target == 0.0 and out["AAA"].status == "ok"  # -1 clamped
-    assert out["BBB"].target == 1.0 and out["BBB"].status == "failed"
-    assert out["CCC"].target == -1.0 and out["CCC"].status == "failed"
+    assert len(calls) == 3                                    # one call PER symbol
+    for prompt in calls:
+        assert sum(s in prompt for s in syms) == 1            # each mentions only its own symbol
+    assert out["AAA"].target == 0.0 and out["AAA"].status == "ok"   # -1 clamped
+    assert out["BBB"].target == 0.0 and out["BBB"].status == "ok"
+    assert out["CCC"].target == 0.0 and out["CCC"].status == "ok"
 
     # allow_short leaves the short alone
     assert AgentEngine(complete=fake, allow_short=True).decide_all(
@@ -71,102 +71,33 @@ def test_decide_all_is_one_call_and_isolates_per_symbol_failures():
     assert all(d.status == "failed" for d in out.values())
 
 
-def test_decide_all_splits_truncated_chunk_at_fixed_budget():
-    """The 2026-07-27 incident: a chunk that truncates whole but would fit at
-    half the symbol count (same token budget -- see decide_all's docstring)
-    must recover instead of failing every symbol in it forever."""
-    from rhagent.engine import TruncatedResponse
-
-    hists = {s: _hist([10, 11, 12, 13, 14, 15, 16]) for s in ("AAA", "BBB", "CCC", "DDD")}
-    syms = list(hists)
-    cur = {s: 0.0 for s in syms}
+def test_decide_all_one_bad_call_costs_one_symbol_not_the_bar():
+    """THE regression this file exists to prevent. forward.py drops a whole bar
+    from the forward record if any symbol on it isn't status=="ok", so the cost
+    of one failed model call is the thing that decides whether the record moves
+    at all. Under the old 13-symbol batching one failure took 13 symbols -- and
+    therefore the day -- down with it, and the record advanced one day in a
+    week. One failed call must now cost exactly one symbol, and the retry must
+    not amplify into extra calls."""
+    syms = [f"S{i}" for i in range(20)]
+    hists = {s: _hist([10, 11, 12]) for s in syms}
+    cur = {s: (0.0 if i % 2 == 0 else 1.0) for i, s in enumerate(syms)}
+    bad = syms[7]
     calls = []
 
     def fake(prompt):
-        # crude symbol count from the prompt's feature lines
-        n = sum(1 for s in syms if f"{s}:" in prompt)
-        calls.append(n)
-        if n > 2:
-            raise TruncatedResponse("hit max_tokens=4600 (completion_tokens=4600) before finishing")
-        return json.dumps({s: 1 for s in syms if f"{s}:" in prompt})
+        calls.append(prompt)
+        if bad in prompt:
+            raise TimeoutError("model down")
+        return json.dumps({"target": 1, "reason": "long"})
 
     out = AgentEngine(complete=fake).decide_all(syms, hists, cur)
-    assert all(d.status == "ok" and d.target == 1.0 for d in out.values())
-    assert calls[0] == 4          # first attempt: the whole chunk
-    assert 4 not in calls[1:]     # retry sends fewer symbols, not the same count
 
-
-def test_decide_all_non_truncation_failure_does_not_split():
-    """A rate limit / timeout / HTTP / parse failure is not caused by chunk
-    size -- decide_all must fail the whole chunk in one shot, no split retry."""
-    calls = []
-
-    def boom(prompt):
-        calls.append(prompt)
-        raise TimeoutError("model down")
-
-    hists = {s: _hist([10, 11, 12]) for s in ("AAA", "BBB")}
-    syms = list(hists)
-    cur = {"AAA": 0.0, "BBB": 1.0}
-    out = AgentEngine(complete=boom).decide_all(syms, hists, cur)
-    assert len(calls) == 1
-    assert {s: d.target for s, d in out.items()} == cur
-    assert all(d.status == "failed" for d in out.values())
-
-
-def test_decide_all_truncation_down_to_one_symbol_fails_that_symbol():
-    """If splitting bottoms out at a single symbol and it STILL truncates,
-    that symbol must be status="failed", not silently booked as a real
-    verdict -- the day is excluded from the forward record instead."""
-    from rhagent.engine import TruncatedResponse
-
-    def always_truncates(prompt):
-        raise TruncatedResponse("hit max_tokens=4600 (completion_tokens=4600) before finishing")
-
-    hist = _hist([10, 11, 12])
-    hists = {"AAA": hist, "BBB": hist}
-    cur = {"AAA": 0.0, "BBB": 1.0}
-    out = AgentEngine(complete=always_truncates).decide_all(["AAA", "BBB"], hists, cur)
-    assert out["AAA"].status == "failed" and out["AAA"].target == 0.0
-    assert out["BBB"].status == "failed" and out["BBB"].target == 1.0
-    assert "truncated" in out["AAA"].reason
-
-
-def test_decide_all_abandons_remaining_work_after_one_confirmed_failure():
-    """forward.py excludes the WHOLE bar the moment any one symbol on it isn't
-    status=="ok" (_agent_positions' EXCLUSION RULE) -- so once a split has
-    confirmed one symbol failed at size 1, every other chunk/split in this
-    SAME decide_all call is worthless and must not spend another call. Stated
-    max for one decide_all call with CHUNK_SIZE=13 when EVERY call truncates:
-    the confirmed failure is found by the time the leftmost split reaches
-    size 1 (13 -> 6 -> 3 -> 1, i.e. 4 calls), regardless of how many
-    CHUNK_SIZE-sized chunks the universe has -- not the 2*13-1=25 an
-    unbounded split tree would cost for ONE chunk, let alone 5 chunks' worth."""
-    from rhagent.engine import TruncatedResponse
-    from rhagent.engine import CHUNK_SIZE
-
-    syms = [f"S{i}" for i in range(CHUNK_SIZE + 5)]  # spans 2 top-level chunks
-    hists = {s: _hist([10, 11, 12]) for s in syms}
-    cur = {s: 0.0 for s in syms}
-    calls = []
-
-    def always_truncates(prompt):
-        calls.append(prompt)
-        raise TruncatedResponse("hit max_tokens=4600 (completion_tokens=4600) before finishing")
-
-    out = AgentEngine(complete=always_truncates).decide_all(syms, hists, cur)
-
-    STATED_MAX = 9  # 2*ceil(log2(CHUNK_SIZE)) + 1, see decide_all's ABANDON RULE
-    assert len(calls) <= STATED_MAX
-    assert len(calls) < 2 * CHUNK_SIZE - 1  # nowhere near the unbounded-tree cost
-    # every symbol still gets a Decision (decide_all's contract), all failed
-    assert len(out) == len(syms)
-    assert all(d.status == "failed" for d in out.values())
-    # symbols abandoned without a call must say so honestly, not "truncated"
-    abandoned = [d for d in out.values() if "abandoned" in d.reason]
-    truncated = [d for d in out.values() if "truncated" in d.reason]
-    assert abandoned and truncated
-    assert not any("truncated" in d.reason for d in abandoned)
+    failed = [s for s in syms if out[s].status == "failed"]
+    assert failed == [bad]
+    assert out[bad].target == cur[bad]
+    assert all(out[s].status == "ok" for s in syms if s != bad)
+    assert len(calls) == 20  # one call per symbol, no split-retry amplification
 
 
 def test_parse_fail_holds_current_pos():

@@ -31,7 +31,7 @@ def _bars(idx, seed):
 
 def _agent(target=1.0):
     def complete(_prompt):
-        return "{" + ", ".join(f'"{s}": {target:.0f}' for s in _SYMS) + "}"
+        return f'{{"target": {target:.0f}, "reason": "x"}}'
     return AgentEngine(complete=complete)
 
 
@@ -56,8 +56,8 @@ def test_failed_decision_is_retried_and_ok_stays_frozen():
     })
     prev.loc[prev["date"] == ok_ts, "status"] = "ok"
     prev.to_csv(eval_dir / "pos_AAA.csv", index=False)
-    # BBB: same shape, all ok, so it never blocks AAA's retry via decide_all
-    # batching (decide_all is called per-symbol-subset "todo" here anyway).
+    # BBB: same shape, all ok, so it never blocks AAA's retry -- decide_all
+    # fans out one call per symbol still in the "todo" set for a bar.
     prevb = prev.copy()
     prevb.loc[prevb["date"] == ok_ts, "status"] = "ok"
     prevb.to_csv(eval_dir / "pos_BBB.csv", index=False)
@@ -70,15 +70,15 @@ def test_failed_decision_is_retried_and_ok_stays_frozen():
             ignore_index=True)
         df.to_csv(eval_dir / f, index=False)
 
-    calls = {"n": 0, "syms": None}
+    calls = []
     def complete(_prompt):
-        calls["n"] += 1
-        return '{"AAA": 1, "BBB": 1}'
+        calls.append(_prompt)
+        return '{"target": 1, "reason": "x"}'
     agent = AgentEngine(complete=complete)
 
     out, excluded = forward._agent_positions(eval_dir, bars, agent)
 
-    assert calls["n"] == 1, "exactly one retry call for the failed bar"
+    assert len(calls) == 2, "one retry call per symbol for the one failed bar"
     # the failed bar is now decided ok, target flipped to 1.0 per the fake model
     assert out["AAA"].loc[failed_ts] == 1.0
     status_after = pd.read_csv(eval_dir / "pos_AAA.csv", parse_dates=["date"]
@@ -103,17 +103,18 @@ def test_legacy_rows_are_never_back_decided():
         pd.DataFrame({"date": idx[:-1], "pos": 0.0}).to_csv(
             eval_dir / f"pos_{s}.csv", index=False)
 
-    calls = {"n": 0}
+    calls = []
     def complete(_prompt):
-        calls["n"] += 1
-        return '{"AAA": 1, "BBB": 1}'
+        calls.append(_prompt)
+        return '{"target": 1, "reason": "x"}'
     agent = AgentEngine(complete=complete)
 
     out, excluded = forward._agent_positions(eval_dir, bars, agent)
 
-    # Only the genuinely new last bar is decided -- one call, not one per
-    # legacy bar. Legacy history must not be re-decided.
-    assert calls["n"] == 1, calls
+    # Only the genuinely new last bar is decided -- one call per symbol for
+    # that bar (2), not one per legacy bar. Legacy history must not be
+    # re-decided.
+    assert len(calls) == 2, calls
     status = pd.read_csv(eval_dir / "pos_AAA.csv", parse_dates=["date"]
                           ).set_index("date")["status"]
     assert (status.loc[idx[:-1]] == "legacy").all()
@@ -136,16 +137,17 @@ def test_retry_is_bounded():
     df.loc[df["date"].isin(failed_idx[:-1]), "status"] = "failed"
     df.to_csv(eval_dir / "pos_AAA.csv", index=False)
 
-    calls = {"n": 0}
+    calls = []
     def complete(_prompt):
-        calls["n"] += 1
-        return '{"AAA": 1}'
+        calls.append(_prompt)
+        return '{"target": 1, "reason": "x"}'
     agent = AgentEngine(complete=complete)
 
     out, excluded = forward._agent_positions(eval_dir, bars, agent)
 
-    # RETRY_BOUND failed bars retried, plus the genuinely-new last bar.
-    assert calls["n"] == forward.RETRY_BOUND + 1, calls
+    # RETRY_BOUND failed bars retried, plus the genuinely-new last bar. One
+    # symbol here, so one call per bar.
+    assert len(calls) == forward.RETRY_BOUND + 1, calls
     status = pd.read_csv(eval_dir / "pos_AAA.csv", parse_dates=["date"]
                           ).set_index("date")["status"]
     still_failed = (status == "failed").sum()
