@@ -323,3 +323,146 @@
 {"date": "2026-07-29", "symbol": "VZ", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
 {"date": "2026-07-29", "symbol": "WFC", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
 {"date": "2026-07-29", "symbol": "WMT", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-27", "symbol": "HD", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-27", "symbol": "HON", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-27", "symbol": "IBM", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-27", "symbol": "INTC", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-27", "symbol": "JNJ", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-27", "symbol": "JPM", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-27", "symbol": "KO", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-27", "symbol": "LIN", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-27", "symbol": "LLY", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-27", "symbol": "LOW", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-27", "symbol": "MA", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-27", "symbol": "MCD", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-27", "symbol": "MDT", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-28", "symbol": "C", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-28", "symbol": "CAT", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-28", "symbol": "CMCSA", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-28", "symbol": "COST", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-28", "symbol": "CRM", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-28", "symbol": "CSCO", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-28", "symbol": "CVX", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-28", "symbol": "DHR", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-28", "symbol": "DIS", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-28", "symbol": "GE", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-28", "symbol": "GILD", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-28", "symbol": "GOOGL", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-28", "symbol": "GS", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-28", "symbol": "META", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "MRK", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "MS", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "MSFT", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "NFLX", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "NKE", "target": 0.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "NOW", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "NVDA", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "ORCL", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "PEP", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "PFE", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "PG", "target": 0.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "PM", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "QCOM", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "SBUX", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "SPY", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "T", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "TMO", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "TSLA", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "TXN", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "UNH", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "UNP", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "V", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "VZ", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "WFC", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-28", "symbol": "WMT", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-29", "symbol": "AAPL", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "ABBV", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "ABT", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "ADBE", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "AMD", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "AMGN", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "AMZN", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "AVGO", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "AXP", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "BA", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "BAC", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "BLK", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "BMY", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "C", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "CAT", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "CMCSA", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "COST", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "CRM", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "CSCO", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "CVX", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "DHR", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "DIS", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "GE", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "GILD", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "GOOGL", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-29", "symbol": "GS", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-30", "symbol": "AAPL", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "ABBV", "target": 0.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "ABT", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "ADBE", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "AMD", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "AMGN", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "AMZN", "target": 0.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "AVGO", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "AXP", "target": 0.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "BA", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "BAC", "target": 0.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "BLK", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "BMY", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "C", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-30", "symbol": "CAT", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-30", "symbol": "CMCSA", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-30", "symbol": "COST", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-30", "symbol": "CRM", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-30", "symbol": "CSCO", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-30", "symbol": "CVX", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-30", "symbol": "DHR", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-30", "symbol": "DIS", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-30", "symbol": "GE", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-30", "symbol": "GILD", "target": 0.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-30", "symbol": "GOOGL", "target": -1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-30", "symbol": "GS", "target": 1.0, "reason": "agent: timeout: Request timed out.", "status": "failed"}
+{"date": "2026-07-30", "symbol": "HD", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "HON", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "IBM", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "INTC", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "JNJ", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "JPM", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "KO", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "LIN", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "LLY", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "LOW", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "MA", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "MCD", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "MDT", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "META", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "MRK", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "MS", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "MSFT", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "NFLX", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "NKE", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "NOW", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "NVDA", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "ORCL", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "PEP", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "PFE", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "PG", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "PM", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "QCOM", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "SBUX", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "SPY", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "T", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "TMO", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "TSLA", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "TXN", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "UNH", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "UNP", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "V", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "VZ", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "WFC", "target": -1.0, "reason": "agent: batch verdict", "status": "ok"}
+{"date": "2026-07-30", "symbol": "WMT", "target": 1.0, "reason": "agent: batch verdict", "status": "ok"}
