@@ -101,11 +101,11 @@ def test_forward_tick_and_reflect_writes_memory_and_meta(tmp_path, monkeypatch):
 
     from rhagent.engine import AgentEngine
 
-    calls = {"agent": 0, "reflect": 0}
+    calls = {"agent": [], "reflect": 0}
 
     def agent_complete(_prompt):
-        calls["agent"] += 1
-        return '{"AAA": 1}'  # batched: symbol -> target
+        calls["agent"].append(_prompt)
+        return '{"target": 1, "reason": "x"}'  # decide()'s single-symbol shape
 
     def reflect_complete(_prompt):
         calls["reflect"] += 1
@@ -246,7 +246,7 @@ def test_memory_chars_reports_what_the_engine_held_not_the_file(tmp_path):
     cfg.agent.use_lessons = False
     forward.tick_and_reflect(
         cfg, eval_dir, today=date(2026, 3, 20), cache_dir=cache, engine="agent",
-        agent=AgentEngine(complete=lambda _p: '{"AAA": 1}', lessons=""),
+        agent=AgentEngine(complete=lambda _p: '{"target": 1, "reason": "x"}', lessons=""),
         reflect_complete=lambda _p: "", memory_path=str(mem))
 
     meta = json.loads((eval_dir / "run.json").read_text())

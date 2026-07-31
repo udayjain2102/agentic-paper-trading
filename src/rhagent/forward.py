@@ -38,22 +38,18 @@ _LEGACY = "legacy"
 # normal-length outage in a few ticks; raise if outages start regularly
 # exceeding it.
 #
-# Per-bar cost, ~90s/call measured against the real API (see CHUNK_SIZE
-# comment in engine.py): normally 5 calls (one per CHUNK_SIZE=13 chunk),
-# ~7-8min. decide_all's split-retry (engine.py's ABANDON RULE) adds calls
-# only for a chunk that truncates, and aborts every OTHER chunk/split in the
-# same decide_all call the instant one symbol is confirmed failed -- so a
-# single pathological chunk costs at most 2*ceil(log2(13))+1 = 9 calls, not
-# the 25 an unbounded split tree would, and doesn't compound with sibling
-# chunks. Worst case for one bar is the 4 chunks called (and succeeding)
-# before the pathological one, plus that chunk's own 9: 13 calls, ~19.5min
-# at measured latency (up to ~39min at the enforced CHUNK_TIMEOUT_S=180
-# ceiling if those calls run slow rather than truncating fast). That is
-# WORSE than the "well under an hour" this comment used to claim for 5
-# bars -- 5 x 19.5min ~= 97min if every retried bar hits a maximally
-# pathological chunk. That combination hasn't been observed (2026-07-27 was
-# one chunk on one bar); if it starts happening, lower RETRY_BOUND or
-# CHUNK_SIZE rather than let this arithmetic go stale again.
+# Per-bar cost: one bar is 65 per-symbol calls (engine.py's decide_all), run
+# MAX_WORKERS-wide and paced at RATE_LIMIT_PER_MIN=18/min at the client seam.
+# The rate limit sets a hard floor of ~65/18 ~= 3.6min per bar, but the
+# binding constraint measured 2026-07-31 was worker concurrency, not the
+# pacer: a live 13-symbol decide_all took 79s, i.e. ~9.9 calls/min effective
+# at MAX_WORKERS=8 against ~48s median latency. That extrapolates to ~6.6min
+# per 65-symbol bar and ~40min for a full RETRY_BOUND=5 catch-up (well inside
+# the 6h GitHub Actions job budget, and against the 64min the 2026-07-30 run
+# burned to record ONE day). If catch-up runtime becomes the problem, raise
+# MAX_WORKERS toward the pacer's ceiling (~14 in flight saturates 18/min at
+# that latency) before touching RETRY_BOUND -- the pacer, not the pool size,
+# is what protects the rate limit.
 #
 # No per-date attempt cap, deliberately. Newest-first ordering already retires
 # an unhealable date structurally, and a cap is measurably WORSE at the rate
@@ -75,9 +71,10 @@ def _agent_positions(eval_dir: Path, bars: dict[str, pd.DataFrame],
                      agent) -> tuple[dict[str, pd.Series], set]:
     """Target-position series per symbol, plus the dates to exclude from returns.
 
-    ONE model call per uncached bar for the whole universe (agent.decide_all),
-    not one per symbol per bar: 65 sequential calls against NVIDIA's
-    burst-then-~18/min bucket is what produced the timeouts and ~50-minute ticks.
+    One model call per symbol per uncached bar (agent.decide_all), run
+    concurrently through decide_all's worker pool and paced under the
+    endpoint's ~18/min bucket. The original 65-call design was slow because it
+    was strictly SERIAL and unpaced, not because it was per-symbol.
 
     Agent decisions are non-deterministic and cost an API call, so past verdicts
     are frozen to disk (eval_dir/pos_<sym>.csv, columns date,pos,status) and only

@@ -32,13 +32,12 @@ def test_positions_wires_allow_short_into_agent_engine(monkeypatch, tmp_path):
     )
 
     def fake_complete(_prompt):
-        return '{"AAA": -1}'  # decide_all's batched shape: {symbol: target}
+        return '{"target": -1, "reason": "short"}'  # decide()'s single-symbol shape
 
-    # decide_all's lazy default client is _default_complete_chunk (chunked
-    # calls get their own timeout/max_tokens -- see engine.py), not
-    # _default_complete (that one's decide()'s single-symbol path).
+    # decide_all's lazy default client is _default_complete (decide_all fans
+    # out per-symbol calls through decide() -- see engine.py).
     monkeypatch.setattr(
-        "rhagent.engine.AgentEngine._default_complete_chunk",
+        "rhagent.engine.AgentEngine._default_complete",
         lambda self: fake_complete,
     )
 
@@ -92,9 +91,9 @@ def test_use_lessons_false_sends_no_lessons_block(monkeypatch, tmp_path):
 
     def fake_complete(prompt):
         seen.append(prompt)
-        return '{"AAA": 1}'
+        return '{"target": 1, "reason": "long"}'
 
-    monkeypatch.setattr("rhagent.engine.AgentEngine._default_complete_chunk",
+    monkeypatch.setattr("rhagent.engine.AgentEngine._default_complete",
                         lambda self: fake_complete)
     eval_dir = tmp_path / "ed"
     eval_dir.mkdir()
