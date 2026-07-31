@@ -184,8 +184,7 @@ class AgentEngine:
         return nvidia_complete(max_tokens=self.max_tokens, model=self.model)
 
     def _features(self, symbol: str, history: pd.DataFrame, current_pos: float) -> str:
-        """The one line of model input for a symbol. Shared by the single-symbol
-        and whole-universe prompts so both see identical features."""
+        """The one line of model input for a symbol."""
         close = history["close"].astype(float)
         last = float(close.iloc[-1])
         # momentum over up to 5 prior bars; fall back to the whole window when

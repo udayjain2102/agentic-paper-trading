@@ -38,7 +38,7 @@ def test_allow_short_clamps():
     assert AgentEngine(complete=fake, allow_short=True).decide("X", hist, 0.0).target == -1.0
 
 
-def test_decide_all_is_one_call_and_isolates_per_symbol_failures():
+def test_decide_all_is_one_call_per_symbol_and_isolates_failures():
     """The per-symbol path: one call PER symbol, each prompt mentioning only
     its own symbol, decide()'s failure semantics preserved per symbol."""
     hists = {s: _hist([10, 11, 12, 13, 14, 15, 16]) for s in ("AAA", "BBB", "CCC")}

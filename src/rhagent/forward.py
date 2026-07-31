@@ -39,11 +39,17 @@ _LEGACY = "legacy"
 # exceeding it.
 #
 # Per-bar cost: one bar is 65 per-symbol calls (engine.py's decide_all), run
-# concurrently but paced at RATE_LIMIT_PER_MIN=18/min at the client seam -- so
-# the floor on one bar is ~65/18 ~= 3.6min, set by the rate limit, not by
-# latency (worker concurrency just keeps that rate saturated). RETRY_BOUND=5
-# bars is therefore ~18min worst case, versus the 64min the 2026-07-30 run
-# actually burned retrying chunked calls.
+# MAX_WORKERS-wide and paced at RATE_LIMIT_PER_MIN=18/min at the client seam.
+# The rate limit sets a hard floor of ~65/18 ~= 3.6min per bar, but the
+# binding constraint measured 2026-07-31 was worker concurrency, not the
+# pacer: a live 13-symbol decide_all took 79s, i.e. ~9.9 calls/min effective
+# at MAX_WORKERS=8 against ~48s median latency. That extrapolates to ~6.6min
+# per 65-symbol bar and ~40min for a full RETRY_BOUND=5 catch-up (well inside
+# the 6h GitHub Actions job budget, and against the 64min the 2026-07-30 run
+# burned to record ONE day). If catch-up runtime becomes the problem, raise
+# MAX_WORKERS toward the pacer's ceiling (~14 in flight saturates 18/min at
+# that latency) before touching RETRY_BOUND -- the pacer, not the pool size,
+# is what protects the rate limit.
 #
 # No per-date attempt cap, deliberately. Newest-first ordering already retires
 # an unhealable date structurally, and a cap is measurably WORSE at the rate
