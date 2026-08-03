@@ -1,6 +1,6 @@
 {
   "cash_usd": 3243.4110446557706,
-  "date": "2026-07-31",
+  "date": "2026-08-03",
   "positions": {
     "AMZN": {
       "cost_basis_usd": 250.0,
@@ -31,5 +31,5 @@
       "shares": 0.7955069395162245
     }
   },
-  "realized_pnl_today_usd": -4.828769230636453
+  "realized_pnl_today_usd": 0.0
 }

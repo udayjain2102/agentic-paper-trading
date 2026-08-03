@@ -21,3 +21,28 @@ Since there are no recent decisions to review, the focus shifts to the setup and
 * **Additional Proactive Lesson:**
   * **Simultaneous Learning and Doing**: To accelerate learning, **allocate time for market study** alongside simulated trading. This ensures that trades are informed by ongoing education.
     - **Falsifiable Outcome:** Each week, dedicate at least 2 hours to market analysis or educational content, reflecting this in the review process.
+
+## 2026-08-03
+**Lessons from Recent Decisions (2026-07-24 to 2026-07-31):**  
+
+- **What Didn’t Work / Area for Improvement:**  
+  - **Inconsistent Trade Quality**: Mixed next-day returns (-1.74% to +0.70%) suggest variability in decision-making rigor. High daily name counts (52–65) may indicate overexposure without selective focus.  
+    - **Falsifiable Action for Next Time:** Limit daily trades to **≤50 names** and document a **specific rationale** (e.g., technical setup, news catalyst) for each trade.  
+    - **Falsifiable Outcome:** By the next review, no day exceeds 50 names, and 100% of trades include a documented rationale.  
+
+- **What to Do Differently (Building on Prior Lessons):**  
+  - **Root-Cause Analysis for Losses**: The -1.74% drop on 2026-07-29 highlights unresolved risk management gaps.  
+    - **Falsifiable Action for Next Time:** For any day with a next-day return < -1%, conduct a **post-mortem analysis** (e.g., entry/exit timing, position sizing, external factors).  
+    - **Falsifiable Outcome:** By the next review, all losses >1% include a documented root-cause analysis.  
+
+- **What Worked (Implicitly):**  
+  - **Positive Correlation with Market Study**: The +0.59% and +0.70% gains on 2026-07-27 and 2026-07-28 align with prior emphasis on simultaneous learning and doing.  
+    - **Continuation Action:** Maintain **2+ hours weekly** of structured market analysis (e.g., sector trends, macroeconomic indicators) and explicitly link insights to trade decisions.  
+    - **Falsifiable Outcome:** Next review period shows 100% of trades reference at least one market study insight.  
+
+- **Additional Proactive Lesson:**  
+  - **Trade Category Performance Tracking**: Lack of differentiation between trade types (e.g., momentum, value, event-driven) obscures strategy effectiveness.  
+    - **Falsifiable Action for Next Time:** Categorize **all trades** into predefined strategies and track performance by category.  
+    - **Falsifiable Outcome:** By the next review, at least 3 strategy categories are defined, with performance metrics for each.  
+
+**Note:** These lessons avoid repetition of prior cadence-focused lessons and instead address execution gaps (e.g., trade quality, analysis depth) revealed by recent outcomes.
