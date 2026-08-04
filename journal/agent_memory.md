@@ -46,3 +46,33 @@ Since there are no recent decisions to review, the focus shifts to the setup and
     - **Falsifiable Outcome:** By the next review, at least 3 strategy categories are defined, with performance metrics for each.  
 
 **Note:** These lessons avoid repetition of prior cadence-focused lessons and instead address execution gaps (e.g., trade quality, analysis depth) revealed by recent outcomes.
+
+## 2026-08-04
+**2026-08-03 Lessons from Recent Decisions (2026-07-24 to 2026-08-03):**  
+
+- **What Didn’t Work / Area for Improvement:**  
+  - **Non-Compliance with Predefined Trade Limits**: Despite prior commitment to ≤50 names/day, all reviewed days exceeded this threshold (52–65 names), indicating a failure to enforce self-imposed constraints.  
+    - **Falsifiable Action for Next Time:** Implement a **real-time trade counter** with an automated alert at 50 names to physically prevent exceeding the limit.  
+    - **Falsifiable Outcome:** By the next review, 0 days exceed 50 names.  
+
+- **What to Do Differently (Building on Prior Lessons):**  
+  - **Weak Correlation Between Market Study and Trade Rationale**: While +0.59% and +0.70% gains on 2026-07-27/28 align with market study hours, only 60% of trades explicitly referenced documented insights (per review notes), suggesting incomplete integration.  
+    - **Falsifiable Action for Next Time:** Require **line-item citation of market study insights** (e.g., “Bullish sector trend noted in 2026-07-25 analysis”) for every trade.  
+    - **Falsifiable Outcome:** Next review shows 100% of trades include a direct link to prior market study.  
+
+- **What Didn’t Work / Area for Improvement:**  
+  - **Inconsistent Root-Cause Analysis Execution**: The -1.74% loss on 2026-07-29 lacked a documented post-mortem, violating the prior lesson mandating analysis for losses >1%.  
+    - **Falsifiable Action for Next Time:** Schedule **same-day root-cause analysis** for any day with returns < -1%, with findings logged before the next trade.  
+    - **Falsifiable Outcome:** All losses >1% in the next cycle include a time-stamped post-mortem document.  
+
+- **What Worked (Implicitly):**  
+  - **Positive Impact of Strategy Categorization**: The +0.47% return on 2026-07-31 coincided with the first explicit use of trade categories (e.g., “Momentum: 32 names”), suggesting improved focus.  
+    - **Continuation Action:** Expand category definitions to include **risk/reward metrics** (e.g., Sharpe ratio per strategy) and review category performance weekly.  
+    - **Falsifiable Outcome:** Next review includes quantitative performance breakdowns (win rate, avg return) for each of the 3+ predefined strategies.  
+
+- **Additional Proactive Lesson:**  
+  - **Overexposure to Short-Term Feedback**: High daily name counts (63–65) correlate with reactive decisions (e.g., chasing intraday momentum), undermining longer-term strategy alignment.  
+    - **Falsifiable Action for Next Time:** Allocate **30% of weekly trades** to “core strategy” names (held >3 days) and track their performance separately.  
+    - **Falsifiable Outcome:** By the next review, 30% of trades are labeled as “core strategy” with multi-day holding periods.  
+
+**Note:** These lessons address gaps in rule adherence (trade limits, post-mortems) and deepen integration of prior lessons (market study linkage, strategy tracking) without redundancy. Outcomes are strictly measurable via trade logs and review documentation.
