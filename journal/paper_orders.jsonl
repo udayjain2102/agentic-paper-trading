@@ -135,3 +135,12 @@
 {"event": "order_rejected", "notional_usd": 254.18833141254143, "reason": "Order $254.19 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "TSLA", "ts": "2026-08-07T12:12:05.124870+00:00"}
 {"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2198.70, over cap $2000.00.", "side": "buy", "symbol": "UNH", "ts": "2026-08-07T12:12:05.124921+00:00"}
 {"event": "paper_run_end", "n_accepted": 0, "n_orders": 8, "ts": "2026-08-07T12:12:05.125244+00:00"}
+{"event": "order_rejected", "notional_usd": 295.6357010302887, "reason": "Order $295.64 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "AMZN", "ts": "2026-08-10T12:17:29.888141+00:00"}
+{"event": "order_rejected", "notional_usd": 261.297781546096, "reason": "Order $261.30 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "AXP", "ts": "2026-08-10T12:17:29.888325+00:00"}
+{"event": "order_rejected", "notional_usd": 289.2335825967664, "reason": "Order $289.23 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "CMCSA", "ts": "2026-08-10T12:17:29.888368+00:00"}
+{"event": "order_rejected", "notional_usd": 277.02195425512826, "reason": "Order $277.02 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "GOOGL", "ts": "2026-08-10T12:17:29.888397+00:00"}
+{"event": "order_rejected", "notional_usd": 319.6365053564004, "reason": "Order $319.64 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "ORCL", "ts": "2026-08-10T12:17:29.888421+00:00"}
+{"event": "order_rejected", "notional_usd": 261.5581260971467, "reason": "Order $261.56 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "SPY", "ts": "2026-08-10T12:17:29.888445+00:00"}
+{"event": "order_rejected", "notional_usd": 261.38765950438517, "reason": "Order $261.39 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "TSLA", "ts": "2026-08-10T12:17:29.888467+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2215.77, over cap $2000.00.", "side": "buy", "symbol": "UNH", "ts": "2026-08-10T12:17:29.888491+00:00"}
+{"event": "paper_run_end", "n_accepted": 0, "n_orders": 8, "ts": "2026-08-10T12:17:29.888855+00:00"}
