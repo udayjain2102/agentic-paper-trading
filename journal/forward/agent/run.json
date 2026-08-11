@@ -1,6 +1,6 @@
 {
   "cost_bps": 7.0,
-  "end": "2026-08-06 00:00:00",
+  "end": "2026-08-07 00:00:00",
   "engine": "agent",
   "fill_mode": "next_open",
   "memory_chars": 0,
