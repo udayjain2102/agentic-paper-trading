@@ -193,3 +193,12 @@
 {"event": "order_rejected", "notional_usd": 262.5999535396533, "reason": "Order $262.60 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "SPY", "ts": "2026-08-17T11:58:30.004156+00:00"}
 {"event": "order_rejected", "notional_usd": 272.2781514485179, "reason": "Order $272.28 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "TSLA", "ts": "2026-08-17T11:58:30.004187+00:00"}
 {"event": "paper_run_end", "n_accepted": 0, "n_orders": 8, "ts": "2026-08-17T11:58:30.004500+00:00"}
+{"event": "order_rejected", "notional_usd": 282.8938792014836, "reason": "Order $282.89 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "AMZN", "ts": "2026-08-18T11:39:46.003442+00:00"}
+{"event": "order_rejected", "notional_usd": 262.5011473212936, "reason": "Order $262.50 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "AXP", "ts": "2026-08-18T11:39:46.003621+00:00"}
+{"event": "order_rejected", "notional_usd": 298.5857688646742, "reason": "Order $298.59 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "CMCSA", "ts": "2026-08-18T11:39:46.003680+00:00"}
+{"event": "order_rejected", "notional_usd": 270.45412245973176, "reason": "Order $270.45 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "GOOGL", "ts": "2026-08-18T11:39:46.003737+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2226.56, over cap $2000.00.", "side": "buy", "symbol": "NKE", "ts": "2026-08-18T11:39:46.003780+00:00"}
+{"event": "order_rejected", "notional_usd": 327.24586283318393, "reason": "Order $327.25 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "ORCL", "ts": "2026-08-18T11:39:46.003820+00:00"}
+{"event": "order_rejected", "notional_usd": 262.5999535396533, "reason": "Order $262.60 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "SPY", "ts": "2026-08-18T11:39:46.003857+00:00"}
+{"event": "order_rejected", "notional_usd": 272.2781514485179, "reason": "Order $272.28 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "TSLA", "ts": "2026-08-18T11:39:46.003893+00:00"}
+{"event": "paper_run_end", "n_accepted": 0, "n_orders": 8, "ts": "2026-08-18T11:39:46.004213+00:00"}

@@ -1266,3 +1266,4 @@
 {"date": "2026-08-14", "symbol": "VZ", "target": 1.0, "reason": "agent: Positive momentum supports long position.", "status": "ok"}
 {"date": "2026-08-14", "symbol": "WFC", "target": 1.0, "reason": "agent: Positive momentum suggests upward trend continuation.", "status": "ok"}
 {"date": "2026-08-14", "symbol": "WMT", "target": 1.0, "reason": "agent: Positive momentum suggests continued upward trend.", "status": "ok"}
+{"date": "2026-08-14", "symbol": "ABBV", "target": 1.0, "reason": "agent: Positive momentum, low volatility supports holding long position.", "status": "ok"}
