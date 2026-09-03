@@ -103,6 +103,65 @@ Trust is a ladder, and each rung is evidence, not code:
    defaults, and `MockBroker` swapped for a real one. See
    [`docs/going-live.md`](docs/going-live.md) for the runbook.
 
+### The bar, written down (2026-09-03)
+
+Rung 2 requires the bar to exist before the data does. This is it. Judged on
+the first scheduled run on or after **2027-02-02**, against the records on
+`origin/paper-state`, with no edits to the numbers below after this date.
+
+**`mean_reversion_real` passes only if all four hold:**
+
+1. At least 110 scored days (started 2026-07-21; roughly 135 trading days
+   are possible, so this tolerates a couple of weeks of outage, not a month).
+2. Cumulative net return above zero.
+3. Bootstrap 95% CI lower bound on Sharpe above zero
+   (`rhagent.evaluate_robust.bootstrap_sharpe_ci`, default 1000 draws, seed 0).
+4. Max drawdown no deeper than -3%.
+
+SPY buy-and-hold over the same window is reported alongside but is not a
+criterion: the strategy is long-only and mostly flat, so it will trail a
+rising index by construction. If it fails, the conclusion is written here as
+"no evidence of edge" and the daily run stops. No new strategy search starts
+without a new bar written down first.
+
+**`agent` passes only if all three hold:**
+
+1. At least 90 scored days (started 2026-07-24; it loses days to failed
+   decisions, so its bar is lower).
+2. On the days both records scored, its cumulative net return is at least
+   `mean_reversion_real`'s.
+3. Fewer than 10% of candidate days excluded for failed decisions.
+
+If the rule passes and the agent fails, the rule is what gets rung 4 and the
+agent tick is removed from `scripts/paper_cron.sh`. If both pass, the agent
+gets rung 4 and the rule stays running as the control. If the agent passes
+and the rule fails, nothing goes live: 90 days of an LLM beating a strategy
+that itself shows no edge is not evidence of anything.
+
+The model behind the agent changed on 2026-09-03 (the original was retired
+by NVIDIA); the record is continuous but the decider is not. That is a
+caveat on the agent's result, not a reason to restart its clock.
+
+To judge, from a checkout of `paper-state`:
+
+```bash
+PYTHONPATH=src python -c "
+import pandas as pd
+from rhagent.evaluate_robust import bootstrap_sharpe_ci
+for r in ['mean_reversion_real', 'agent']:
+    s = pd.read_csv(f'journal/forward/{r}/returns.csv', parse_dates=['date']).set_index('date')['net']
+    eq = (1 + s).cumprod()
+    print(r, 'days', len(s), 'cum %.2f%%' % ((eq.iloc[-1] - 1) * 100),
+          'maxdd %.2f%%' % ((eq / eq.cummax() - 1).min() * 100),
+          'sharpe CI', bootstrap_sharpe_ci(s))
+"
+```
+
+For reference, on the day this was written `mean_reversion_real` had 31
+days, +0.90% cumulative, -0.43% max drawdown, and a bootstrap Sharpe CI
+lower bound below zero; the agent had 18 days at -1.56%. Neither would pass
+today. That is the point of writing it now.
+
 Longer reasoning behind this ladder:
 [`docs/archive/AUDIT-2026-07-16.md`](docs/archive/AUDIT-2026-07-16.md).
 
