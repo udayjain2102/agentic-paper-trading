@@ -22,12 +22,13 @@ limits:
 # Model configuration for the decision agent.
 # Served by NVIDIA's OpenAI-compatible API (integrate.api.nvidia.com).
 agent:
-  model: nvidia/llama-3.3-nemotron-super-49b-v1.5
-  # A bar decision is a two-field JSON, but nemotron-super is a reasoning
-  # model and emits a preamble first: at 256 it hit the cap before writing
-  # any JSON at all (46/65 decisions failed that way on 2026-07-21). 2000
-  # leaves room for the preamble without paying for the full 16000-token
-  # budget, which measured 60-120s/call -- over an hour for a 65-name tick.
+  model: nvidia/nemotron-3-super-120b-a12b
+  # nvidia/llama-3.3-nemotron-super-49b-v1.5 reached end of life on NVIDIA's
+  # API (HTTP 410 from 2026-08-24; every agent decision failed until this
+  # switch on 2026-09-03). nemotron-3-super with "detailed thinking off"
+  # returns the bare two-field JSON in ~2s with no preamble (verified live
+  # 2026-09-03). 2000 is now headroom, not a tuned floor; the truncation
+  # guard in engine.py still fires if a future model starts rambling.
   max_tokens: 2000
   # Every production AgentEngine() call previously omitted this kwarg, which
   # defaults False in engine.py -- production has run long-only since launch
