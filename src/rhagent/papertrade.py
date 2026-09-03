@@ -368,7 +368,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-lessons", action="store_true",
                    help="agent engine only: skip feeding prior-run loss lessons")
     p.add_argument("--overlay", default="conviction",
-                   choices=["none", "conviction", "bucket", "winprob"],
+                   choices=["none", "conviction"],
                    help="decision overlay applied to each target (default: the "
                         "locked-in conviction gate; pass 'none' for the raw strategy)")
     args = p.parse_args(argv)

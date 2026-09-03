@@ -30,19 +30,6 @@ def test_momentum_signal_is_trailing_return():
     assert abs(sig.iloc[-1] - expected) < 1e-9
 
 
-def test_linreg_signal_matches_position_sign_where_in_position():
-    rng = np.random.default_rng(0)
-    closes = list(100 + np.cumsum(rng.normal(0, 1, 120)))
-    strat = build("linreg", {})
-    sig = strat.signal(_bars(closes))
-    pos = strat.positions(_bars(closes))
-    # where the strategy holds (pos != 0), the signal sign must match the position
-    held = pos[pos != 0]
-    assert len(held) > 0
-    for t in held.index:
-        assert np.sign(sig[t]) == pos[t]
-
-
 def test_signal_nan_free_after_warmup():
     sig = build("mean_reversion", {}).signal(_bars([100.0 + i for i in range(40)]))
     assert not sig.iloc[30:].isna().any()

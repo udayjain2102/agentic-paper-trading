@@ -5,7 +5,6 @@ position series and never performs I/O. See ``base.Strategy``.
 """
 
 from .base import Strategy
-from .linreg import LinReg
 from .mean_reversion import MeanReversion
 from .momentum import Momentum
 
@@ -13,7 +12,6 @@ from .momentum import Momentum
 REGISTRY: dict[str, type] = {
     MeanReversion.name: MeanReversion,
     Momentum.name: Momentum,
-    LinReg.name: LinReg,
 }
 
 
