@@ -151,7 +151,9 @@ def _agent_positions(eval_dir: Path, bars: dict[str, pd.DataFrame],
         todo = [s for s in syms if ts in bars[s].index and ts not in decided[s]]
         if todo:
             ds = agent.decide_all(todo, {s: bars[s].loc[:ts] for s in todo},
-                                  {s: cur[s] for s in todo})
+                                  {s: cur[s] for s in todo},
+                                  context_histories={s: bars[s].loc[:ts] for s in syms
+                                                     if ts in bars[s].index})
             for s in todo:
                 d = ds[s]
                 decided[s][ts] = d.target
@@ -212,6 +214,23 @@ def _append_decisions(eval_dir: Path, rows: list[dict]) -> None:
             f.write(json.dumps(r) + "\n")
 
 
+def _build_agent(cfg, *, market_context: bool = False, memory_text: str | None = None):
+    """The one place a production AgentEngine is constructed, so every knob in
+    config.yaml reaches every call site. `memory_text` is the already-read
+    agent memory (tick_and_reflect reads it once); None means read it here."""
+    from .engine import AgentEngine
+    from .learn import lessons_from_runs
+    from .memory import read_memory
+
+    if cfg.agent.use_lessons:
+        mem = read_memory() if memory_text is None else memory_text
+        lessons = mem + "\n" + lessons_from_runs()
+    else:
+        lessons = ""
+    return AgentEngine(lessons=lessons, allow_short=cfg.agent.allow_short,
+                       market_context=market_context)
+
+
 def _positions(cfg, engine: str, bars: dict[str, pd.DataFrame],
                eval_dir: Path, agent=None) -> tuple[dict[str, pd.Series], set]:
     """Per-symbol target-position series for the chosen engine, plus the dates
@@ -219,13 +238,7 @@ def _positions(cfg, engine: str, bars: dict[str, pd.DataFrame],
     fail to decide, so their exclusion set is empty)."""
     if engine == "agent":
         if agent is None:
-            from .engine import AgentEngine
-            from .learn import lessons_from_runs
-            from .memory import read_memory
-
-            lessons = (read_memory() + "\n" + lessons_from_runs()
-                       if cfg.agent.use_lessons else "")
-            agent = AgentEngine(lessons=lessons, allow_short=cfg.agent.allow_short)
+            agent = _build_agent(cfg)
         return _agent_positions(eval_dir, {s: bars[s] for s in cfg.strategy.universe},
                                 agent)
     from .strategies import build
@@ -395,22 +408,21 @@ def tick_and_reflect(cfg, eval_dir: Path, cost_bps: float | None = None, *,
         return tick(cfg, eval_dir, cost_bps, engine=engine, fill=fill, fetch=fetch,
                     today=today, cache_dir=cache_dir, agent=agent)
 
-    from .engine import AgentEngine, nvidia_complete
-    from .learn import lessons_from_runs
+    from .engine import nvidia_complete
     from .memory import read_memory, recent_outcomes, reflect
 
     memory_text = read_memory(memory_path)
     if agent is None:
-        agent = AgentEngine(
-            lessons=(memory_text + "\n" + lessons_from_runs()
-                     if cfg.agent.use_lessons else ""),
-            allow_short=cfg.agent.allow_short)
+        agent = _build_agent(cfg, memory_text=memory_text)
+    ctx = bool(getattr(agent, "market_context", False))
 
     res = tick(cfg, eval_dir, cost_bps, engine=engine, fill=fill, fetch=fetch,
               today=today, cache_dir=cache_dir, agent=agent)
 
     reflected = False
-    if res["appended"] >= 1:
+    # The ctx record shares nothing with the control: it never writes the
+    # control's memory file (lessons are off for both, so it loses nothing).
+    if res["appended"] >= 1 and not ctx:
         try:
             today_d = today or date.today()
             start = (today_d - timedelta(days=400)).isoformat()
@@ -434,6 +446,7 @@ def tick_and_reflect(cfg, eval_dir: Path, cost_bps: float | None = None, *,
     # length either way credits the agent with an education it did not get.
     meta["memory_chars"] = len(getattr(agent, "lessons", ""))
     meta["reflected"] = reflected
+    meta["market_context"] = ctx
     (eval_dir / "run.json").write_text(json.dumps(meta, indent=2, sort_keys=True))
     return res
 
@@ -559,6 +572,11 @@ def main(argv: list[str] | None = None) -> int:
                         "from (not really tradable); 'next_open' fills at the following "
                         "bar's open instead (default: config.yaml strategy.fill_mode)")
     p.add_argument("--report", action="store_true", help="report only, no tick")
+    p.add_argument("--market-context", action="store_true",
+                   help="agent only: prepend the cross-sectional market block "
+                        "(SPY 1d/5d, breadth, momentum rank) to every prompt. "
+                        "Use with its own --eval-id (agent_ctx); never on the "
+                        "control agent record.")
     args = p.parse_args(sys.argv[1:] if argv is None else argv)
 
     cfg = load()
@@ -567,8 +585,10 @@ def main(argv: list[str] | None = None) -> int:
     engine = args.engine or cfg.strategy.name
     eval_dir = Path(args.out_dir) / (args.eval_id or engine)
     if not args.report:
+        agent = (_build_agent(cfg, market_context=True)
+                 if args.market_context else None)
         res = tick_and_reflect(cfg, eval_dir, args.cost_bps, engine=engine,
-                               fill=args.fill_mode)
+                               fill=args.fill_mode, agent=agent)
         print(f"tick: appended {res['appended']} day(s), {res['total_days']} total")
     # The tick above already wrote run.json/trades.jsonl/returns.csv to disk --
     # _report only prints a summary of what's already persisted. A bug in this
