@@ -15,7 +15,7 @@
 set -euo pipefail
 
 STATE_BRANCH="${STATE_BRANCH:-paper-state}"
-REFRESH_DAYS="${REFRESH_DAYS:-10}"
+REFRESH_DAYS="${REFRESH_DAYS:-30}"
 export PYTHONPATH="${PYTHONPATH:-src}"
 
 echo "== restore cache + record from ${STATE_BRANCH} =="

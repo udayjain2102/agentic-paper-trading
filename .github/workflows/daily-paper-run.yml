@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write         # push updated state to paper-state via GITHUB_TOKEN
+  issues: write           # open/annotate a failure issue so a broken run is not silent
 
 concurrency:
   group: paper-run        # never let two runs clobber each other's state push
@@ -66,3 +67,23 @@ jobs:
           PYTHONPATH=src python scripts/make_dashboard.py --out site/index.html
           npx vercel deploy site --prod --yes --token "$VERCEL_TOKEN" \
             || echo "!! dashboard deploy failed -- paper state already persisted" >&2
+
+      # A failed run must not be silent: nine consecutive failures went unnoticed
+      # in Aug-Sep 2026 and cost the forward record two weeks. One open issue,
+      # labeled, reused across consecutive failures so it cannot spam.
+      - name: alert on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create paper-run-failure --force --color B60205 \
+            --description "daily-paper-run failed" >/dev/null 2>&1 || true
+          n="$(gh issue list --label paper-run-failure --state open --json number -q '.[0].number')"
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --body "Failed again: $RUN_URL"
+          else
+            gh issue create --label paper-run-failure \
+              --title "daily-paper-run failing (since $(date -u +%F))" \
+              --body "The scheduled paper run failed; the forward record is not growing until this is fixed. First failure: $RUN_URL"
+          fi
