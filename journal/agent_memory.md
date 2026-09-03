@@ -76,3 +76,20 @@ Since there are no recent decisions to review, the focus shifts to the setup and
     - **Falsifiable Outcome:** By the next review, 30% of trades are labeled as “core strategy” with multi-day holding periods.  
 
 **Note:** These lessons address gaps in rule adherence (trade limits, post-mortems) and deepen integration of prior lessons (market study linkage, strategy tracking) without redundancy. Outcomes are strictly measurable via trade logs and review documentation.
+
+## 2026-09-03
+- **What didn’t work:** The self‑imposed daily cap of ≤ 50 names was repeatedly violated (59‑64 names each day from 08‑20 to 09‑02), showing the prior limit‑setting lesson was not followed in practice.  
+  **What worked:** Keeping the universe size relatively tight (≈ 60 names) still produced modest, low‑volatility returns (‑0.63% to +0.26%), indicating the current breadth is not excessively noisy.  
+  **What to do differently:** Implement a real‑time trade counter that blocks entry once 55 names are reached and sends an alert at 50 names; review the log weekly to verify that **0 days exceed 55 names** and **≤ 5 % of days exceed 50 names** (falsifiable via trade‑log audit).
+
+- **What didn’t work:** No day recorded a loss worse than ‑1 %, so the prior rule requiring a post‑mortem for losses > ‑1 % was never triggered, yet several days showed losses between ‑0.5 % and ‑0.63 % (08‑24, 08‑25, 08‑27, 08‑28, 08‑31, 09‑01) that lacked any documented root‑cause analysis.  
+  **What worked:** The strategy avoided large drawdowns, preserving capital.  
+  **What to do differently:** Lower the loss‑threshold for mandatory same‑day post‑mortem to ‑0.5 % (or worse) and require a time‑stamped note covering entry/exit timing, position sizing, and any relevant market news; falsifiable outcome: **100 % of days with next‑day return ≤ ‑0.5 % have a logged post‑mortem** in the trade journal.
+
+- **What didn’t work:** While market‑study hours were logged, only an estimated ≈ 60 % of trades explicitly cited a specific insight (e.g., “bullish sector trend from 08‑25 analysis”), falling short of the 100 % linkage goal set on 08‑03.  
+  **What worked:** Days with higher returns (+0.26% on 08‑21, +0.24% on 08‑26) coincided with trades that did reference a study note, suggesting a positive correlation when the link is made.  
+  **What to do differently:** Require a **line‑item citation** (unique study‑ID) for every trade entered; at the end of each week audit the journal to confirm that **all trades contain a valid study‑ID** (falsifiable via checklist).  
+
+- **What didn’t work:** Strategy categorization existed but the “core‑strategy” (≥ 3‑day hold) allocation remained undefined; the log shows most entries are same‑day holds, so the 30 % core‑trade target from 08‑03 was not met.  
+  **What worked:** The few multi‑day holds (e.g., positions carried from 08‑20 to 08‑24) showed steadier performance (‑0.19% to +0.11% avg), hinting at reduced noise.  
+  **What to do differently:** Designate at least **30 % of the daily name list as “core”** (pre‑selected based on longer‑term fundamentals or technical trends) and track their holding period; falsifiable outcome: **≥ 30 % of trades each week are labeled core with a hold ≥ 3 days**, verified by the trade‑log holding‑period field.
