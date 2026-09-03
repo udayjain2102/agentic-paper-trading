@@ -215,7 +215,7 @@ def _append_decisions(eval_dir: Path, rows: list[dict]) -> None:
 
 
 def _build_agent(cfg, *, market_context: bool = False, memory_text: str | None = None):
-    """The one place a production AgentEngine is constructed, so every knob in
+    """The one place forward.py constructs a production AgentEngine, so every knob in
     config.yaml reaches every call site. `memory_text` is the already-read
     agent memory (tick_and_reflect reads it once); None means read it here."""
     from .engine import AgentEngine
@@ -583,6 +583,8 @@ def main(argv: list[str] | None = None) -> int:
     if cfg.strategy is None:
         raise SystemExit("no `strategy:` block in config.yaml")
     engine = args.engine or cfg.strategy.name
+    if args.market_context and engine != "agent":
+        p.error("--market-context requires --engine agent")
     eval_dir = Path(args.out_dir) / (args.eval_id or engine)
     if not args.report:
         agent = (_build_agent(cfg, market_context=True)

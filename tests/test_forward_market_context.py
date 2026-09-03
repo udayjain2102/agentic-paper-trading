@@ -41,7 +41,7 @@ def test_build_agent_passes_flag():
     assert forward._build_agent(cfg, market_context=True).allow_short is True
 
 
-def test_agent_positions_gives_decide_all_the_full_universe(monkeypatch, tmp_path):
+def test_agent_positions_gives_decide_all_the_full_universe(tmp_path):
     bars = _bars(["AAA", "BBB", "SPY"])
     calls = []
 
@@ -88,9 +88,6 @@ def test_tick_and_reflect_records_flag_and_skips_reflection(monkeypatch, tmp_pat
     reflected = []
     monkeypatch.setattr("rhagent.memory.reflect",
                         lambda *a, **k: (reflected.append(1), "x")[1])
-
-    def fake_fetch(*a, **k):
-        raise AssertionError("must not fetch")
 
     cache = tmp_path / "data"
     cache.mkdir()
@@ -157,3 +154,13 @@ def test_cli_flag_reaches_engine(monkeypatch, tmp_path):
 
     forward.main(["--engine", "agent", "--out-dir", str(tmp_path)])
     assert captured["agent"] is None   # control path unchanged: engine built inside
+
+
+def test_cli_market_context_requires_agent_engine(monkeypatch, tmp_path):
+    import pytest
+    monkeypatch.setattr(forward, "tick_and_reflect",
+                        lambda *a, **k: {"appended": 0, "total_days": 0, "meta": {}})
+    monkeypatch.setattr(forward, "_report", lambda *a, **k: None)
+    with pytest.raises(SystemExit):
+        forward.main(["--engine", "mean_reversion", "--market-context",
+                      "--out-dir", str(tmp_path)])
