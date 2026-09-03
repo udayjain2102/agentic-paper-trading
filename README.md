@@ -35,6 +35,7 @@ The three records exist on purpose, on different cost/fill bases:
 | `mean_reversion` | 1 bp | `close` | The original record, pinned to its seed basis so its curve has no discontinuity. Flattering fills. |
 | `mean_reversion_real` | 7 bp | `next_open` | **The honest go-forward number** — a cost and a fill you could actually get. |
 | `agent` | config | config | The LLM engine, only when `NVIDIA_API_KEY` is set. |
+| `agent_ctx` | config | config | The same LLM with a two-line market block (SPY 1d/5d, breadth, momentum rank) in every prompt. Started 2026-09-04; see the bar below. |
 
 ## Layout
 
@@ -140,13 +141,30 @@ The model behind the agent changed on 2026-09-03 (the original was retired
 by NVIDIA); the record is continuous but the decider is not. That is a
 caveat on the agent's result, not a reason to restart its clock.
 
+**`agent_ctx` (added 2026-09-03, judged on the first scheduled run on or
+after 2027-03-02) passes only if all four hold:**
+
+1. At least 90 scored days.
+2. On the days both it and `mean_reversion_real` scored, its cumulative net
+   return is at least `mean_reversion_real`'s.
+3. Fewer than 10% of candidate days excluded for failed decisions.
+4. On the days both it and the control `agent` scored, its cumulative net
+   return is above the control's. **This is the hypothesis**: that seeing
+   the market's own move stops the agent shorting into broad rebounds like
+   2026-07-29.
+
+Fails 4: market context did not help; its tick is removed and the next
+experiment is news. Passes 4 but fails 2: context helped, the agent is still
+not fundable; it becomes the new control. Passes all four: it replaces the
+control agent in the ladder above.
+
 To judge, from a checkout of `paper-state`:
 
 ```bash
 PYTHONPATH=src python -c "
 import pandas as pd
 from rhagent.evaluate_robust import bootstrap_sharpe_ci
-for r in ['mean_reversion_real', 'agent']:
+for r in ['mean_reversion_real', 'agent', 'agent_ctx']:
     s = pd.read_csv(f'journal/forward/{r}/returns.csv', parse_dates=['date']).set_index('date')['net']
     eq = (1 + s).cumprod()
     print(r, 'days', len(s), 'cum %.2f%%' % ((eq.iloc[-1] - 1) * 100),
