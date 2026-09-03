@@ -146,6 +146,45 @@ class StrategyEngine:
         return Decision(target=target, reason=reason, conviction=conviction)
 
 
+def _mom5(close: pd.Series) -> float:
+    """5-bar momentum with the same short-history fallback _features uses."""
+    k = min(5, len(close) - 1)
+    return float(close.iloc[-1] / close.iloc[-1 - k] - 1.0) if k >= 1 else 0.0
+
+
+def market_block(histories: dict[str, pd.DataFrame]) -> dict:
+    """Cross-sectional context for ONE bar, from every symbol's history up to
+    that bar. Pure; no I/O. Missing SPY -> None fields, never an exception."""
+    moms = {s: _mom5(h["close"].astype(float)) for s, h in histories.items() if len(h)}
+    spy = histories.get("SPY")
+    if spy is not None and len(spy) >= 2:
+        c = spy["close"].astype(float)
+        spy_1d = float(c.iloc[-1] / c.iloc[-2] - 1.0)
+        spy_5d = _mom5(c)
+    else:
+        spy_1d = spy_5d = None
+    n = len(moms)
+    breadth = (sum(m > 0 for m in moms.values()) / n) if n else None
+    order = sorted(moms, key=lambda s: moms[s], reverse=True)
+    return {"spy_1d": spy_1d, "spy_5d": spy_5d, "breadth": breadth,
+            "rank": {s: i + 1 for i, s in enumerate(order)}, "n": n}
+
+
+def _pct(x: float | None) -> str:
+    return "n/a" if x is None else f"{x:+.2%}"
+
+
+def render_context(block: dict, symbol: str) -> str:
+    """The two prompt lines for `symbol`. Ends with a newline."""
+    n = block["n"]
+    breadth = "n/a" if block["breadth"] is None else f"{block['breadth']:.2f}"
+    rank = block["rank"].get(symbol)
+    rank_txt = f"{rank}/{n}" if rank is not None else f"n/a/{n}"
+    return (f"Market today: SPY_1d={_pct(block['spy_1d'])} SPY_5d={_pct(block['spy_5d'])} "
+            f"breadth_5d={breadth} (share of {n} names with positive 5d momentum)\n"
+            f"This name: momentum_5d rank {rank_txt} (1 = strongest)\n")
+
+
 class AgentEngine:
     """Let an LLM pick today's position. Same DecisionEngine protocol as
     StrategyEngine: one JSON verdict per bar from a compact, lookahead-free
@@ -162,6 +201,7 @@ class AgentEngine:
         name: str = "agent",
         allow_short: bool = False,
         max_tokens: int | None = None,
+        market_context: bool = False,
     ) -> None:
         self.complete = complete
         self.model = model
@@ -169,6 +209,7 @@ class AgentEngine:
         self.name = name
         self.allow_short = allow_short
         self.max_tokens = max_tokens
+        self.market_context = market_context
 
     def _default_complete(self) -> Callable[[str], str]:
         """Lazy NVIDIA OpenAI client — built once, on first decide().
@@ -189,8 +230,7 @@ class AgentEngine:
         last = float(close.iloc[-1])
         # momentum over up to 5 prior bars; fall back to the whole window when
         # history is shorter (a 6-bar minimum would zero out short runs).
-        k = min(5, len(close) - 1)
-        mom5 = float(close.iloc[-1] / close.iloc[-1 - k] - 1.0) if k >= 1 else 0.0
+        mom5 = _mom5(close)
         rets = close.pct_change().dropna()
         vol20 = float(rets.tail(20).std()) if len(rets) >= 2 else 0.0
         if pd.isna(vol20):
@@ -201,10 +241,12 @@ class AgentEngine:
     def _lessons_block(self) -> str:
         return f"\nPast-loss lessons to weigh:\n{self.lessons}\n" if self.lessons else ""
 
-    def _prompt(self, symbol: str, history: pd.DataFrame, current_pos: float) -> str:
+    def _prompt(self, symbol: str, history: pd.DataFrame, current_pos: float,
+                context: str = "") -> str:
         return (
             f"You are a trading agent deciding today's position in {symbol}.\n"
             f"{self._features(symbol, history, current_pos)}\n"
+            f"{context}"
             f"{self._lessons_block()}"
             "Respond with ONLY this JSON object and nothing else -- no "
             "reasoning, no markdown fences, no text before or after it: "
@@ -231,13 +273,15 @@ class AgentEngine:
         return target
 
     def decide(
-        self, symbol: str, history: pd.DataFrame, current_pos: float
+        self, symbol: str, history: pd.DataFrame, current_pos: float,
+        context: str = "",
     ) -> Decision:
         if self.complete is None:
             self.complete = self._default_complete()
         status = "ok"
         try:
-            obj = self._extract(self.complete(self._prompt(symbol, history, current_pos)))
+            obj = self._extract(self.complete(
+                self._prompt(symbol, history, current_pos, context)))
             target = self._target(obj["target"])
             reason = str(obj.get("reason", ""))
         except Exception as e:
@@ -249,7 +293,9 @@ class AgentEngine:
     MAX_WORKERS = 8
 
     def decide_all(self, symbols: list[str], histories: dict[str, pd.DataFrame],
-                   current_pos: dict[str, float]) -> dict[str, Decision]:
+                   current_pos: dict[str, float],
+                   context_histories: dict[str, pd.DataFrame] | None = None
+                   ) -> dict[str, Decision]:
         """One model call PER SYMBOL, fanned out across MAX_WORKERS threads.
 
         Not a batched call. Batching multiple symbols into one prompt was
@@ -283,11 +329,22 @@ class AgentEngine:
 
         decide() swallows its own exceptions and returns status="failed", so no
         worker can raise and every symbol always gets a Decision.
+
+        `context_histories` is the FULL universe's history up to this bar (the
+        caller may be deciding only a subset). Used only when market_context is
+        set: the block is computed once here and handed to every per-symbol
+        prompt. Falls back to `histories` when not given.
         """
         if self.complete is None:
             self.complete = self._default_complete()
+        ctx: dict[str, str] = {}
+        if self.market_context:
+            block = market_block(context_histories if context_histories is not None
+                                 else histories)
+            ctx = {s: render_context(block, s) for s in symbols}
         with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as pool:
-            futures = {s: pool.submit(self.decide, s, histories[s], current_pos[s])
+            futures = {s: pool.submit(self.decide, s, histories[s], current_pos[s],
+                                      ctx.get(s, ""))
                        for s in symbols}
         return {s: f.result() for s, f in futures.items()}
 
