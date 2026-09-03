@@ -128,6 +128,8 @@ def test_tick_and_reflect_records_flag_and_skips_reflection(monkeypatch, tmp_pat
     res2 = forward.tick_and_reflect(cfg, ed2, 7.0, engine="agent", fill="next_open",
                                     today=today, cache_dir=cache,
                                     agent=forward._build_agent(cfg),
+                                    # inject the model seam: CI has no NVIDIA key
+                                    reflect_complete=lambda prompt: "x",
                                     memory_path=str(tmp_path / "mem.md"))
     assert res2["appended"] >= 1
     meta2 = json.loads((ed2 / "run.json").read_text())
