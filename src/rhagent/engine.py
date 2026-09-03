@@ -253,7 +253,7 @@ class AgentEngine:
         """One model call PER SYMBOL, fanned out across MAX_WORKERS threads.
 
         Not a batched call. Batching multiple symbols into one prompt was
-        measured and rejected (docs/revamp-plan-2026-07-25.md, T0, 2026-07-26):
+        measured and rejected (revamp plan T0, 2026-07-26, git history):
         nemotron-super's response verbosity is independent of how many symbols
         you ask about -- it emits 1-2k+ tokens of preamble either way -- so a
         multi-symbol call is not cheaper per symbol, just likelier to blow

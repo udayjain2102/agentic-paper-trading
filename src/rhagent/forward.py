@@ -550,7 +550,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="rhagent.forward")
     p.add_argument("--out-dir", default="journal/forward")
     p.add_argument("--eval-id", help="record dir name (default: engine name)")
-    p.add_argument("--engine", help="momentum|linreg|mean_reversion|agent "
+    p.add_argument("--engine", help="momentum|mean_reversion|agent "
                                     "(default: config strategy)")
     p.add_argument("--cost-bps", type=float, default=None,
                    help="per-side cost in bps (default: config.yaml strategy.cost_bps)")

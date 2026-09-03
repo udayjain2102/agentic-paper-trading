@@ -46,7 +46,7 @@ The three records exist on purpose, on different cost/fill bases:
 | `src/rhagent/engine.py` | The two decision engines: `StrategyEngine` (rules) and `AgentEngine` (LLM). |
 | `src/rhagent/backtest.py` | `net_returns` — the one place a position series becomes a return series. |
 | `src/rhagent/evaluate.py` | Scorecard, failure buckets, SPY benchmark. |
-| `src/rhagent/strategies/` | Rule-based strategies (mean-reversion, momentum, linreg). |
+| `src/rhagent/strategies/` | Rule-based strategies: mean-reversion (the locked preset) and momentum (kept as a cheap test fixture). |
 | `src/rhagent/guardrails.py` | Pure, exhaustively-tested safety checks, called on every `paper_run` tick (see Safety). |
 | `src/rhagent/broker.py` | `MockBroker` / `McpBroker` — `paper_run.py` only ever constructs `MockBroker`; `McpBroker` has no caller. |
 | `src/rhagent/mcp_session.py` | Connects to the Robinhood MCP (streamable HTTP). Used for data, not orders. |
@@ -75,15 +75,13 @@ that record (`origin/paper-state`) holds 10, 6, and 2 realized return-days
 across its three tracked strategies, and all three `trades.jsonl` files are
 0-1 bytes — zero trade records. The forward record is meant to be the thing
 that eventually earns a `LIVE=true` flip, but it does not yet have enough
-history to confirm or reject anything; see
-[`docs/archive/AUDIT-2026-07-16.md`](docs/archive/AUDIT-2026-07-16.md) for the
-original trust-ladder proposal.
+history to confirm or reject anything. The original trust-ladder proposal
+was the 2026-07-16 audit, now in git history only.
 
-The IC/ICIR machinery under `factor/`, `search/`, and `gate/`
-([`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §2) is an offline research
-tool for *narrowing candidates* before they enter the bake-off above — it is
-not a competing grading system, and a strategy does not need to clear its
-gates to be promoted. Its one real-data verdict so far was `viable: 0`.
+The offline IC/ICIR research pipeline (`factor/`, `search/`, `gate/`) was
+deleted on 2026-09-03: its one real-data verdict was `viable: 0`, nothing on
+the scheduled path imported it, and it had not run since July. It lives in
+git history before that date.
 
 ## The road to real money
 
@@ -162,8 +160,7 @@ days, +0.90% cumulative, -0.43% max drawdown, and a bootstrap Sharpe CI
 lower bound below zero; the agent had 18 days at -1.56%. Neither would pass
 today. That is the point of writing it now.
 
-Longer reasoning behind this ladder:
-[`docs/archive/AUDIT-2026-07-16.md`](docs/archive/AUDIT-2026-07-16.md).
+Longer reasoning behind this ladder: the 2026-07-16 audit (git history).
 
 ## Safety
 

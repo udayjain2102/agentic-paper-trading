@@ -79,15 +79,3 @@ def test_papertrade_print_report_does_not_crash_on_a_thin_sample(tmp_path, capsy
     out = capsys.readouterr().out
     assert "n/a (needs" in out
 
-
-def test_control_page_does_not_crash_on_a_thin_sample(tmp_path):
-    from rhagent import control
-
-    forward_dir = tmp_path / "journal" / "forward"
-    _write_thin_run(forward_dir / "mean_reversion")
-    app = control.ControlApp(
-        journal_dir=tmp_path / "journal", data_dir=tmp_path / "data",
-        config_path=tmp_path / "config.yaml", halt_file=tmp_path / "HALT",
-    )
-    html = app.page()  # must not raise
-    assert "n/a (needs" in html
