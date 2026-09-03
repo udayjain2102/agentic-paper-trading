@@ -14,3 +14,6 @@ yfinance>=0.2.30
 
 # Dev
 pytest>=8.0
+# Tests build openai error objects, which require real httpx Request/Response
+# types even though openai itself has moved on to httpx2.
+httpx>=0.27
