@@ -51,6 +51,12 @@ echo "== tick forward record (agent) =="
 if [ -n "${NVIDIA_API_KEY:-}" ]; then
   python -m rhagent.forward --engine agent --eval-id agent \
     || echo "!! agent tick failed -- strategy record still persisted" >&2
+
+  # Fourth record: the same agent with a two-line market block in every
+  # prompt (spec: docs/superpowers/specs/2026-09-03-agent-market-context-design.md).
+  # Own record dir, no reflection, non-fatal like the rest.
+  python -m rhagent.forward --engine agent --eval-id agent_ctx --market-context \
+    || echo "!! agent_ctx tick failed -- other records still persisted" >&2
 else
   echo "NVIDIA_API_KEY not set -- skipping agent tick"
 fi

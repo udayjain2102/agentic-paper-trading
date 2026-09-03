@@ -23,18 +23,19 @@ real prices, and scores the resulting track record.
 The scheduled path is a GitHub Actions cron (`.github/workflows/daily-paper-run.yml`,
 Mon-Fri) that runs `scripts/paper_cron.sh`: it refreshes the price cache
 (Yahoo's keyless chart API by default; the Robinhood MCP only if
-`ROBINHOOD_MCP_URL`/`ROBINHOOD_MCP_TOKEN` secrets are set), ticks three forward
+`ROBINHOOD_MCP_URL`/`ROBINHOOD_MCP_TOKEN` secrets are set), ticks four forward
 paper-trade records (`rhagent.forward`), runs `rhagent.paper_run` through the
 guardrail funnel (dry-run, `MockBroker` only), and renders the dashboard.
 Nothing here places a real order — there is no code path that can.
 
-The three records exist on purpose, on different cost/fill bases:
+The four records exist on purpose, on different cost/fill bases:
 
 | Record | Cost | Fill | Why |
 |---|---|---|---|
 | `mean_reversion` | 1 bp | `close` | The original record, pinned to its seed basis so its curve has no discontinuity. Flattering fills. |
 | `mean_reversion_real` | 7 bp | `next_open` | **The honest go-forward number** — a cost and a fill you could actually get. |
 | `agent` | config | config | The LLM engine, only when `NVIDIA_API_KEY` is set. |
+| `agent_ctx` | config | config | The same LLM with a two-line market block (SPY 1d/5d, breadth, momentum rank) in every prompt. Started 2026-09-04; see the bar below. |
 
 ## Layout
 
@@ -136,6 +137,23 @@ gets rung 4 and the rule stays running as the control. If the agent passes
 and the rule fails, nothing goes live: 90 days of an LLM beating a strategy
 that itself shows no edge is not evidence of anything.
 
+**`agent_ctx` (added 2026-09-03, judged on the first scheduled run on or
+after 2027-03-02) passes only if all four hold:**
+
+1. At least 90 scored days.
+2. On the days both it and `mean_reversion_real` scored, its cumulative net
+   return is at least `mean_reversion_real`'s.
+3. Fewer than 10% of candidate days excluded for failed decisions.
+4. On the days both it and the control `agent` scored, its cumulative net
+   return is above the control's. **This is the hypothesis**: that seeing
+   the market's own move stops the agent shorting into broad rebounds like
+   2026-07-29.
+
+Fails 4: market context did not help; its tick is removed and the next
+experiment is news. Passes 4 but fails 2: context helped, the agent is still
+not fundable; it becomes the new control. Passes all four: it replaces the
+control agent in the ladder above.
+
 The model behind the agent changed on 2026-09-03 (the original was retired
 by NVIDIA); the record is continuous but the decider is not. That is a
 caveat on the agent's result, not a reason to restart its clock.
@@ -146,7 +164,7 @@ To judge, from a checkout of `paper-state`:
 PYTHONPATH=src python -c "
 import pandas as pd
 from rhagent.evaluate_robust import bootstrap_sharpe_ci
-for r in ['mean_reversion_real', 'agent']:
+for r in ['mean_reversion_real', 'agent', 'agent_ctx']:
     s = pd.read_csv(f'journal/forward/{r}/returns.csv', parse_dates=['date']).set_index('date')['net']
     eq = (1 + s).cumprod()
     print(r, 'days', len(s), 'cum %.2f%%' % ((eq.iloc[-1] - 1) * 100),

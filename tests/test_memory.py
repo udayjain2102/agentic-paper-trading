@@ -163,10 +163,10 @@ def test_positions_lessons_include_memory(tmp_path, monkeypatch):
     captured = {}
 
     class FakeAgent:
-        def __init__(self, lessons="", allow_short=None):
+        def __init__(self, lessons="", allow_short=None, market_context=False):
             captured["lessons"] = lessons
 
-        def decide_all(self, symbols, histories, current_pos):
+        def decide_all(self, symbols, histories, current_pos, **_):
             from rhagent.engine import Decision
             return {s: Decision(target=0.0, reason="noop") for s in symbols}
 
@@ -197,7 +197,7 @@ def test_agent_positions_log_decisions_with_reason(tmp_path):
         def __init__(self):
             self.calls = 0
 
-        def decide_all(self, symbols, histories, current_pos):
+        def decide_all(self, symbols, histories, current_pos, **_):
             self.calls += 1
             return {s: Decision(target=1.0, reason="agent: dip buy") for s in symbols}
 
