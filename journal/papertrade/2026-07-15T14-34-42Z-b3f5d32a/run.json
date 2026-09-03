@@ -1,0 +1,13 @@
+{
+  "cost_bps": 1.0,
+  "created_ts": "2026-07-15T14:34:42.896627+00:00",
+  "end": "2026-07-14 00:00:00",
+  "engine": "mean_reversion",
+  "notional": 10000.0,
+  "overlay": "conviction",
+  "run_id": "2026-07-15T14-34-42Z-b3f5d32a",
+  "start": "2025-06-02 00:00:00",
+  "symbols": [
+    "AAPL"
+  ]
+}
