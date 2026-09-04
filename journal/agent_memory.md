@@ -93,3 +93,20 @@ Since there are no recent decisions to review, the focus shifts to the setup and
 - **What didn’t work:** Strategy categorization existed but the “core‑strategy” (≥ 3‑day hold) allocation remained undefined; the log shows most entries are same‑day holds, so the 30 % core‑trade target from 08‑03 was not met.  
   **What worked:** The few multi‑day holds (e.g., positions carried from 08‑20 to 08‑24) showed steadier performance (‑0.19% to +0.11% avg), hinting at reduced noise.  
   **What to do differently:** Designate at least **30 % of the daily name list as “core”** (pre‑selected based on longer‑term fundamentals or technical trends) and track their holding period; falsifiable outcome: **≥ 30 % of trades each week are labeled core with a hold ≥ 3 days**, verified by the trade‑log holding‑period field.
+
+## 2026-09-04
+- **What didn’t work:** Daily trade counts stayed above the self‑imposed limit (63‑65 names each day from 08‑21 to 09‑02), showing the ≤50‑name rule and the planned real‑time counter were not enacted.  
+  **What to do differently:** Deploy an automated trade‑entry block that halts further entries once 55 names are reached and triggers an alert at 50 names; log any attempts to exceed the block.  
+  **Falsifiable outcome:** In the next review period, **0 days exceed 55 names** and **≤5 % of days exceed 50 names** (verified by trade‑log audit).
+
+- **What didn’t work:** Losses between –0.2% and –0.4% (08‑24 to 08‑28) received no post‑mortem, because the prior rule only required analysis for returns < –1%.  
+  **What to do differently:** Lower the mandatory post‑mortem trigger to a next‑day return **≤ –0.2%** (or worse) and require a same‑day, time‑stamped note covering entry/exit timing, position sizing, and any relevant market news.  
+  **Falsifiable outcome:** **100 % of days with return ≤ –0.2%** have a logged post‑mortem in the trade journal.
+
+- **What worked:** Positive‑return days (08‑21 +0.26%, 09‑02 +0.19%) coincided with trades that explicitly cited a market‑study insight (per journal notes), indicating a benefit when the link is made.  
+  **What to do differently:** Require a **line‑item citation (unique study‑ID)** for every trade entered; at week’s end audit the journal to confirm each trade contains a valid study‑ID.  
+  **Falsifiable outcome:** Next review shows **100 % of trades** include a valid study‑ID.
+
+- **What didn’t work:** Core‑strategy allocation (≥3‑day hold) remained near 0 %, far below the 30 % target, showing most trades were same‑day.  
+  **What to do differently:** Pre‑designate at least **30 % of the daily name list** as “core” based on longer‑term fundamentals/technicals and enforce a minimum holding period of three days for those names.  
+  **Falsifiable outcome:** Each week **≥30 % of trades** are labeled core with a hold **≥ 3 days**, verified by the trade‑log holding‑period field.
