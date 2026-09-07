@@ -63,3 +63,68 @@
 {"date": "2026-09-03", "symbol": "VZ", "target": 1.0, "reason": "agent: Positive momentum, market up, breadth supportive; take long.", "status": "ok"}
 {"date": "2026-09-03", "symbol": "WFC", "target": 1.0, "reason": "agent: Strong 5\u2011day momentum, market up, breadth supportive \u2192 go long", "status": "ok"}
 {"date": "2026-09-03", "symbol": "WMT", "target": 1.0, "reason": "agent: Strong relative momentum, market up, breadth positive supports long", "status": "ok"}
+{"date": "2026-09-04", "symbol": "AAPL", "target": 0.0, "reason": "agent: Weak momentum, broad market down, breadth low; exit long", "status": "ok"}
+{"date": "2026-09-04", "symbol": "ABBV", "target": 0.0, "reason": "agent: Mixed signals, modest momentum, weak breadth, stay flat.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "ABT", "target": -1.0, "reason": "agent: Negative 5d momentum, low rank, maintain short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "ADBE", "target": -1.0, "reason": "agent: Strong negative momentum and weak market breadth suggest short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "AMD", "target": 0.0, "reason": "agent: Momentum positive but market weak; reduce short to flat.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "AMGN", "target": 0.0, "reason": "agent: Mixed signals: modest upside momentum vs weak market breadth.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "AMZN", "target": -1.0, "reason": "agent: Negative momentum, weak rank, market down", "status": "ok"}
+{"date": "2026-09-04", "symbol": "AVGO", "target": -1.0, "reason": "agent: Negative momentum, low rank, market weak; maintain short.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "AXP", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum, weak breadth, and down SPY suggest short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "BA", "target": 0.0, "reason": "agent: Mixed signals: flat market breadth, modest momentum", "status": "ok"}
+{"date": "2026-09-04", "symbol": "BAC", "target": 1.0, "reason": "agent: http-error 503: Error code: 503 - {'error': {'message': 'Service temporarily overloaded', 'type': 'Service Unavailable', 'code': 503}}", "status": "failed"}
+{"date": "2026-09-04", "symbol": "BLK", "target": -1.0, "reason": "agent: http-error 503: Error code: 503 - {'error': {'message': 'Service temporarily overloaded', 'type': 'Service Unavailable', 'code': 503}}", "status": "failed"}
+{"date": "2026-09-04", "symbol": "BMY", "target": 0.0, "reason": "agent: Mixed signals, weak breadth, neutral momentum.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "C", "target": 1.0, "reason": "agent: Strong momentum despite market dip; maintain long", "status": "ok"}
+{"date": "2026-09-04", "symbol": "CAT", "target": 0.0, "reason": "agent: Momentum positive but market weak; reduce short exposure.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "CMCSA", "target": -1.0, "reason": "agent: Negative momentum, weak breadth, and down SPY suggest short.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "COST", "target": -1.0, "reason": "agent: Negative momentum, low rank, weak breadth support maintaining short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "CRM", "target": 1.0, "reason": "agent: Positive momentum, solid rank, but weak breadth suggests hold long.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "CSCO", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum, low breadth, and SPY down suggest maintaining short.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "CVX", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum and top\u2011decile rank support maintaining long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "DHR", "target": -1.0, "reason": "agent: Negative momentum, low rank, market weak; maintain short.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "DIS", "target": -1.0, "reason": "agent: Negative momentum, weak rank, market down, breadth low.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "GE", "target": -1.0, "reason": "agent: Negative momentum, mediocre rank, weak breadth; maintain short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "GILD", "target": 1.0, "reason": "agent: Strong relative momentum supports long despite today's market dip.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "GOOGL", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum, low relative strength, and weak market breadth.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "GS", "target": 0.0, "reason": "agent: Mixed signals, modest GS momentum, weak breadth", "status": "ok"}
+{"date": "2026-09-04", "symbol": "HD", "target": -1.0, "reason": "agent: Negative momentum, low rank, and soft market support maintaining short.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "HON", "target": -1.0, "reason": "agent: Negative momentum, low rank, weak breadth, market down.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "IBM", "target": -1.0, "reason": "agent: Negative 5d momentum, weak breadth, SPY down today.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "INTC", "target": 0.0, "reason": "agent: http-error 503: Error code: 503 - {'error': {'message': 'Service temporarily overloaded', 'type': 'Service Unavailable', 'code': 503}}", "status": "failed"}
+{"date": "2026-09-04", "symbol": "JNJ", "target": 1.0, "reason": "agent: Positive 5d momentum, rank strong, hold long despite market dip", "status": "ok"}
+{"date": "2026-09-04", "symbol": "JPM", "target": 0.0, "reason": "agent: Weak relative momentum and broad market weakness suggest exiting long.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "KO", "target": 0.0, "reason": "agent: Negative momentum, weak breadth, no clear edge", "status": "ok"}
+{"date": "2026-09-04", "symbol": "LIN", "target": -1.0, "reason": "agent: Negative momentum, weak breadth, maintain short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "LLY", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum and weak market breadth suggest short exposure.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "LOW", "target": -1.0, "reason": "agent: Negative momentum, low rank, and soft market support maintaining short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "MA", "target": -1.0, "reason": "agent: Negative 5d momentum, weak breadth, SPY down today suggests short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "MCD", "target": -1.0, "reason": "agent: Negative momentum, weak breadth, maintain short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "MDT", "target": 1.0, "reason": "agent: Positive momentum and decent rank outweigh weak market breadth", "status": "ok"}
+{"date": "2026-09-04", "symbol": "META", "target": 1.0, "reason": "agent: Strong momentum rank 2 supports maintaining long position despite market dip.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "MRK", "target": 0.0, "reason": "agent: Mixed signals: modest positive momentum vs weak market breadth", "status": "ok"}
+{"date": "2026-09-04", "symbol": "MS", "target": 0.0, "reason": "agent: Mixed market, modest momentum, no clear edge", "status": "ok"}
+{"date": "2026-09-04", "symbol": "MSFT", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum, below\u2011median rank, weak market breadth, SPY down today.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "NFLX", "target": 0.0, "reason": "agent: Weak momentum, low breadth, and today's SPY decline suggest exiting long.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "NKE", "target": 0.0, "reason": "agent: Negative momentum, weak rank, market down today", "status": "ok"}
+{"date": "2026-09-04", "symbol": "NOW", "target": 0.0, "reason": "agent: Negative momentum, weak breadth, and today's SPY drop suggest exiting long.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "NVDA", "target": 1.0, "reason": "agent: Strong momentum rank 3/65 outweighs weak SPY", "status": "ok"}
+{"date": "2026-09-04", "symbol": "ORCL", "target": 1.0, "reason": "agent: Strong relative momentum outweighs weak market breadth", "status": "ok"}
+{"date": "2026-09-04", "symbol": "PEP", "target": -1.0, "reason": "agent: Negative 5d momentum, weak rank, market breadth low, suggest short.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "PFE", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum, rank 15/65, despite weak market.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "PG", "target": 1.0, "reason": "agent: Positive 5d momentum, rank 14/65 supports holding long despite weak breadth.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "PM", "target": -1.0, "reason": "agent: Weak momentum, low breadth, maintain short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "QCOM", "target": 1.0, "reason": "agent: Strong 5\u2011day momentum rank 11/65 supports long despite weak market breadth.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "SBUX", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum and low rank support maintaining short.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "SPY", "target": 0.0, "reason": "agent: Mixed signals, weak breadth, slight downside; stay flat.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "T", "target": 0.0, "reason": "agent: Negative 5d momentum, below-average breadth, and down SPY suggest reducing exposure.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "TMO", "target": -1.0, "reason": "agent: Negative momentum, weak market breadth, maintain short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "TSLA", "target": 1.0, "reason": "agent: Mod TSLA momentum, weak market breadth, maintain long", "status": "ok"}
+{"date": "2026-09-04", "symbol": "TXN", "target": -1.0, "reason": "agent: Weak momentum, broad market weakness, maintain short.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "UNH", "target": 0.0, "reason": "agent: Mixed signals: modest momentum, weak breadth, flat.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "UNP", "target": -1.0, "reason": "agent: Strong negative momentum, weak market breadth, maintain short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "V", "target": -1.0, "reason": "agent: Negative 5d momentum and middling rank support maintaining short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "VZ", "target": 0.0, "reason": "agent: Weak momentum, low breadth, and today's SPY dip suggest exiting long.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "WFC", "target": 1.0, "reason": "agent: Strong relative momentum supports maintaining long despite today's market dip.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "WMT", "target": 1.0, "reason": "agent: Strong momentum rank supports holding long despite today's market dip.", "status": "ok"}

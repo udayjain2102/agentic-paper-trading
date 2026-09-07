@@ -2961,3 +2961,70 @@
 {"date": "2026-09-03", "symbol": "VZ", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum and low volatility support a long position.", "status": "ok"}
 {"date": "2026-09-03", "symbol": "WFC", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum and low volatility support maintaining long", "status": "ok"}
 {"date": "2026-09-03", "symbol": "WMT", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports maintaining long position.", "status": "ok"}
+{"date": "2026-08-17", "symbol": "GE", "target": 0.0, "reason": "agent: Positive 5-day momentum suggests reducing short exposure.", "status": "ok"}
+{"date": "2026-09-03", "symbol": "COST", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum suggests continued downside; keep short position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "AAPL", "target": 1.0, "reason": "agent: Positive short\u2011term momentum supports holding long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "ABBV", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports a long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "ABT", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum supports staying short.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "ADBE", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum suggests downside, consider short.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "AMD", "target": 0.0, "reason": "agent: Positive 5\u2011day momentum suggests exiting short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "AMGN", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports holding long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "AMZN", "target": 0.0, "reason": "agent: Negative 5\u2011day momentum suggests exiting long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "AVGO", "target": 0.0, "reason": "agent: Momentum slightly negative, no strong signal", "status": "ok"}
+{"date": "2026-09-04", "symbol": "AXP", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum supports maintaining short position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "BA", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum suggests upward bias; initiate long", "status": "ok"}
+{"date": "2026-09-04", "symbol": "BAC", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports maintaining long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "BLK", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum suggests continuation of downtrend.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "BMY", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports maintaining long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "C", "target": 1.0, "reason": "agent: Positive momentum supports maintaining long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "CAT", "target": 1.0, "reason": "agent: Positive 5-day momentum suggests upside; switch from short to long", "status": "ok"}
+{"date": "2026-09-04", "symbol": "CMCSA", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum suggests downside.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "COST", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum supports maintaining short position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "CRM", "target": 1.0, "reason": "agent: Positive 5-day momentum supports maintaining long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "CSCO", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum suggests continued downside, maintain short.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "CVX", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum and low volatility support staying long.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "DHR", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum suggests continuation of downtrend, maintain short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "DIS", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum suggests downside, initiate short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "GE", "target": -1.0, "reason": "agent: Negative momentum, short bias", "status": "ok"}
+{"date": "2026-09-04", "symbol": "GILD", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports maintaining long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "GOOGL", "target": 0.0, "reason": "agent: Slight negative momentum, low volatility, no clear edge.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "GS", "target": 0.0, "reason": "agent: Positive 5\u2011day momentum suggests reducing short exposure.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "HD", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum supports maintaining short position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "HON", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum supports maintaining short position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "IBM", "target": 0.0, "reason": "agent: Momentum slightly negative but insufficient to justify a position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "INTC", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports long entry.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "JNJ", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum and low volatility support maintaining long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "JPM", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports maintaining long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "KO", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum supports maintaining short position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "LIN", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum suggests downside, initiate short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "LLY", "target": -1.0, "reason": "agent: Negative 5-day momentum supports maintaining short position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "LOW", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum supports maintaining short position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "MA", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum and low volatility support staying short.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "MCD", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum supports maintaining short position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "MDT", "target": 1.0, "reason": "agent: Positive momentum and low volatility support holding long.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "META", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports holding long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "MRK", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports holding long", "status": "ok"}
+{"date": "2026-09-04", "symbol": "MS", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum suggests upward trend, initiate long", "status": "ok"}
+{"date": "2026-09-04", "symbol": "MSFT", "target": 0.0, "reason": "agent: Negative 5\u2011day momentum suggests exiting long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "NFLX", "target": 0.0, "reason": "agent: Negative 5\u2011day momentum suggests exiting long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "NKE", "target": 0.0, "reason": "agent: Negative 5\u2011day momentum suggests exiting long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "NOW", "target": 0.0, "reason": "agent: Negative 5\u2011day momentum indicates weakening trend; exit long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "NVDA", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports maintaining long exposure.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "ORCL", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports maintaining long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "PEP", "target": -1.0, "reason": "agent: Negative 5-day momentum suggests short exposure.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "PFE", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports maintaining long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "PG", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports maintaining long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "PM", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum suggests continuation of downtrend; maintain short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "QCOM", "target": 1.0, "reason": "agent: Positive momentum and low volatility support holding long.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "SBUX", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum supports maintaining short position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "SPY", "target": 1.0, "reason": "agent: Slight positive momentum and low volatility support maintaining long exposure.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "T", "target": 0.0, "reason": "agent: Negative 5\u2011day momentum suggests exiting long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "TMO", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum supports staying short.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "TSLA", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports holding long", "status": "ok"}
+{"date": "2026-09-04", "symbol": "TXN", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum suggests maintain short position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "UNH", "target": 1.0, "reason": "agent: Positive short-term momentum and low volatility support holding long.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "UNP", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum, low volatility favors short", "status": "ok"}
+{"date": "2026-09-04", "symbol": "V", "target": -1.0, "reason": "agent: Negative 5\u2011day momentum supports maintaining short exposure", "status": "ok"}
+{"date": "2026-09-04", "symbol": "VZ", "target": 1.0, "reason": "agent: Slight positive momentum and low volatility support maintaining long position.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "WFC", "target": 1.0, "reason": "agent: Positive momentum and low volatility support holding long.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "WMT", "target": 1.0, "reason": "agent: Positive 5\u2011day momentum supports maintaining long position.", "status": "ok"}
