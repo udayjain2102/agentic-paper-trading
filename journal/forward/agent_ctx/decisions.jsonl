@@ -128,3 +128,6 @@
 {"date": "2026-09-04", "symbol": "VZ", "target": 0.0, "reason": "agent: Weak momentum, low breadth, and today's SPY dip suggest exiting long.", "status": "ok"}
 {"date": "2026-09-04", "symbol": "WFC", "target": 1.0, "reason": "agent: Strong relative momentum supports maintaining long despite today's market dip.", "status": "ok"}
 {"date": "2026-09-04", "symbol": "WMT", "target": 1.0, "reason": "agent: Strong momentum rank supports holding long despite today's market dip.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "BAC", "target": 0.0, "reason": "agent: Weak market breadth and moderate momentum suggest reducing long exposure.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "BLK", "target": -1.0, "reason": "agent: Negative momentum, weak rank, market down; maintain short.", "status": "ok"}
+{"date": "2026-09-04", "symbol": "INTC", "target": 1.0, "reason": "agent: Strongest 5\u2011day momentum outweighs weak market", "status": "ok"}
