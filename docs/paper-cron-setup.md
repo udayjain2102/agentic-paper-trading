@@ -52,6 +52,11 @@ git worktree remove -f /tmp/seed
 - **Dead names.** A symbol Yahoo stops serving is skipped with a warning; the
   full-coverage guard in `forward.py` then freezes the record until the name is
   dropped from the universe.
+- **Known drift line.** Every run prints `recorded 2026-07-09 = -0.000162203 but
+  recomputes to -0.000164699` for `mean_reversion`. That day was averaged over 66
+  names including XOM, dropped on 2026-07-14 (its leg was flat); the recompute
+  uses today's 65 and the ratio is exactly 66/65. The record is left as written
+  (decided 2026-09-17). Any *other* date or record drifting is real.
 - **Reading the record.** The latest cache + record always sit on the
   `paper-state` branch; `git fetch && git show origin/paper-state:journal/...` or
   regenerate the dashboard from a checkout of it.

@@ -27,9 +27,10 @@ agent:
   # API (HTTP 410 from 2026-08-24; every agent decision failed until this
   # switch on 2026-09-03). nemotron-3-super with "detailed thinking off"
   # returns the bare two-field JSON in ~2s with no preamble (verified live
-  # 2026-09-03). 2000 is now headroom, not a tuned floor; the truncation
-  # guard in engine.py still fires if a future model starts rambling.
-  max_tokens: 2000
+  # 2026-09-03). Even so, one decision on 2026-09-16 ran the full 2000-token
+  # budget and was truncated, so 4000 is the headroom now; the truncation
+  # guard in engine.py still fires if a call blows through this too.
+  max_tokens: 4000
   # Every production AgentEngine() call previously omitted this kwarg, which
   # defaults False in engine.py -- production has run long-only since launch
   # despite the offline IC gate (which found "no signal") testing allow_short=
