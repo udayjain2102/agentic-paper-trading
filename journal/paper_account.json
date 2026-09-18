@@ -1,11 +1,7 @@
 {
-  "cash_usd": 3240.506371003375,
-  "date": "2026-09-17",
+  "cash_usd": 3489.3792404524556,
+  "date": "2026-09-18",
   "positions": {
-    "AMGN": {
-      "cost_basis_usd": 250.0,
-      "shares": 0.6553079947575361
-    },
     "AMZN": {
       "cost_basis_usd": 250.0,
       "shares": 1.0770755217035253
@@ -31,5 +27,5 @@
       "shares": 0.7955069395162245
     }
   },
-  "realized_pnl_today_usd": -1.7702874999296796
+  "realized_pnl_today_usd": -1.1271305509194463
 }
