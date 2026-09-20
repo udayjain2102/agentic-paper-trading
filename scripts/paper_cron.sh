@@ -18,6 +18,14 @@ STATE_BRANCH="${STATE_BRANCH:-paper-state}"
 REFRESH_DAYS="${REFRESH_DAYS:-30}"
 export PYTHONPATH="${PYTHONPATH:-src}"
 
+# Every tick is non-fatal: state already computed must still reach the persist
+# step at the bottom (2026-07-27, run 30246319323: a report print() raised after
+# the tick succeeded and threw the day away). But a swallowed failure must not
+# look like success either -- the workflow only opens its alert issue on a
+# non-zero exit -- so each guard sets this and the script exits with it last.
+failed=0
+tick_failed() { echo "!! $1 tick failed -- other state still persisted" >&2; failed=1; }
+
 echo "== restore cache + record from ${STATE_BRANCH} =="
 if git fetch origin "${STATE_BRANCH}" 2>/dev/null; then
   # data/ and journal/ are tracked on paper-state (force-added), so restore pulls
@@ -35,28 +43,27 @@ echo "== tick forward record =="
 # Pinned to its original basis (cost_bps=1, fill=close) -- do not let this
 # drift onto config.yaml's now-more-realistic defaults, or the curve gets a
 # silent discontinuity. See config.yaml's fill_mode comment.
-python -m rhagent.forward --cost-bps 1 --fill-mode close
+python -m rhagent.forward --cost-bps 1 --fill-mode close \
+  || tick_failed mean_reversion
 
 echo "== tick forward record (realistic fills) =="
 # Second, honest record: real per-trade cost and a fill you could actually
 # get. Own record dir so it never mixes cost bases with the record above.
-# Non-fatal like the agent tick below -- a new record failing must never
-# kill the established one.
 python -m rhagent.forward --eval-id mean_reversion_real --cost-bps 7 --fill-mode next_open \
-  || echo "!! mean_reversion_real tick failed -- other records still persisted" >&2
+  || tick_failed mean_reversion_real
 
 echo "== tick forward record (agent) =="
 # The agent tick needs NVIDIA_API_KEY (one LLM call per symbol per new bar).
 # Without the key it can't run; don't let it kill the strategy record above.
 if [ -n "${NVIDIA_API_KEY:-}" ]; then
   python -m rhagent.forward --engine agent --eval-id agent \
-    || echo "!! agent tick failed -- strategy record still persisted" >&2
+    || tick_failed agent
 
   # Fourth record: the same agent with a two-line market block in every
   # prompt (spec: docs/superpowers/specs/2026-09-03-agent-market-context-design.md).
-  # Own record dir, no reflection, non-fatal like the rest.
+  # Own record dir, no reflection.
   python -m rhagent.forward --engine agent --eval-id agent_ctx --market-context \
-    || echo "!! agent_ctx tick failed -- other records still persisted" >&2
+    || tick_failed agent_ctx
 else
   echo "NVIDIA_API_KEY not set -- skipping agent tick"
 fi
@@ -65,11 +72,9 @@ echo "== paper-trade tick (guardrail-gated funnel, dry-run only) =="
 # Turns today's target positions into orders through the guardrail funnel
 # (guardrails.py -> executor.py) against the persisted paper account under
 # journal/paper_account.json. Always a MockBroker -- no real order is
-# possible from this step. Non-fatal like the tick(s) above: a failure here
-# must never prevent the forward record (already computed above) from being
-# persisted.
+# possible from this step.
 python -m rhagent.paper_run \
-  || echo "!! paper_run tick failed -- forward record still persisted" >&2
+  || tick_failed paper_run
 
 echo "== persist cache + record to ${STATE_BRANCH} =="
 tmp="$(mktemp -d)"
@@ -89,3 +94,4 @@ else
   git -C "${tmp}" push origin "HEAD:${STATE_BRANCH}"
   echo "pushed updated state"
 fi
+exit "${failed}"
