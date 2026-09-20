@@ -35,18 +35,19 @@ Neither proposes a broker order; they propose a *position*.
 
 - **`StrategyEngine`** wraps a rule-based `Strategy` (§1b) and returns
   `strat.target(history)` with `strat.signal(history).iloc[-1]` as conviction.
-- **`AgentEngine`** asks Nemotron (`nvidia/llama-3.3-nemotron-super-49b-v1.5`
-  via NVIDIA's OpenAI-compatible API) for a verdict from a compact,
-  lookahead-free prompt (`last_close`, `momentum_5d`, `vol_20d`, `current_pos`,
-  and the lessons string). `decide_all(symbols, histories, current_pos)` is the
-  production entry point: **one model call decides every symbol in the
-  universe for a given bar**, not one call per symbol — 65 sequential calls
-  per bar against NVIDIA's burst-then-~18/min token bucket is what produced
-  the timeouts and ~50-minute ticks before this batching. If the call fails,
-  every symbol in that batch is `status="failed"`, holding `current_pos`; if
-  it answers but a symbol's verdict is missing or malformed, only that symbol
-  fails. `complete(prompt) -> str` is an injectable seam, so tests never hit
-  the API.
+- **`AgentEngine`** asks Nemotron (`nvidia/nemotron-3-super-120b-a12b` via
+  NVIDIA's OpenAI-compatible API; the 49b model it replaced on 2026-09-03
+  reached end of life) for a verdict from a compact, lookahead-free prompt
+  (`last_close`, `momentum_5d`, `vol_20d`, `current_pos`, and the lessons
+  string). `decide_all(symbols, histories, current_pos)` is the production
+  entry point: **one model call per symbol**, fanned out across a small thread
+  pool and paced at the client seam to NVIDIA's burst-then-~18/min token
+  bucket. Batching several symbols into one prompt was measured and rejected
+  on 2026-07-26 (the `decide_all` docstring has the numbers): the model's
+  preamble is the same length either way, and one failed batched call
+  excluded the whole day. A failed call now costs one symbol, which holds
+  `current_pos` with `status="failed"`. `complete(prompt) -> str` is an
+  injectable seam, so tests never hit the API.
 
 ### 1b. The rule-based strategies (`strategies/`)
 
@@ -152,7 +153,9 @@ deflated Sharpe on realized paper-trade returns), described under Loop D.
 
 ## 3. How it decides (the safety funnel)
 
-Every order — LLM or strategy — passes through the same gauntlet. `guardrails.py`
+Every *order* passes through the same gauntlet — and today only the quant
+strategy path produces orders (see the top of this doc; the LLM agent writes
+positions to its own paper ledger and never reaches here). `guardrails.py`
 is pure, does no I/O, holds no state, and is exhaustively tested on every
 rejection path.
 
@@ -309,7 +312,7 @@ forward numbers match the ranking path exactly.
   forward path applies it whenever `strategy.overlay == "conviction"`, so the
   go-forward record uses the same gate the bake-off crowned.
 - **Exclusion rule for the agent engine.** `_agent_positions` decides every
-  symbol for a bar with one `decide_all` call (§1a) and freezes each verdict
+  symbol for a bar via `decide_all` (one call per symbol, §1a) and freezes each verdict
   to `eval_dir/pos_<sym>.csv` (columns `date,pos,status`). A date is dropped
   from the net-return series if **any** symbol's decision for it is not
   `status == "ok"` — a failed call holds the prior position, so that P&L
@@ -414,14 +417,14 @@ until it clears a bar, and it makes the bar *higher* the more you searched.
 Named here so nobody has to rediscover them.
 
 - **The forward record is tiny.** At this daily mean, distinguishing the
-  conviction gate from zero takes years of data, not weeks. No pre-committed
-  keep/kill criterion is written down yet.
+  conviction gate from zero takes years of data, not weeks. The pre-committed
+  keep/kill bar is in the README ("The bar, written down"), judged 2027-02-02.
 - **`paper-state` is the only copy** of the track record, with no backup.
   The unauthenticated Vercel trigger endpoint and the on-demand
   `research-run.yml` workflow that could append to it were both deleted.
 - **The agent's failure mode is excluded, not silent, but still lossy.** A
-  failed `decide_all` call marks every symbol in that batch `status="failed"`
-  and holds `current_pos`; the forward record then drops that date entirely
+  failed per-symbol call marks that symbol `status="failed"` and holds
+  `current_pos`; the forward record then drops that date entirely
   (§1a's exclusion rule) rather than booking it as a flat verdict. That is
   more honest than silently counting it as a real decision, but a chronic
   outage still starves the record of days without raising anywhere except a
