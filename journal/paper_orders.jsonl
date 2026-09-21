@@ -535,3 +535,30 @@
 {"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2178.95, over cap $2000.00.", "side": "buy", "symbol": "UNH", "ts": "2026-09-18T15:07:06.232079+00:00"}
 {"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2178.95, over cap $2000.00.", "side": "buy", "symbol": "VZ", "ts": "2026-09-18T15:07:06.232096+00:00"}
 {"event": "paper_run_end", "n_accepted": 1, "n_orders": 25, "ts": "2026-09-18T15:07:06.232279+00:00"}
+{"broker_order_id": "mock-1", "event": "order_placed", "notional_usd": 250.0, "side": "buy", "status": "filled", "symbol": "ADBE", "ts": "2026-09-21T17:10:23.591671+00:00"}
+{"event": "order_rejected", "notional_usd": 273.2648378427434, "reason": "Order $273.26 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "AMZN", "ts": "2026-09-21T17:10:23.591865+00:00"}
+{"broker_order_id": "mock-2", "event": "order_placed", "notional_usd": 250.0, "side": "buy", "status": "filled", "symbol": "AXP", "ts": "2026-09-21T17:10:23.591930+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "BA", "ts": "2026-09-21T17:10:23.591981+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "BAC", "ts": "2026-09-21T17:10:23.592023+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "BMY", "ts": "2026-09-21T17:10:23.592062+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "COST", "ts": "2026-09-21T17:10:23.592098+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "DIS", "ts": "2026-09-21T17:10:23.592132+00:00"}
+{"event": "order_rejected", "notional_usd": 273.3001964257762, "reason": "Order $273.30 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "GOOGL", "ts": "2026-09-21T17:10:23.592169+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "GS", "ts": "2026-09-21T17:10:23.592204+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "HD", "ts": "2026-09-21T17:10:23.592238+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "JPM", "ts": "2026-09-21T17:10:23.592290+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "LIN", "ts": "2026-09-21T17:10:23.592329+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "MA", "ts": "2026-09-21T17:10:23.592363+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "MCD", "ts": "2026-09-21T17:10:23.592397+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "MS", "ts": "2026-09-21T17:10:23.592430+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "NFLX", "ts": "2026-09-21T17:10:23.592464+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "NKE", "ts": "2026-09-21T17:10:23.592497+00:00"}
+{"event": "order_rejected", "notional_usd": 320.91921765497267, "reason": "Order $320.92 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "ORCL", "ts": "2026-09-21T17:10:23.592531+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "PEP", "ts": "2026-09-21T17:10:23.592576+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "SBUX", "ts": "2026-09-21T17:10:23.592609+00:00"}
+{"event": "order_rejected", "notional_usd": 257.64452731221775, "reason": "Order $257.64 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "SPY", "ts": "2026-09-21T17:10:23.592641+00:00"}
+{"event": "order_rejected", "notional_usd": 289.77930411787486, "reason": "Order $289.78 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "TSLA", "ts": "2026-09-21T17:10:23.592675+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "UNP", "ts": "2026-09-21T17:10:23.592708+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "V", "ts": "2026-09-21T17:10:23.592742+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "VZ", "ts": "2026-09-21T17:10:23.592775+00:00"}
+{"event": "paper_run_end", "n_accepted": 2, "n_orders": 26, "ts": "2026-09-21T17:10:23.593094+00:00"}
