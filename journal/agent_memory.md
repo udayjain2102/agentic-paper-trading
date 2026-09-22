@@ -277,3 +277,24 @@ Since there are no recent decisions to review, the focus shifts to the setup and
   *What worked:* The few multi‑day holds that did exist (e.g., positions carried from Aug 20 to Aug 24) showed steadier performance (‑0.19% to +0.11% average), hinting at reduced noise.  
   *What to do differently:* **Pre‑designate at least 30 % of the daily name list as “core”** based on longer‑term fundamentals or technical trends and **enforce a minimum holding period of three days** for those names; track the holding‑period field in the trade log.  
   *Falsifiable outcome:* Each week, **≥ 30 % of trades** are labeled core with a hold **≥ 3 days**, verified by the trade‑log holding‑period audit.
+
+## 2026-09-22
+- **Trade‑limit adherence – prior limit lessons contradicted**  
+  *What didn’t work:* Daily name counts stayed in the 61‑64 range (Sep 8‑21), repeatedly exceeding the ≤55‑name cap despite earlier “real‑time block” intentions.  
+  *What to do differently:* Deploy an automated entry block that **rejects any new trade once 55 names are reached** (warning at 50) and logs every blocked attempt; require a daily sign‑off that the block was active.  
+  *Falsifiable outcome:* In the next review week, **0 days exceed 55 names** and **≤5 % of days exceed 50 names** (verified by trade‑log audit and block‑log sign‑offs).
+
+- **Loss‑triggered post‑mortem – prior post‑mortem lessons contradicted**  
+  *What didn’t work:* The Sep 11 session returned **‑1.07%** with no same‑day, time‑stamped post‑mortem, violating the ≤‑0.2 % (later ≤‑0.15 %) loss‑analysis rule.  
+  *What to do differently:* Require a **mandatory, timestamped post‑mortem** (entry/exit timing, position sizing, relevant market news) to be completed **before the next trade is entered** for any day with a next‑day return **≤ ‑0.5 %** (or worse).  
+  *Falsifiable outcome:* **100 % of days with return ≤ ‑0.5 %** have a logged post‑mortem in the journal for the next review period.
+
+- **Market‑study citation linkage – prior citation lessons contradicted**  
+  *What didn’t work:* Estimated **< 60 %** of trades (Sep 8‑21) referenced a valid study‑ID, falling short of the 100 % linkage goal despite repeated reminders.  
+  *What to do differently:* Assign each market‑study note a **unique ID** and make that ID a **mandatory field** in the trade‑entry form; the system must block submission if the field is empty. Perform a weekly audit to confirm every trade contains a valid ID.  
+  *Falsifiable outcome:* Next review shows **100 % of trades** include a verifiable, unique study‑ID.
+
+- **Core‑strategy allocation – prior core‑trade lessons contradicted**  
+  *What didn’t work:* Core‑strategy trades (held ≥ 3 days) remained near **0 %** across Sep 8‑21, far below the 30 % target; almost all positions were same‑day flips.  
+  *What to do differently:* **Pre‑designate at least 30 % of the daily name list as “core”** (based on longer‑term fundamentals or technical trends) and **enforce a minimum holding period of three days** for those names; track the holding‑period field in the trade log.  
+  *Falsifiable outcome:* Each week, **≥ 30 % of trades** are labeled core with a hold **≥ 3 days**, verified by the trade‑log holding‑period audit.
