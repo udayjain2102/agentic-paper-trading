@@ -805,3 +805,4 @@
 {"date": "2026-09-21", "symbol": "VZ", "target": 0.0, "reason": "agent: Weak relative strength despite market upside; avoid short squeeze.", "status": "ok"}
 {"date": "2026-09-21", "symbol": "WFC", "target": -1.0, "reason": "agent: Negative momentum, weak breadth, maintain short.", "status": "ok"}
 {"date": "2026-09-21", "symbol": "WMT", "target": -1.0, "reason": "agent: Negative momentum, market up but stock weak; keep short", "status": "ok"}
+{"date": "2026-09-21", "symbol": "PM", "target": 0.0, "reason": "agent: Mixed signals: market up but name momentum weak, breadth thin.", "status": "ok"}
