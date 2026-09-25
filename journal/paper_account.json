@@ -1,11 +1,7 @@
 {
-  "cash_usd": 2989.3792404524556,
-  "date": "2026-09-21",
+  "cash_usd": 3229.345890815373,
+  "date": "2026-09-25",
   "positions": {
-    "ADBE": {
-      "cost_basis_usd": 250.0,
-      "shares": 1.0043387507592767
-    },
     "AMZN": {
       "cost_basis_usd": 250.0,
       "shares": 1.0770755217035253
@@ -35,5 +31,5 @@
       "shares": 0.7955069395162245
     }
   },
-  "realized_pnl_today_usd": 0.0
+  "realized_pnl_today_usd": -10.033349637082722
 }
