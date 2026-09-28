@@ -1,14 +1,10 @@
 {
-  "cash_usd": 3229.345890815373,
-  "date": "2026-09-25",
+  "cash_usd": 3477.203460038734,
+  "date": "2026-09-28",
   "positions": {
     "AMZN": {
       "cost_basis_usd": 250.0,
       "shares": 1.0770755217035253
-    },
-    "AXP": {
-      "cost_basis_usd": 250.0,
-      "shares": 0.8024136665779233
     },
     "CMCSA": {
       "cost_basis_usd": 250.0,
@@ -31,5 +27,5 @@
       "shares": 0.7955069395162245
     }
   },
-  "realized_pnl_today_usd": -10.033349637082722
+  "realized_pnl_today_usd": -2.142430776638804
 }
