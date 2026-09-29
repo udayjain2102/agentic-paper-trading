@@ -1,10 +1,18 @@
 {
-  "cash_usd": 3477.203460038734,
-  "date": "2026-09-28",
+  "cash_usd": 2977.203460038734,
+  "date": "2026-09-29",
   "positions": {
+    "ADBE": {
+      "cost_basis_usd": 250.0,
+      "shares": 1.0822042593165901
+    },
     "AMZN": {
       "cost_basis_usd": 250.0,
       "shares": 1.0770755217035253
+    },
+    "BA": {
+      "cost_basis_usd": 250.0,
+      "shares": 1.3558219037232389
     },
     "CMCSA": {
       "cost_basis_usd": 250.0,
@@ -27,5 +35,5 @@
       "shares": 0.7955069395162245
     }
   },
-  "realized_pnl_today_usd": -2.142430776638804
+  "realized_pnl_today_usd": 0.0
 }

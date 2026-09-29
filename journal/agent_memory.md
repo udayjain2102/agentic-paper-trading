@@ -344,3 +344,28 @@ Since there are no recent decisions to review, the focus shifts to the setup and
   *What worked:* The few multi‑day holds that did exist (e.g., positions carried from 08‑20 to 08‑24) showed steadier performance (‑0.19% to +0.11% average), hinting at reduced noise.  
   *What to do differently:* **Pre‑designate at least 30 % of the daily name list as “core”** based on longer‑term fundamentals or technical trends and **enforce a minimum holding period of three days** for those names; track the holding‑period field in the trade log.  
   *Falsifiable outcome:* Each week, **≥ 30 % of trades** are labeled core with a hold **≥ 3 days**, verified by the trade‑log holding‑period audit.
+
+## 2026-09-29
+- **Trade‑volume control – prior limit lessons contradicted**  
+  *What didn’t work:* Daily name counts stayed in the 60‑65 range (Sep 15‑28) despite repeated attempts to cap trades at ≤55 names with warnings; the self‑imposed limits were routinely bypassed.  
+  *What worked:* The lowest‑count day observed (Sep 25, 60 names) produced a modest positive return (+0.14%), suggesting that keeping the universe tighter tends to reduce downside pressure.  
+  *What to do differently:* Deploy an **absolute entry block that rejects any new trade once 50 names are reached** (no override) and logs every blocked attempt; require a daily sign‑off that the block was active.  
+  *Falsifiable outcome:* In the next review week, **0 days exceed 50 names** and **≤5 % of days exceed 45 names** (verified by trade‑log audit and block‑log sign‑offs).
+
+- **Loss‑triggered post‑mortem – prior threshold too high**  
+  *What didn’t work:* Losses of –0.38% (Sep 15) and –0.50% (Sep 16) occurred without any same‑day, time‑stamped post‑mortem, violating the ≤‑0.2 % (later ≤‑0.15 %) loss‑analysis rule; the Sep 22 –0.18% loss also lacked analysis, showing the rule is not being triggered for moderate drawdowns.  
+  *What worked:* No single‑day loss exceeded –1.2 %, indicating capital preservation when drawdowns stay modest.  
+  *What to do differently:* Lower the mandatory post‑mortem trigger to a next‑day return **≤ ‑0.30 %** (or worse) and require a **timestamped note** covering entry/exit timing, position sizing, and relevant market news to be completed **before the next trade is entered**.  
+  *Falsifiable outcome:* **100 % of days with return ≤ ‑0.30 %** have a logged post‑mortem in the journal for the next review period.
+
+- **Market‑study citation linkage – compliance remains low**  
+  *What didn’t work:* Estimated **< 60 %** of trades (Sep 15‑28) referenced a valid study‑ID, falling short of the 100 % linkage goal despite repeated reminders.  
+  *What worked:* The two highest‑return days (Sep 18 +0.52% and Sep 21 +0.46%) both featured trades that explicitly cited a market‑study insight, indicating a benefit when the link is made.  
+  *What to do differently:* Assign each market‑study note a **unique ID** and make that ID a **mandatory, non‑editable field** in the trade‑entry form; the system must block submission if the field is empty. Perform a weekly audit to confirm every trade contains a valid ID.  
+  *Falsifiable outcome:* Next review shows **100 % of trades** include a verifiable, unique study‑ID.
+
+- **Core‑strategy allocation – near zero despite target**  
+  *What didn’t work:* Core‑strategy trades (held ≥ 3 days) remained ≈ 0 % across Sep 15‑28, far below the 30 % target set on 08‑03; almost all positions were same‑day flips.  
+  *What worked:* The few multi‑day holds that did exist (e.g., positions carried from Aug 20 to Aug 24) showed steadier performance (‑0.19% to +0.11% average), hinting at reduced noise.  
+  *What to do differently:* **Pre‑designate at least 30 % of the daily name list as “core”** based on longer‑term fundamentals or technical trends and **enforce a minimum holding period of three days** for those names; track the holding‑period field in the trade log.  
+  *Falsifiable outcome:* Each week, **≥ 30 % of trades** are labeled core with a hold **≥ 3 days**, verified by the trade‑log holding‑period audit.
