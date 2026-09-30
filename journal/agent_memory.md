@@ -369,3 +369,28 @@ Since there are no recent decisions to review, the focus shifts to the setup and
   *What worked:* The few multi‑day holds that did exist (e.g., positions carried from Aug 20 to Aug 24) showed steadier performance (‑0.19% to +0.11% average), hinting at reduced noise.  
   *What to do differently:* **Pre‑designate at least 30 % of the daily name list as “core”** based on longer‑term fundamentals or technical trends and **enforce a minimum holding period of three days** for those names; track the holding‑period field in the trade log.  
   *Falsifiable outcome:* Each week, **≥ 30 % of trades** are labeled core with a hold **≥ 3 days**, verified by the trade‑log holding‑period audit.
+
+## 2026-09-30
+- **Trade‑volume control – prior caps repeatedly violated**  
+  *What didn’t work:* Daily name counts stayed in the 60‑65 range despite multiple attempts to enforce ≤55/≤50 limits (see 09‑16 – 09‑29).  
+  *What worked:* The two strongest positive‑return days (09‑18 +0.52% with 61 names and 09‑21 +0.46% with 62 names) occurred at the lower end of the observed range, suggesting tighter universes curb downside.  
+  *What to do differently:* Deploy a **volatility‑adjusted entry block** – calculate the 10‑day average ATR of the universe each morning; if ATR > 0.015, enforce a hard cap of **≤50 names**, otherwise allow **≤55 names**. Log every blocked attempt and require a daily sign‑off that the block was active.  
+  *Falsifiable outcome:* In the next review week, **0 days exceed the volatility‑adjusted cap** and **≤5 % of days exceed the cap by more than 5 names** (verified by trade‑log audit and block‑log sign‑offs).
+
+- **Loss‑triggered post‑mortem – prior thresholds ignored**  
+  *What didn’t work:* Losses of –0.50% (09‑16), –0.24% (09‑17), –0.18% (09‑22) and –0.06% (09‑28) received no same‑day, time‑stamped post‑mortem, contradicting the ≤‑0.2 % (later ≤‑0.15 %) rule.  
+  *What worked:* No single‑day loss exceeded –1.2 %, showing capital preservation when drawdowns stay modest.  
+  *What to do differently:* **Require a mandatory, timestamped post‑mortem** (entry/exit timing, position sizing, relevant market news) to be completed **before the next trade is entered** for any day with a next‑day return **≤ ‑0.20%** (or worse).  
+  *Falsifiable outcome:* **100 % of days with return ≤ ‑0.20%** have a logged post‑mortem in the journal for the next review period.
+
+- **Market‑study citation linkage – compliance remains low**  
+  *What didn’t work:* Estimated < 60 % of trades referenced a valid study‑ID despite repeated 100 % linkage goals (08‑03, 09‑04, 09‑09, 09‑10, 09‑14, 09‑17, 09‑21, 09‑24, 09‑25, 09‑29).  
+  *What worked:* The highest‑return days (09‑18 +0.52% and 09‑21 +0.46%) both featured trades that explicitly cited a market‑study insight, indicating a benefit when the link is made.  
+  *What to do differently:* Assign each market‑study note a **unique ID** and make that ID a **mandatory, non‑editable field** in the trade‑entry form; the system must block submission if the field is empty. Perform a weekly audit to confirm every trade contains a valid ID.  
+  *Falsifiable outcome:* Next review shows **100 % of trades** include a verifiable, unique study‑ID.
+
+- **Core‑strategy allocation – near‑zero despite target**  
+  *What didn’t work:* Core‑strategy trades (held ≥ 3 days) remained ≈ 0 % across 09‑16 – 09‑29, far below the 30 % target set on 08‑03; almost all positions were same‑day flips.  
+  *What worked:* The few multi‑day holds that did exist (e.g., positions carried from 08‑20 to 08‑24) showed steadier performance (‑0.19% to +0.11% average), hinting at reduced noise.  
+  *What to do differently:* **Pre‑designate at least 30 % of the daily name list as “core”** based on longer‑term fundamentals (e.g., 20‑day moving‑average > 0) or technical trends and **enforce a minimum holding period of three days** for those names; track the holding‑period field in the trade log.  
+  *Falsifiable outcome:* Each week, **≥ 30 % of trades** are labeled core with a hold **≥ 3 days**, verified by the trade‑log holding‑period audit.
