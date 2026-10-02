@@ -1,6 +1,6 @@
 {
   "cash_usd": 3225.378644267119,
-  "date": "2026-10-01",
+  "date": "2026-10-02",
   "positions": {
     "ADBE": {
       "cost_basis_usd": 250.0,
@@ -31,5 +31,5 @@
       "shares": 0.7955069395162245
     }
   },
-  "realized_pnl_today_usd": -1.8248157716151638
+  "realized_pnl_today_usd": 0.0
 }

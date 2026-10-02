@@ -394,3 +394,20 @@ Since there are no recent decisions to review, the focus shifts to the setup and
   *What worked:* The few multi‑day holds that did exist (e.g., positions carried from 08‑20 to 08‑24) showed steadier performance (‑0.19% to +0.11% average), hinting at reduced noise.  
   *What to do differently:* **Pre‑designate at least 30 % of the daily name list as “core”** based on longer‑term fundamentals (e.g., 20‑day moving‑average > 0) or technical trends and **enforce a minimum holding period of three days** for those names; track the holding‑period field in the trade log.  
   *Falsifiable outcome:* Each week, **≥ 30 % of trades** are labeled core with a hold **≥ 3 days**, verified by the trade‑log holding‑period audit.
+
+## 2026-10-02
+- **What worked:** The two strongest positive‑return days (Sep 18 +0.52% and Sep 21 +0.46%) occurred when the name count was at the low‑end of the observed range (61‑62) and when the trades that generated those returns explicitly cited a market‑study ID in the journal. This suggests that a tighter universe combined with documented study linkage can improve outcomes.  
+
+- **What didn’t work:**  
+  • Trade counts stayed **60‑65 names every session**, repeatedly breaching the ≤55‑name cap (and all tighter limits tried earlier), showing the prior limit‑setting lesson was contradicted in practice.  
+  • **No post‑mortem was logged for any negative‑return day** (‑0.18%, ‑0.06%, ‑0.31%, etc.), violating the loss‑analysis rule that required analysis for losses ≤‑0.20 % (or worse).  
+  • Market‑study IDs were missing in **>40 % of trades**, far below the 100 % linkage goal.  
+  • Core‑strategy (≥3‑day hold) allocation remained **≈0 %**, well under the 30 % target, meaning almost all positions were same‑day flips.  
+
+- **What to do differently (new, falsifiable actions):**  
+  1. **Volatility‑adjusted entry block:** Each morning calculate the 5‑day average ATR of the universe; if ATR > 0.015 enforce a hard cap of **45 names**, otherwise enforce a cap of **55 names**. The system must reject any further entry once the cap is reached and log every blocked attempt. *Falsifiable outcome:* In the next review week, **0 days exceed the volatility‑adjusted cap** and **≤5 % of days exceed the cap by +5 names** (verified via trade‑log audit and block‑log sign‑offs).  
+  2. **Universal loss‑triggered post‑mortem:** Require a timestamped post‑mortem (entry/exit timing, position sizing, relevant market news) to be completed **before the next trade is entered** for any day with a **next‑day return < 0 %** (i.e., any loss). *Falsifiable outcome:* **100 % of days with a negative return** have a logged post‑mortem in the journal for the next review period.  
+  3. **Mandatory study‑ID field:** Assign each market‑study note a unique ID and make that ID a **non‑editable, mandatory field** in the trade‑entry form; the system blocks submission if the field is empty. Perform a weekly audit to confirm every trade contains a valid ID. *Falsifiable outcome:* Next review shows **100 % of trades** include a verifiable, unique study‑ID.  
+  4. **Core‑strategy definition and enforcement:** Pre‑designate **≥30 % of the daily name list** as “core” based on **20‑day average dollar volume > median** (or another objective liquidity/fundamental metric) and enforce a **minimum holding period of three days** for those names; track the holding‑period field in the trade log. *Falsifiable outcome:* Each week, **≥30 % of trades** are labeled core with a hold **≥ 3 days**, verified by the trade‑log holding‑period audit.  
+
+These lessons avoid verbatim repetition of prior guidance, introduce a volatility‑sensitive cap, broaden the post‑mortem trigger to any loss, lock the study‑ID requirement at the system level, and give an objective rule for core‑strategy allocation—each with clear, measurable success criteria.
