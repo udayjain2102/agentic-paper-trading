@@ -453,3 +453,28 @@ These lessons avoid verbatim repetition of prior guidance, introduce a volatilit
   *What worked:* The few multi‑day holds that did exist (e.g., positions carried from 08‑20 to 08‑24) showed steadier performance (‑0.19% to +0.11% average), hinting at reduced noise.  
   *What to do differently:* **Pre‑designate at least 30 % of the daily name list as “core”** based on an objective liquidity/fundamental metric (e.g., 20‑day average dollar volume > median) and **enforce a minimum holding period of three days** for those names; track the holding‑period field in the trade log.  
   *Falsifiable outcome:* Each week, **≥ 30 % of trades** are labeled core with a hold **≥ 3 days**, verified by the trade‑log holding‑period audit.
+
+## 2026-10-07
+- **Trade‑volume control – prior cap repeatedly contradicted**  
+  *What didn’t work:* Daily name counts stayed in the 60‑65 range (Sep 23‑Oct 6) despite earlier attempts to cap trades at ≤55 (or tighter) names; the self‑imposed limit was routinely bypassed.  
+  *What worked:* The modestly positive days (+0.16% on Sep 24, +0.14% on Sep 25, +0.08% on Sep 23, +0.07% on Oct 5) all occurred when the count was at the low‑end of the observed band (60‑64 names) and when the trades that generated those returns cited a market‑study insight.  
+  *What to do differently:* Deploy a **volatility‑adjusted dynamic cap** each morning: calculate the 5‑day average ATR of the universe; if ATR > 0.015 enforce a hard cap of **45 names**, otherwise enforce a cap of **55 names**. The system must reject any further entry once the cap is reached and log every blocked attempt.  
+  *Falsifiable outcome:* In the next review week, **0 days exceed the volatility‑adjusted cap** and **≤5 % of days exceed the cap by +5 names** (verified via trade‑log audit and block‑log sign‑offs).  
+
+- **Loss‑triggered post‑mortem – prior thresholds ignored**  
+  *What didn’t work:* Negative‑return days (‑0.06% Sep 28, ‑0.31% Sep 29, ‑0.18% Sep 30, ‑0.01% Oct 1, ‑0.14% Oct 2) received no same‑day, time‑stamped post‑mortem, violating the earlier ≤‑0.2 % loss‑analysis rule.  
+  *What worked:* No single‑day loss exceeded ‑0.5 %, showing capital was preserved when drawdowns stayed modest.  
+  *What to do differently:* Require a **timestamped post‑mortem** (entry/exit timing, position sizing, relevant market news) to be completed **before the next trade is entered** for **any day with a next‑day return < 0 %** (i.e., any loss).  
+  *Falsifiable outcome:* **100 % of days with a negative return** have a logged post‑mortem in the journal for the next review period.  
+
+- **Market‑study citation linkage – compliance remains low**  
+  *What didn’t work:* Estimated **< 60 %** of trades from Sep 23‑Oct 6 referenced a valid study‑ID, falling short of the 100 % linkage goal despite repeated reminders.  
+  *What worked:* The two strongest positive‑return days (Sep 24 +0.16% and Sep 25 +0.14%) both featured trades that explicitly cited a market‑study insight, indicating a benefit when the link is made.  
+  *What to do differently:* Assign each market‑study note a **unique ID** and make that ID a **mandatory, non‑editable field** in the trade‑entry form; the system must block submission if the field is empty. Perform a weekly audit to confirm every trade contains a valid ID.  
+  *Falsifiable outcome:* Next review shows **100 % of trades** include a verifiable, unique study‑ID.  
+
+- **Core‑strategy allocation – near‑zero despite target**  
+  *What didn’t work:* Core‑strategy trades (held ≥ 3 days) remained ≈ 0 % across Sep 23‑Oct 6, far below the 30 % target set on 08‑03; almost all positions were same‑day flips.  
+  *What worked:* The few multi‑day holds that did exist (e.g., positions carried from Aug 20‑Aug 24) showed steadier performance (‑0.19% to +0.11% average), hinting at reduced noise.  
+  *What to do differently:* **Pre‑designate at least 30 % of the daily name list as “core”** based on an objective liquidity/fundamental metric (e.g., 20‑day average dollar volume > median) and **enforce a minimum holding period of three days** for those names; track the holding‑period field in the trade log.  
+  *Falsifiable outcome:* Each week, **≥ 30 % of trades** are labeled core with a hold **≥ 3 days**, verified by the trade‑log holding‑period audit.
