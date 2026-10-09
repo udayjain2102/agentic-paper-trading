@@ -499,3 +499,22 @@ These lessons avoid verbatim repetition of prior guidance, introduce a volatilit
   **What didn’t work:** Core‑strategy allocation (≥ 3‑day hold) remained near 0 % across 09‑24‑10‑07, far below the 30 % target set on 08‑03; almost all positions were same‑day flips.  
   **What to do differently:** **Pre‑market screen** that selects the top 30 % of the universe by 20‑day average dollar volume (or another objective liquidity metric) as “core” and **restricts same‑day flips to the non‑core pool only**; core tickets are forced to carry a minimum holding‑period flag of three days.  
   **Falsifiable outcome:** Each week, **≥ 30 % of trades** are labeled core with a hold **≥ 3 days**, verified by the trade‑log holding‑period audit.
+
+## 2026-10-09
+- **What worked:** The two smallest‑loss / smallest‑gain days (‑0.06% on 09‑28 and ‑0.01% on 10‑01) occurred when the daily name count was at the low end of the observed range (≈ 60 names) and the trades that generated those returns cited a market‑study insight. This suggests that keeping the universe tighter and linking each trade to a documented study idea can limit downside and produce modest upside.  
+
+- **What didn’t work – trade‑volume control:** Despite multiple attempts (static caps, volatility‑adjusted caps, warning‑only alerts) the log shows 60‑65 names every session from 09‑25 to 10‑08, meaning the self‑imposed limits were routinely bypassed. The volatility‑adjusted rule (“if 5‑day ATR > 0.015 → 45 names else 55 names”) failed because ATR stayed below the threshold, so the effective cap was 55 names yet the count still exceeded it.  
+
+- **What to do differently (falsifiable):** Deploy a **platform‑level hard block** that rejects any new trade once **55 names** are reached (no override) and automatically **suspends further trading for the next session** if the block is triggered. Log every blocked attempt and require a daily sign‑off that the block was active. *Falsifiable outcome:* In the next review week **0 days exceed 55 names** and, if a block ever fires, **zero trades are executed the following day** (verified by trade‑log audit and block‑log sign‑offs).  
+
+- **What didn’t work – loss analysis:** Every negative‑return day (‑0.06%, ‑0.31%, ‑0.18%, ‑0.01%, ‑0.14%, ‑0.38%, ‑0.23%) lacked a same‑day, time‑stamped post‑mortem, violating the rule that required analysis for any loss.  
+
+- **What to do differently (falsifiable):** Institute an **automated post‑mortem trigger** that, at market close, forces the trader to complete a checklist (entry/exit timing, position sizing, relevant news) before the platform allows the next day’s first trade; the checklist must be timestamped and saved to the journal. *Falsifiable outcome:* **100 % of days with a negative return** have a completed, timestamped post‑mortem logged **before the next market open** (verified by journal audit).  
+
+- **What didn’t work – market‑study citation:** Estimated **< 60 %** of trades from 09‑25 to 10‑08 referenced a valid study‑ID, despite repeated lessons demanding a mandatory study‑ID field.  
+
+- **What to do differently (falsifiable):** **Embed the study‑ID directly into the trade‑signal generation algorithm**: only trades whose signal matches a pre‑approved study‑note ID are allowed to enter the order ticket; the ticket cannot be submitted without a valid ID. *Falsifiable outcome:* **100 % of executed trades** contain a verifiable, unique study‑ID (verified by trade‑log audit).  
+
+- **What didn’t work – core‑strategy allocation:** Core‑strategy trades (held ≥ 3 days) remained near **0 %** across the period, far below the 30 % target set on 08‑03; almost all positions were same‑day flips.  
+
+- **What to do differently (falsifiable):** **Pre‑market screen** that selects the top 30 % of the universe by 20‑day average dollar volume (or another objective liquidity metric) as “core” and **restricts same‑day flips to the non‑core pool only**; core tickets are forced to carry a minimum holding‑period flag of three days. *Falsifiable outcome:* Each week, **≥ 30 % of trades** are labeled core with a hold **≥ 3 days**, verified by the trade‑log holding‑period audit.
