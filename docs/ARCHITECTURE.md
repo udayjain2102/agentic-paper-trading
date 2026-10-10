@@ -324,14 +324,14 @@ forward numbers match the ranking path exactly.
   loop updates the cache itself. The fetch chain degrades Robinhood MCP →
   Yahoo's keyless v8 chart API → absent; it never fabricates a number. In
   practice CI always lands on Yahoo, because the MCP's OAuth only completes
-  inside an interactive Claude session and `ROBINHOOD_MCP_URL`/`TOKEN` are
+  inside an interactive MCP client session and `ROBINHOOD_MCP_URL`/`TOKEN` are
   unset there. `refresh.py --fetch` merges fresh bars into `data/<SYM>.csv`
   (dedup by date, dropping volume-0 snapshot placeholders); a stale cache is
   used silently, `update_cache` is last-row-wins on a date collision, and a
   symbol the source can't serve is skipped with a stderr line, run still green.
 - **Durable cadence.** A weekday GitHub Actions workflow (`daily-paper-run.yml` →
   `scripts/paper_cron.sh`) runs `refresh --fetch` + tick on GitHub's runners, so the
-  record grows without a live laptop or Claude session. The cumulative cache and
+  record grows without a live laptop or interactive session. The cumulative cache and
   record (both gitignored) persist on a dedicated `paper-state` branch. One-time
   setup in `docs/paper-cron-setup.md`.
 - **Self-written memory loop (`memory.py`).** The agent's education is no longer

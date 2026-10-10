@@ -21,7 +21,7 @@ def mcp_session(url: str, token: str) -> Iterator[object]:
     if not token:
         raise RuntimeError(
             "ROBINHOOD_MCP_TOKEN is not set. Authenticate the Robinhood MCP "
-            "first (run `/mcp` in an interactive claude session), then export "
+            "first (complete OAuth in an interactive MCP client), then export "
             "the bearer token."
         )
 
