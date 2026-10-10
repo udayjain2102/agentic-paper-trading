@@ -1,22 +1,16 @@
-# Robinhood Agentic Trading
+# Agentic Paper Trading
 
-A US-equities **strategy research system**. It runs an unattended paper-trade
-loop (GitHub Actions, Mon-Fri) that ticks rule-based strategies and an LLM agent
-(Nemotron, via NVIDIA's OpenAI-compatible API) forward one day at a time against
-real prices, and scores the resulting track record.
+A US-equities strategy research system that paper-trades rule-based strategies
+and an LLM agent (Nemotron, via NVIDIA's OpenAI-compatible API) side by side,
+one day at a time against real prices, and scores the resulting track record.
 
-> **It does not place orders.** The guardrail funnel runs on every scheduled
-> day: `paper_run.run()` calls `guardrails.check_halted` (`paper_run.py:62`),
-> then `OrderExecutor.execute()` calls `guardrails.validate_order`
-> (`executor.py:60`) before `broker.place_order` (`executor.py:74`). What
-> actually stops a real order is that `paper_run.py` hardcodes `MockBroker`
-> unconditionally — it has no import of the live broker class and no branch
-> that can place a real order — and `McpBroker` (`broker.py:82`), the only
-> broker that talks to Robinhood, has zero callers anywhere in `src/`,
-> `scripts/*.sh`, or `.github/workflows/*.yml`. `LIVE=true` gates nothing on
-> this path: `config.py` reads it into `cfg.dry_run` (`is_live()`), and no
-> order code consults `dry_run` — it only reaches `make_dashboard.py` for
-> display. Everything this repo does is read-only against market data.
+- **Runs itself:** a GitHub Actions cron (Mon-Fri) refreshes prices, ticks four
+  forward records, and publishes a dashboard.
+- **Honest numbers:** each record has an explicit cost and fill basis, scored
+  with Sharpe, drawdown, profit factor, bootstrap CIs and deflated Sharpe.
+- **Read-only by construction:** the scheduled path only ever uses `MockBroker`
+  and passes every tick through a guardrail funnel. No code path places a real
+  order (details in [Safety](#safety)).
 
 ## How it actually runs
 
