@@ -1,7 +1,7 @@
 [project]
 name = "rhagent"
 version = "0.1.0"
-description = "Autonomous US-equities trading agent (cron + Claude Agent loop) with hard safety rails."
+description = "US-equities strategy research: rule-based strategies and an LLM agent paper-traded daily against real prices."
 requires-python = ">=3.10"
 
 [tool.pytest.ini_options]
