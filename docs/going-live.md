@@ -53,15 +53,14 @@ The MCP is OAuth-only (see [`paper-cron-setup.md`](paper-cron-setup.md)) —
 there is no static token to mint, so the *live* order path can only run
 inside an authenticated session:
 
-- **Interactive**: in a `claude` session in this repo, run `/mcp`, pick
-  `robinhood-trading` (or the connector name shown), complete OAuth. Confirm
-  `mcp__robinhood-trading__*` tools are live before proceeding.
-- **Cloud routine**: attach the `robinhood` claude.ai connector
-  (`claude.ai/customize/connectors`) to a scheduled routine
-  (`claude.ai/code/routines`). As of 2026-07-16 this connector was not yet
-  appearing as routine-eligible (only auth tools exposed) — re-check this
-  before relying on it; if still broken, live ticks must run from an
-  interactive session, same as the historical paper loop.
+- **Interactive**: connect `robinhood-trading` from an MCP client session in
+  this repo and complete OAuth. Confirm the Robinhood trading tools are live
+  before proceeding.
+- **Scheduled**: attach the Robinhood connector to a hosted scheduled job.
+  As of 2026-07-16 the connector was not yet usable from scheduled jobs (only
+  auth tools exposed) — re-check this before relying on it; if still broken,
+  live ticks must run from an interactive session, same as the historical
+  paper loop.
 
 Either way: **confirm the MCP's actual read/order tool names** against its
 `list_tools` output and check they still match the mapping in
