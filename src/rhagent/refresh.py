@@ -7,12 +7,12 @@ payload (the dict the Robinhood MCP returns), merges the new bars into each
 (volume==0, the "current price" placeholder the last populate left behind).
 
 Two ways in:
-  * Interactive: Claude fetches via its MCP session and pipes the raw payload
+  * Interactive: an MCP client session fetches and pipes the raw payload
     here on stdin (the Mon-Fri hands-on loop).
   * Headless: ``--fetch`` pulls the whole config universe itself, for an
     unattended cron on an always-on box. Source is the MCP when
     ROBINHOOD_MCP_URL/TOKEN are set, otherwise Yahoo (keyless) — the MCP
-    only ever authenticates inside an interactive Claude session, so Yahoo is
+    only ever authenticates inside an interactive MCP client session, so Yahoo is
     what makes a truly unattended run possible.
 
 Usage:
@@ -176,7 +176,7 @@ def fetch_and_update(cache_dir="data", symbols=None, days=10, today=None,
 
     `source`: "mcp" (needs ROBINHOOD_MCP_URL/TOKEN), "yahoo" (keyless), or
     "auto" — mcp when a token is configured, yahoo otherwise. This is what lets
-    the daily tick run on a box with no interactive Claude session.
+    the daily tick run on a box with no interactive MCP session.
 
     `fetch_raw(batch, start, end) -> raw payload` is injectable so the batching
     and merge can be exercised without a live MCP (the network call is the only

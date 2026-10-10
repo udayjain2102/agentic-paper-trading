@@ -9,7 +9,7 @@ Workflow: `.github/workflows/daily-paper-run.yml` → `scripts/paper_cron.sh`.
 
 Data comes from Yahoo's chart API — keyless, so **no secrets are required**. The
 Robinhood MCP is used instead only if `ROBINHOOD_MCP_URL`/`ROBINHOOD_MCP_TOKEN`
-are ever set (its OAuth only completes inside an interactive Claude session, so
+are ever set (its OAuth only completes inside an interactive MCP client session, so
 in practice CI always uses Yahoo).
 
 ## One-time setup

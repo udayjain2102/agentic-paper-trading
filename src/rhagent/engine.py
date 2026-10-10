@@ -3,7 +3,7 @@
 A DecisionEngine answers one question per bar: given the history up to and
 including today and what we currently hold, what should the position be and
 why. StrategyEngine adapts the existing rule-based strategies; an AgentEngine
-wrapping the Claude loop plugs into the same protocol later.
+wrapping an LLM loop plugs into the same protocol later.
 """
 
 from __future__ import annotations
