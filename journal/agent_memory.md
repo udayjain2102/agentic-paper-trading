@@ -518,3 +518,28 @@ These lessons avoid verbatim repetition of prior guidance, introduce a volatilit
 - **What didn’t work – core‑strategy allocation:** Core‑strategy trades (held ≥ 3 days) remained near **0 %** across the period, far below the 30 % target set on 08‑03; almost all positions were same‑day flips.  
 
 - **What to do differently (falsifiable):** **Pre‑market screen** that selects the top 30 % of the universe by 20‑day average dollar volume (or another objective liquidity metric) as “core” and **restricts same‑day flips to the non‑core pool only**; core tickets are forced to carry a minimum holding‑period flag of three days. *Falsifiable outcome:* Each week, **≥ 30 % of trades** are labeled core with a hold **≥ 3 days**, verified by the trade‑log holding‑period audit.
+
+## 2026-10-14
+- **Trade‑volume control – prior caps repeatedly contradicted**  
+  *What didn’t work:* Despite multiple static (≤55, ≤50, ≤45) and volatility‑adjusted caps, daily name counts stayed in the 60‑65 range every session from 09‑30 to 10‑13, showing the self‑imposed limits were routinely bypassed.  
+  *What worked:* The single best‑performing day (10‑09 +0.39%) occurred at the low‑end of the observed range (60 names), suggesting a tighter universe can curb downside when enforced.  
+  *What to do differently:* Deploy a **platform‑level hard block** that **rejects any new trade once 55 names are reached** (no override allowed) and **logs every blocked attempt**; require a daily sign‑off that the block was active.  
+  *Falsifiable outcome:* In the next review week **0 days exceed 55 names** and **≤5 % of days exceed 50 names** (verified by trade‑log audit and block‑log sign‑offs).
+
+- **Loss‑triggered post‑mortem – prior thresholds ignored**  
+  *What didn’t work:* Every negative‑return day (‑0.18% on 09‑30, ‑0.01% on 10‑01, ‑0.14% on 10‑02, ‑0.38% on 10‑06, ‑0.23% on 10‑07, ‑0.07% on 10‑08, ‑0.43% on 10‑12) lacked a same‑day, time‑stamped post‑mortem, violating the earlier ≤‑0.2 % loss‑analysis rule.  
+  *What worked:* No single‑day loss exceeded ‑0.5 %, indicating capital was preserved when drawdowns stayed modest.  
+  *What to do differently:* Institute an **automated post‑mortem trigger** that, at market close, forces completion of a timestamped checklist (entry/exit timing, position sizing, relevant news) **before the platform allows the first trade of the next session**.  
+  *Falsifiable outcome:* **100 % of days with a negative return** have a logged post‑mortem **before the next market open** (verified by journal audit).
+
+- **Market‑study citation linkage – compliance remains low**  
+  *What didn’t work:* Estimated **< 60 %** of trades from 09‑30 to 10‑13 referenced a valid study‑ID, despite repeated lessons demanding 100 % linkage.  
+  *What worked:* The two highest‑return days (10‑05 +0.07% and 10‑09 +0.39%) both featured trades that explicitly cited a market‑study insight, showing a benefit when the link is made.  
+  *What to do differently:* **Embed the study‑ID directly into the trade‑signal generation algorithm**: only trades whose signal matches a pre‑approved study‑note ID are allowed to enter the order ticket; the ticket cannot be submitted without a valid ID.  
+  *Falsifiable outcome:* **100 % of executed trades** contain a verifiable, unique study‑ID (verified by trade‑log audit).
+
+- **Core‑strategy allocation – near‑zero despite target**  
+  *What didn’t work:* Core‑strategy trades (held ≥ 3 days) remained ≈ 0 % across 09‑30‑10‑13, far below the 30 % target set on 08‑03; almost all positions were same‑day flips.  
+  *What worked:* The few multi‑day holds that did exist (e.g., positions carried from 08‑20 to 08‑24) showed steadier performance (‑0.19% to +0.11% average), hinting at reduced noise.  
+  *What to do differently:* **Pre‑market screen** that selects the top 30 % of the universe by 20‑day average dollar volume (or another objective liquidity/fundamental metric) as “core” and **restricts same‑day flips to the non‑core pool only**; core tickets are forced to carry a minimum holding‑period flag of three days.  
+  *Falsifiable outcome:* Each week, **≥ 30 % of trades** are labeled core with a hold **≥ 3 days**, verified by the trade‑log holding‑period audit.
