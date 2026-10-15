@@ -927,3 +927,20 @@
 {"event": "order_rejected", "notional_usd": 298.4980776543732, "reason": "Order $298.50 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "TSLA", "ts": "2026-10-14T15:57:05.530483+00:00"}
 {"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2186.67, over cap $2000.00.", "side": "buy", "symbol": "VZ", "ts": "2026-10-14T15:57:05.530511+00:00"}
 {"event": "paper_run_end", "n_accepted": 0, "n_orders": 16, "ts": "2026-10-14T15:57:05.530978+00:00"}
+{"event": "order_rejected", "notional_usd": 260.4649132060162, "reason": "Order $260.46 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "ADBE", "ts": "2026-10-15T15:43:57.898416+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2142.54, over cap $2000.00.", "side": "buy", "symbol": "AMD", "ts": "2026-10-15T15:43:57.898600+00:00"}
+{"event": "order_rejected", "notional_usd": 273.6633505266159, "reason": "Order $273.66 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "AMZN", "ts": "2026-10-15T15:43:57.898646+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2142.54, over cap $2000.00.", "side": "buy", "symbol": "AVGO", "ts": "2026-10-15T15:43:57.898678+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2142.54, over cap $2000.00.", "side": "buy", "symbol": "BAC", "ts": "2026-10-15T15:43:57.898702+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2142.54, over cap $2000.00.", "side": "buy", "symbol": "C", "ts": "2026-10-15T15:43:57.898740+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2142.54, over cap $2000.00.", "side": "buy", "symbol": "CAT", "ts": "2026-10-15T15:43:57.898763+00:00"}
+{"event": "order_rejected", "notional_usd": 271.8146191172484, "reason": "Order $271.81 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "GOOGL", "ts": "2026-10-15T15:43:57.898800+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2142.54, over cap $2000.00.", "side": "buy", "symbol": "GS", "ts": "2026-10-15T15:43:57.898824+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2142.54, over cap $2000.00.", "side": "buy", "symbol": "INTC", "ts": "2026-10-15T15:43:57.898844+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2142.54, over cap $2000.00.", "side": "buy", "symbol": "JNJ", "ts": "2026-10-15T15:43:57.898864+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2142.54, over cap $2000.00.", "side": "buy", "symbol": "MS", "ts": "2026-10-15T15:43:57.898884+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2142.54, over cap $2000.00.", "side": "buy", "symbol": "NVDA", "ts": "2026-10-15T15:43:57.898905+00:00"}
+{"event": "order_rejected", "notional_usd": 260.32010567788217, "reason": "Order $260.32 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "SPY", "ts": "2026-10-15T15:43:57.898925+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2142.54, over cap $2000.00.", "side": "buy", "symbol": "T", "ts": "2026-10-15T15:43:57.898946+00:00"}
+{"event": "order_rejected", "notional_usd": 292.0783308260104, "reason": "Order $292.08 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "TSLA", "ts": "2026-10-15T15:43:57.898966+00:00"}
+{"event": "paper_run_end", "n_accepted": 0, "n_orders": 16, "ts": "2026-10-15T15:43:57.899549+00:00"}
