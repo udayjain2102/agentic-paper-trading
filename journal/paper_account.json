@@ -1,10 +1,18 @@
 {
-  "cash_usd": 3463.189797904895,
-  "date": "2026-11-03",
+  "cash_usd": 2963.189797904895,
+  "date": "2026-11-04",
   "positions": {
+    "AAPL": {
+      "cost_basis_usd": 250.0,
+      "shares": 0.753238941239547
+    },
     "ADBE": {
       "cost_basis_usd": 250.0,
       "shares": 1.0822042593165901
+    },
+    "AMD": {
+      "cost_basis_usd": 250.0,
+      "shares": 0.5166356750429715
     },
     "AMZN": {
       "cost_basis_usd": 250.0,
@@ -27,5 +35,5 @@
       "shares": 0.7955069395162245
     }
   },
-  "realized_pnl_today_usd": -12.18884636222407
+  "realized_pnl_today_usd": 0.0
 }
