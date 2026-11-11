@@ -1,6 +1,6 @@
 {
   "cash_usd": 3188.490043962063,
-  "date": "2026-11-10",
+  "date": "2026-11-11",
   "positions": {
     "AAPL": {
       "cost_basis_usd": 250.0,
@@ -31,5 +31,5 @@
       "shares": 0.7955069395162245
     }
   },
-  "realized_pnl_today_usd": -24.699753942832274
+  "realized_pnl_today_usd": 0.0
 }
