@@ -149,8 +149,11 @@ not fundable; it becomes the new control. Passes all four: it replaces the
 control agent in the ladder above.
 
 The model behind the agent changed on 2026-09-03 (the original was retired
-by NVIDIA); the record is continuous but the decider is not. That is a
-caveat on the agent's result, not a reason to restart its clock.
+by NVIDIA) and again on 2026-11-12 (its replacement stopped being served on
+2026-10-19; the 18 trading days in between were decided afterwards by the
+third model through the retry rule, from the same lookahead-free prompt).
+The record is continuous but the decider is not. That is a caveat on the
+agent's result, not a reason to restart its clock.
 
 To judge, from a checkout of `paper-state`:
 

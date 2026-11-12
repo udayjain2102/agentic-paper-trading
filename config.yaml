@@ -22,7 +22,13 @@ limits:
 # Model configuration for the decision agent.
 # Served by NVIDIA's OpenAI-compatible API (integrate.api.nvidia.com).
 agent:
-  model: nvidia/nemotron-3-super-120b-a12b
+  model: nvidia/nemotron-3.5-super-vl-120b-a12b
+  # Third decider. nvidia/nemotron-3-super-120b-a12b stopped being served to
+  # this account on 2026-10-19 (HTTP 404 "Function ... not found for account",
+  # though still in the public catalog); every agent decision failed until
+  # this switch on 2026-11-12. Verified live that day: one call with the real
+  # decision prompt returned the bare JSON in 2.0s, 376 completion tokens.
+  # The notes below are about the model before it.
   # nvidia/llama-3.3-nemotron-super-49b-v1.5 reached end of life on NVIDIA's
   # API (HTTP 410 from 2026-08-24; every agent decision failed until this
   # switch on 2026-09-03). nemotron-3-super with "detailed thinking off"

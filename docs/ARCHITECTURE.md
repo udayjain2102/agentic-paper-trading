@@ -35,9 +35,10 @@ Neither proposes a broker order; they propose a *position*.
 
 - **`StrategyEngine`** wraps a rule-based `Strategy` (§1b) and returns
   `strat.target(history)` with `strat.signal(history).iloc[-1]` as conviction.
-- **`AgentEngine`** asks Nemotron (`nvidia/nemotron-3-super-120b-a12b` via
-  NVIDIA's OpenAI-compatible API; the 49b model it replaced on 2026-09-03
-  reached end of life) for a verdict from a compact, lookahead-free prompt
+- **`AgentEngine`** asks Nemotron (`nvidia/nemotron-3.5-super-vl-120b-a12b` via
+  NVIDIA's OpenAI-compatible API; the third decider: the 49b original reached end of life on
+  2026-09-03 and `nemotron-3-super-120b-a12b` stopped being served on
+  2026-10-19) for a verdict from a compact, lookahead-free prompt
   (`last_close`, `momentum_5d`, `vol_20d`, `current_pos`, and the lessons
   string). `decide_all(symbols, histories, current_pos)` is the production
   entry point: **one model call per symbol**, fanned out across a small thread
