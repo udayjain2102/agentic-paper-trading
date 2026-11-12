@@ -105,8 +105,15 @@ def validate_order(
     if not order.notional_usd > 0:
         return False, f"Notional must be positive; got {order.notional_usd}."
 
-    # 2. Per-trade dollar cap (applies to buys and sells alike).
-    if order.notional_usd > limits.per_trade_max_usd:
+    # 2. Per-trade dollar cap. One exception: a sell no larger than the held
+    # position's own value. An exit liquidates the whole position, so capping
+    # it made any holding that appreciated past the cap unsellable forever
+    # (paper account, Oct-Nov 2026: 3 fills in six weeks).
+    closes_held = (
+        order.side == "sell"
+        and order.notional_usd <= account.position_values.get(order.symbol, 0.0)
+    )
+    if order.notional_usd > limits.per_trade_max_usd and not closes_held:
         return False, (
             f"Order ${order.notional_usd:.2f} exceeds per-trade cap "
             f"${limits.per_trade_max_usd:.2f}."

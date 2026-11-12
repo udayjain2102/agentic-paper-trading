@@ -261,3 +261,23 @@ def test_retry_serves_the_newest_failed_dates_not_the_oldest():
     for p in eval_dir.glob("*"):
         p.unlink()
     eval_dir.rmdir()
+
+
+def test_agent_outage_only_when_newest_bar_has_no_real_verdict(tmp_path):
+    import json
+    from rhagent.forward import _agent_outage
+
+    def write(rows):
+        (tmp_path / "decisions.jsonl").write_text(
+            "".join(json.dumps(r) + "\n" for r in rows))
+
+    row = lambda d, s, st: {"date": d, "symbol": s, "target": 0.0,
+                            "reason": "", "status": st}
+    assert _agent_outage(tmp_path) is False            # no log yet
+    write([row("2026-10-16", "AAPL", "ok"), row("2026-10-19", "AAPL", "failed"),
+           row("2026-10-19", "MSFT", "failed")])
+    assert _agent_outage(tmp_path) is True
+    write([row("2026-10-19", "AAPL", "failed"), row("2026-10-19", "MSFT", "ok")])
+    assert _agent_outage(tmp_path) is False            # partial = transient
+    write([row("2026-10-19", "AAPL", "failed"), row("2026-10-19", "AAPL", "ok")])
+    assert _agent_outage(tmp_path) is False            # healed by a retry

@@ -195,6 +195,10 @@ Design choices worth noting:
 - **Dry-run by default.** `LIVE` must equal the literal string `true`; anything
   else stays paper.
 - **Sells skip the exposure checks** (5–7) — selling reduces risk.
+- **A sell that closes a held position is exempt from the per-trade cap** (3):
+  an exit sells the whole position, so capping it made any holding that
+  appreciated past the cap unsellable. A sell larger than the held value is
+  still capped.
 - `validate_order` is a *pure function* — it doesn't mutate the run counters. The
   executor bumps `orders_placed`/`new_positions` only after an order is actually
   accepted and acted on.

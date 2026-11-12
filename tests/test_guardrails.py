@@ -200,3 +200,21 @@ def test_halted_when_halt_file_present():
     )
     assert halted is True
     assert "halt" in reason.lower()
+
+
+def test_sell_closing_an_appreciated_position_passes_over_cap():
+    acct = account(positions=frozenset({"AAPL"}), position_values={"AAPL": 310.0})
+    ok, reason = validate_order(
+        Order(symbol="AAPL", side="sell", notional_usd=310.0),
+        acct, RunState(), limits(per_trade_max_usd=250),
+    )
+    assert ok, reason
+
+
+def test_sell_over_cap_and_over_held_value_still_rejected():
+    acct = account(positions=frozenset({"AAPL"}), position_values={"AAPL": 310.0})
+    ok, reason = validate_order(
+        Order(symbol="AAPL", side="sell", notional_usd=400.0),
+        acct, RunState(), limits(per_trade_max_usd=250),
+    )
+    assert not ok and "per-trade cap" in reason
