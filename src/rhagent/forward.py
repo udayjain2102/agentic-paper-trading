@@ -520,6 +520,22 @@ def _latest_decisions(eval_dir: Path) -> dict[tuple[str, str], dict]:
     return latest
 
 
+def _agent_outage(eval_dir: Path) -> bool:
+    """True when not one decision on the newest decided bar is a real verdict.
+
+    A dead model (2026-10-19: every call 404'd for 18 trading days) fails every
+    symbol, the tick appends nothing, and nothing raises -- so the run stayed
+    green and the alert issue never opened. A partial failure is a normal
+    transient the retry rule heals; only a total one is an outage.
+    """
+    latest = _latest_decisions(eval_dir)
+    if not latest:
+        return False
+    newest = max(d for d, _ in latest)
+    return not any(r.get("status") == "ok"
+                   for (d, _), r in latest.items() if d == newest)
+
+
 def _report_record_consistency(eval_dir: Path) -> None:
     """Compare decisions.jsonl (the append-only log) against pos_<SYM>.csv
     (the cache the code actually reads) and print any (date, symbol) where
@@ -603,6 +619,12 @@ def main(argv: list[str] | None = None) -> int:
         _report(eval_dir)
     except Exception as e:
         print(f"!! report failed (non-fatal, tick already persisted): {e}", file=sys.stderr)
+    # Non-zero AFTER everything is on disk: paper_cron.sh guards this call with
+    # tick_failed, so state still persists and the workflow's alert issue opens.
+    if engine == "agent" and not args.report and _agent_outage(eval_dir):
+        print(f"!! agent outage: every decision on the newest bar failed "
+              f"({eval_dir.name}) -- check the model/key", file=sys.stderr)
+        return 1
     return 0
 
 
