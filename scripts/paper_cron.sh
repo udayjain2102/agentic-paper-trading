@@ -64,6 +64,12 @@ if [ -n "${NVIDIA_API_KEY:-}" ]; then
   # Own record dir, no reflection.
   python -m rhagent.forward --engine agent --eval-id agent_ctx --market-context \
     || tick_failed agent_ctx
+
+  # Fifth record: no stock list. The agent hunts the whole US market (two model
+  # calls a day) and holds up to 10 names; needs duckdb + network to Hugging Face.
+  # Own dir, own price cache (data/open); a failure here is non-fatal like the rest.
+  python -m rhagent.open_universe \
+    || tick_failed agent_open
 else
   echo "NVIDIA_API_KEY not set -- skipping agent tick"
 fi
