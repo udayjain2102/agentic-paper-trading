@@ -100,3 +100,37 @@ def test_bakeoff_survives_all_none_deflated(tmp_path, monkeypatch):
     rows = mod._bakeoff_data(tmp_path, "agent")
     assert rows[0]["deflated"] is None
     assert "n/a" in rows[0]["fold"]
+
+
+def test_locked_buckets_rank_by_dollars_relative_to_size(tmp_path):
+    """The loss panel must surface the bucket that loses more than its share of
+    trades, in dollars -- not the biggest bucket, which is what a raw share of
+    losing-trade counts ranks first (and ranks first in the win panel too)."""
+    run = tmp_path / "r1"
+    _write_run(run)
+    # 6 quick trades: five +10 wins, one -1 loss. 4 slow trades: one +5 win,
+    # three -20 losses. Slow = 40% of trades but 60/61 of the loss dollars.
+    spec = [(1, 10.0)] * 5 + [(1, -1.0)] + [(8, 5.0)] + [(8, -20.0)] * 3
+    (run / "trades.jsonl").write_text("".join(
+        json.dumps({"symbol": f"S{i}", "side": "long", "holding_bars": bars,
+                    "pnl_abs": pnl, "outcome": "win" if pnl > 0 else "loss",
+                    # vol scattered across the list so it does not track holding time
+                    "entry_features": {"vol20": 0.01 + (i * 7 % 10) / 1000, "gap": 0.0}}) + "\n"
+        for i, (bars, pnl) in enumerate(spec)))
+
+    loss, win = _dashboard_module()._locked_buckets(run)
+
+    top = loss[0]
+    assert (top["dim"], top["bucket"]) == ("holding", "5+ bars")
+    assert abs(top["share"] - 60 / 61) < 1e-9 and abs(top["tradeShare"] - 0.4) < 1e-9
+    assert top["lift"] > 2
+    assert (win[0]["dim"], win[0]["bucket"]) != ("holding", "5+ bars")
+    for r in loss + win:
+        assert r["lift"] > 1                      # proportional buckets are not findings
+        assert r["dim"] not in ("symbol", "side")  # side=long is 100% of trades: lift 1
+        if r["dim"] == "holding":                 # never the bare "short"/"long" of a side
+            assert r["bucket"] in ("under 5 bars", "5+ bars")
+
+    empty = tmp_path / "r0"
+    _write_run(empty)
+    assert _dashboard_module()._locked_buckets(empty) == ([], [])
