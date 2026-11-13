@@ -292,3 +292,63 @@ def test_memory_chars_reports_what_the_engine_held_not_the_file(tmp_path):
     meta = json.loads((eval_dir / "run.json").read_text())
     assert meta["memory_chars"] == 0, (
         f"reported {meta['memory_chars']} chars of memory the agent never saw")
+
+
+def test_tick_and_reflect_builds_reflection_client_with_thinking_off(tmp_path, monkeypatch):
+    """Pins the call site: reverting to nvidia_complete(max_tokens=4000) would
+    silently kill production reflection again (2026-11-13)."""
+    import numpy as np
+    from datetime import date
+
+    from rhagent.engine import AgentEngine
+
+    idx = pd.date_range("2026-01-01", periods=60, freq="B")
+    close = pd.Series(100 * np.exp(np.cumsum(np.random.default_rng(0).normal(0, 0.01, len(idx)))), index=idx)
+    bar = pd.DataFrame({"open": close, "close": close})
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    monkeypatch.chdir(tmp_path)
+    seen = {}
+
+    def fake_nvidia_complete(**kw):
+        seen.update(kw)
+        return lambda _p: "- ok"
+
+    monkeypatch.setattr("rhagent.engine.nvidia_complete", fake_nvidia_complete)
+    kw = dict(today=date(2026, 3, 20), cache_dir=cache, engine="agent",
+              memory_path=str(tmp_path / "journal" / "agent_memory.md"))
+    eval_dir = tmp_path / "journal" / "forward" / "agent"
+    mk = lambda: AgentEngine(complete=lambda _p: '{"target": 1, "reason": "x"}')
+    bar.iloc[:-1].to_csv(cache / "AAA.csv", index_label="date")
+    forward.tick_and_reflect(_cfg(["AAA"]), eval_dir, agent=mk(), **kw)
+    bar.to_csv(cache / "AAA.csv", index_label="date")
+    res = forward.tick_and_reflect(_cfg(["AAA"]), eval_dir, agent=mk(), **kw)
+    assert res["appended"] == 1
+    assert seen.get("thinking") is False
+
+
+def test_reflection_call_switches_reasoning_off(monkeypatch):
+    """2026-11-13: with reasoning on, the reflection burned 5649-8033 tokens and
+    died at max_tokens=4000. Only enable_thinking=false stops it; the system
+    message does not."""
+    import openai
+
+    sent = []
+
+    class FakeOpenAI:
+        def __init__(self, **kw):
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+        def create(self, **kw):
+            sent.append(kw)
+            msg = SimpleNamespace(content="- ok")
+            return SimpleNamespace(choices=[SimpleNamespace(finish_reason="stop", message=msg)])
+
+    monkeypatch.setattr(openai, "OpenAI", FakeOpenAI)
+    monkeypatch.setattr("rhagent.engine._pace", lambda: None)
+    from rhagent.engine import nvidia_complete
+
+    nvidia_complete(max_tokens=10, thinking=False)("p")
+    nvidia_complete(max_tokens=10)("p")
+    assert sent[0]["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+    assert sent[1]["extra_body"] is None  # decision path unchanged
