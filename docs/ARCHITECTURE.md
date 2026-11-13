@@ -83,10 +83,11 @@ with shorting enabled today — a change from earlier, when every production
 call site omitted the kwarg and every production decision was long-only
 long-or-flat. `config.yaml`'s `agent.use_lessons` (default `false`) is the
 matching knob for the lessons text fed into the prompt: when false, `forward.py`
-passes `lessons=""` instead of concatenating `memory.read_memory()` +
-`learn.lessons_from_runs()`, because that stale lessons text (frozen since
-2026-07-15, "avoid holding=long setups") was the other half of the all-flat
-cause. A run can sweep the whole cached universe at once with `--symbols all`.
+passes `lessons=""` instead of `memory.read_memory()`. When true, the prompt
+gets exactly one thing: the current block in `journal/agent_memory.md`. The
+backtest sentence from `learn.lessons_from_runs()` (frozen since 2026-07-15,
+"avoid holding=long setups", the other half of the all-flat cause) is no
+longer part of the forward prompt at all; only the `papertrade` CLI uses it. A run can sweep the whole cached universe at once with `--symbols all`.
 
 ### 1c. The trade setup — the live preset
 
@@ -339,13 +340,16 @@ forward numbers match the ranking path exactly.
   record grows without a live laptop or interactive session. The cumulative cache and
   record (both gitignored) persist on a dedicated `paper-state` branch. One-time
   setup in `docs/paper-cron-setup.md`.
-- **Self-written memory loop (`memory.py`).** The agent's education is no longer
-  just the one-sentence `lessons_from_runs()` stats line — before each bar's
-  decision it also reads `journal/agent_memory.md`, its own dated reflections.
-  After an agent tick appends a new day, `tick_and_reflect` has the model review
-  its recent decisions and realized outcomes (`recent_outcomes`) and write 3-5
-  falsifiable bullet lessons, appended under a `## <date>` header. Capped at the
-  most recent 40 entries. Because `journal/` persists on `paper-state`, this
+- **Self-written memory loop (`memory.py`).** The agent's education is one file:
+  `journal/agent_memory.md` holds a single current lessons block (at most 5
+  one-line bullets under a `## <date>` header), and it is the only memory a
+  prompt can see, and only when `agent.use_lessons` is true. After an agent
+  tick appends a new day, `tick_and_reflect` has the model review its recent
+  genuine decisions and realized outcomes (`recent_outcomes`, failed-call days
+  skipped) and rewrite that block; non-bullet text is discarded. Every block
+  ever written is appended to `journal/agent_memory_archive.md`, the audit
+  trail, which nothing reads back. The first write moves the old append-forever
+  log into the archive. Because `journal/` persists on `paper-state`, this
   memory carries forward across CI runs for free; `run.json` records
   `memory_chars`/`reflected` per run as an audit trail of what education it got.
 

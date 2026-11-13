@@ -1,4 +1,4 @@
-"""Memory loop: read/append/cap, recent_outcomes, reflect, and forward wiring."""
+"""Memory loop: one current block + archive, recent_outcomes, reflect, forward wiring."""
 
 from __future__ import annotations
 
@@ -8,35 +8,75 @@ from types import SimpleNamespace
 import pandas as pd
 
 from rhagent import forward
-from rhagent.memory import append_reflection, read_memory, recent_outcomes, reflect
+from rhagent.memory import (archive_path, read_memory, recent_outcomes,
+                            reflect, write_lessons)
 
 
-def test_append_read_roundtrip(tmp_path):
+def test_write_replaces_the_block_and_archives_every_one(tmp_path):
     p = tmp_path / "mem.md"
     assert read_memory(p) == ""
-    append_reflection(p, "2026-07-01", "- lesson one")
-    append_reflection(p, "2026-07-02", "- lesson two")
+    write_lessons(p, "2026-07-01", "- lesson one")
+    write_lessons(p, "2026-07-02", "- lesson two")
     text = read_memory(p)
-    assert "## 2026-07-01" in text
-    assert "## 2026-07-02" in text
-    assert "lesson one" in text and "lesson two" in text
+    assert "## 2026-07-02" in text and "lesson two" in text
+    assert "lesson one" not in text            # the prompt sees one block only
+    arch = archive_path(p).read_text()
+    assert "lesson one" in arch and "lesson two" in arch
 
 
-def test_cap_drops_oldest(tmp_path):
+def test_first_write_moves_the_old_log_into_the_archive(tmp_path):
     p = tmp_path / "mem.md"
-    for i in range(45):
-        append_reflection(p, f"2026-01-{i:02d}", f"entry {i}")
-    text = read_memory(p)
-    entries = text.split("\n## ")[1:]
-    assert len(entries) == 40
-    assert "entry 0" not in text          # oldest dropped
-    assert "entry 44" in text             # newest kept
+    p.write_text("\n## 2026-01-01\nold a\n\n## 2026-01-02\nold b\n")
+    assert "old b" in read_memory(p) and "old a" not in read_memory(p)
+    # the old free-form log must not seed the new block
+    seen = {}
+    reflect(lambda pr: seen.setdefault("p", pr) and "- new rule", p, "x", "2026-02-01")
+    assert "old b" not in seen["p"] and "(none yet)" in seen["p"]
+    assert "old" not in p.read_text()
+    arch = archive_path(p).read_text()
+    assert "old a" in arch and "old b" in arch and "new rule" in arch
+
+
+def test_reflect_keeps_only_capped_bullets(tmp_path):
+    p = tmp_path / "mem.md"
+    reply = "Here are my lessons:\n" + "\n".join(
+        f"* **rule {i}**   with   spaces\n  a sub-paragraph" for i in range(8))
+    out = reflect(lambda pr: reply, p, "x", "2026-02-01")
+    assert out.splitlines() == [f"- **rule {i}** with spaces" for i in range(5)]
+    # prose with no bullets is rejected and the existing block survives
+    assert reflect(lambda pr: "no bullets here", p, "x", "2026-02-02") == ""
+    assert "## 2026-02-01" in read_memory(p)
+
+
+def test_recent_outcomes_skips_failed_decisions(tmp_path):
+    idx = pd.date_range("2026-01-01", periods=4, freq="B")
+    pd.DataFrame({"pos": [1.0, 1.0, 1.0, 1.0],
+                  "status": ["ok", "failed", "failed", "ok"]},
+                 index=idx.rename("date")).to_csv(tmp_path / "pos_AAA.csv")
+    out = recent_outcomes(tmp_path, {"AAA": _bars([10, 11, 12, 13])})
+    assert str(idx[0].date()) in out and str(idx[3].date()) in out
+    assert str(idx[1].date()) not in out and str(idx[2].date()) not in out
 
 
 def _bars(closes):
     idx = pd.date_range("2026-01-01", periods=len(closes), freq="B")
     return pd.DataFrame({"open": closes, "high": closes, "low": closes,
                          "close": closes}, index=idx)
+
+
+def test_recent_outcomes_splits_a_big_day_by_side_and_setup(tmp_path):
+    idx = pd.date_range("2026-01-01", periods=3, freq="B")
+    bars = {}
+    for i in range(8):
+        sym = f"S{i}"
+        bars[sym] = _bars([10, 11, 12])                      # rising: longs win
+        pd.DataFrame({"pos": [1.0 if i < 5 else -1.0] * 3, "status": "ok"},
+                     index=idx.rename("date")).to_csv(tmp_path / f"pos_{sym}.csv")
+    out = recent_outcomes(tmp_path, bars)
+    assert "long 5 names avg next_day_ret=+" in out
+    assert "short 3 names avg next_day_ret=-" in out
+    assert "long with momentum_5d up: n=5" in out and "win_rate 100%" in out
+    assert "short with momentum_5d up: n=3" in out and "win_rate 0%" in out
 
 
 def test_recent_outcomes_mentions_symbol_pos_and_return_sign(tmp_path):
@@ -154,7 +194,7 @@ def test_forward_tick_and_reflect_writes_memory_and_meta(tmp_path, monkeypatch):
 def test_positions_lessons_include_memory(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     mem_path = tmp_path / "journal" / "agent_memory.md"
-    append_reflection(mem_path, "2026-07-01", "- avoid overtrading small caps")
+    write_lessons(mem_path, "2026-07-01", "- avoid overtrading small caps")
 
     idx = pd.date_range("2026-01-01", periods=5, freq="B")
     bars = {"AAA": _bars([10, 11, 12, 13, 14])}
@@ -231,7 +271,7 @@ def test_memory_chars_reports_what_the_engine_held_not_the_file(tmp_path):
     from rhagent.engine import AgentEngine
 
     mem = tmp_path / "agent_memory.md"
-    append_reflection(mem, "2026-07-20", "a long prior lesson " * 20)
+    write_lessons(mem, "2026-07-20", "a long prior lesson " * 20)
     assert len(read_memory(mem)) > 100, "fixture must have real content on disk"
 
     cache, eval_dir = tmp_path / "cache", tmp_path / "fwd"

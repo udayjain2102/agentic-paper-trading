@@ -42,13 +42,15 @@ agent:
   # despite the offline IC gate (which found "no signal") testing allow_short=
   # True, a config it never actually ran. Default here matches the gate.
   allow_short: true
-  # The lessons/memory block prepended to every prompt is an unvalidated prior:
-  # its live text ("losses concentrate in holding=long ... prefer avoiding these
-  # setups") is computed from 24 papertrade runs frozen since 2026-07-15, and it
-  # is what produced 259 flat decisions out of 260. With allow_short now true it
-  # would push the agent short on that stale prior rather than on signal. Off, so
-  # the live record measures the same naked agent the IC gate measured. Turn back
-  # on only once the lessons are derived from the live forward record.
+  # When true, every prompt is prefixed with the one current lessons block in
+  # journal/agent_memory.md (at most 5 bullets, rewritten by the agent after
+  # each tick from its own live outcomes) and nothing else. It is still an
+  # unvalidated prior. The earlier version also mixed in a sentence computed
+  # from 24 papertrade runs frozen since 2026-07-15 ("losses concentrate in
+  # holding=long ..."), which produced 259 flat decisions out of 260; that
+  # sentence is gone from the forward prompt. Off, so the `agent` and
+  # `agent_ctx` records keep measuring the naked agent until they are judged;
+  # test the memory on a separate record, not by flipping this mid-record.
   use_lessons: false
 
 # Winning strategy. Chosen by the long-only paper-trade bake-off (2026-07-13/14),

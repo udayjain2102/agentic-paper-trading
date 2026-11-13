@@ -219,12 +219,13 @@ def _build_agent(cfg, *, market_context: bool = False, memory_text: str | None =
     config.yaml reaches every call site. `memory_text` is the already-read
     agent memory (tick_and_reflect reads it once); None means read it here."""
     from .engine import AgentEngine
-    from .learn import lessons_from_runs
     from .memory import read_memory
 
+    # One source: the current block in journal/agent_memory.md. The backtest
+    # loss-bucket sentence (learn.lessons_from_runs) is no longer mixed in --
+    # it is frozen at 2026-07-15 and is what drove the agent flat.
     if cfg.agent.use_lessons:
-        mem = read_memory() if memory_text is None else memory_text
-        lessons = mem + "\n" + lessons_from_runs()
+        lessons = read_memory() if memory_text is None else memory_text
     else:
         lessons = ""
     return AgentEngine(lessons=lessons, allow_short=cfg.agent.allow_short,
@@ -433,8 +434,11 @@ def tick_and_reflect(cfg, eval_dir: Path, cost_bps: float | None = None, *,
             # chain-of-thought before writing anything (measured live), so the
             # cap was inside the truncation range and the reflection died in
             # its own reasoning -- swallowed by the except below as a stderr
-            # line. Budget reasoning + the ~450-token reflection it must emit.
-            complete = reflect_complete or nvidia_complete(max_tokens=2000)
+            # line. Budget reasoning + the reflection it must emit. 2000 covered
+            # nemotron-3-super; nemotron-3.5-super-vl ran the full 2000 on
+            # reasoning alone (measured live 2026-11-12) and finished inside
+            # 4000 in 25s.
+            complete = reflect_complete or nvidia_complete(max_tokens=4000)
             reflected = bool(reflect(complete, memory_path, outcomes, today_d.isoformat()))
         except Exception as e:
             print(f"!! reflection failed (non-fatal): {e}", file=sys.stderr)
