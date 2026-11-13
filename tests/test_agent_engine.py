@@ -250,3 +250,53 @@ def test_integration_trades_written(tmp_path):
     assert lines
     for line in lines:
         assert json.loads(line)["trade_id"]
+
+
+def test_reason_missing_its_opening_quote_still_yields_the_verdict():
+    """Raw replies captured live 2026-11-13: the target is intact, only the
+    reason string lost its opening quote. One of these excluded a whole day."""
+    for raw, want in [
+        ('{"target": -1, "reason": Negative 5d momentum supports maintaining short position."}', -1.0),
+        ('{"target": 1, "reason": Positive 5-day momentum supports holding the long position."}', 1.0),
+        ('{"target": 0, "reason": flat}', 0.0),
+    ]:
+        d = AgentEngine(complete=lambda p, raw=raw: raw, allow_short=True).decide("AAA", _hist([10, 11, 12, 13, 14, 15, 16]), 0.0)
+        assert d.status == "ok" and d.target == want
+        assert "momentum" in d.reason or "flat" in d.reason
+
+
+def test_other_malformed_replies_still_fail():
+    for raw in ('{"target": 2, "reason": nope}', '{"target": long, "reason": "x"}',
+                '{"reason": no target}', '{"target": 1 "reason": x}'):
+        d = AgentEngine(complete=lambda p, raw=raw: raw, allow_short=True).decide("AAA", _hist([10, 11, 12, 13, 14, 15, 16]), 1.0)
+        assert d.status == "failed" and d.target == 1.0, raw
+
+
+def test_dead_endpoint_stops_further_calls_but_marks_every_symbol_failed():
+    import httpx
+    from openai import NotFoundError
+
+    calls = []
+
+    def gone(prompt):
+        calls.append(1)
+        raise NotFoundError("Function not found for account", body=None, response=httpx.Response(
+            404, request=httpx.Request("POST", "http://x")))
+
+    eng = AgentEngine(complete=gone, allow_short=True)
+    syms = [f"S{i}" for i in range(40)]
+    out = eng.decide_all(syms, {s: _hist([10, 11, 12, 13, 14, 15, 16]) for s in syms}, {s: 1.0 for s in syms})
+    assert len(calls) <= eng.MAX_WORKERS          # only the calls already in flight
+    assert all(d.status == "failed" and d.target == 1.0 for d in out.values())
+    assert any("endpoint down" in d.reason and "404" in d.reason for d in out.values())
+    # a later bar in the same tick (a retried date) makes no call at all
+    n = len(calls)
+    eng.decide_all(syms, {s: _hist([10, 11, 12, 13, 14, 15, 16]) for s in syms}, {s: 0.0 for s in syms})
+    assert len(calls) == n
+
+
+def test_a_rate_limit_or_parse_failure_does_not_trip_the_cutoff():
+    replies = iter(["garbage", '{"target": 1, "reason": "ok"}'])
+    eng = AgentEngine(complete=lambda p: next(replies), allow_short=True)
+    assert eng.decide("AAA", _hist([10, 11, 12, 13, 14, 15, 16]), 0.0).status == "failed"
+    assert eng.decide("AAA", _hist([10, 11, 12, 13, 14, 15, 16]), 0.0).status == "ok"
