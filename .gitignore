@@ -20,3 +20,6 @@ src/graphify-out/
 .codex/
 .superpowers/
 deploy_api/
+
+# Long price history for experiments/ (refetch with experiments/fetch_prices.py)
+data_long/
