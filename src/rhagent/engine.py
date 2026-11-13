@@ -27,7 +27,13 @@ from .strategies.base import Strategy
 # answers -- pacing at the client seam, not at the worker count, means the limit
 # holds even if latency drops. Injected `complete` callables (tests) bypass this
 # entirely, which is what keeps the unit tests instant.
+# Re-measured 2026-11-13 on nemotron-3.5-super-vl: an unpaced burst got ~43
+# calls through and 157 rejections inside one minute, and a steady 36/min then
+# got only ~5/min through for four minutes -- overshooting is punished, not
+# just capped. 18 stays.
 RATE_LIMIT_PER_MIN = 18
+# HTTP statuses that mean "this model/key is gone", not "try again".
+_DEAD_STATUS = {401, 403, 404, 410}
 _pace_lock = threading.Lock()
 _next_call_at = 0.0
 
@@ -210,6 +216,7 @@ class AgentEngine:
         self.allow_short = allow_short
         self.max_tokens = max_tokens
         self.market_context = market_context
+        self._dead = ""  # set once the endpoint proves hard-down; see decide()
 
     def _default_complete(self) -> Callable[[str], str]:
         """Lazy NVIDIA OpenAI client — built once, on first decide().
@@ -262,7 +269,20 @@ class AgentEngine:
         matches = re.findall(r"\{[^{}]*\}", raw, re.DOTALL)
         if not matches:
             raise ValueError(f"no JSON object in model reply: {raw[:120]!r}")
-        return json.loads(matches[-1])
+        try:
+            return json.loads(matches[-1])
+        except json.JSONDecodeError:
+            # nemotron-3.5-super-vl drops the reason's opening quote in 5-9% of
+            # replies -- {"target": -1, "reason": Negative 5d momentum ..."} --
+            # measured live 2026-11-13 (7 of 77). The verdict is intact and
+            # unambiguous, and one such reply excludes the whole 65-name day,
+            # so read it. Anything that isn't exactly this shape still raises.
+            m = re.fullmatch(
+                r'\{\s*"target"\s*:\s*(-?[01])\s*,\s*"reason"\s*:\s*"?(.*?)"?\s*\}',
+                matches[-1], re.DOTALL)
+            if not m:
+                raise
+            return {"target": int(m.group(1)), "reason": m.group(2)}
 
     def _target(self, raw_target) -> float:
         target = float(int(raw_target))
@@ -278,6 +298,9 @@ class AgentEngine:
     ) -> Decision:
         if self.complete is None:
             self.complete = self._default_complete()
+        if self._dead:
+            return Decision(target=float(current_pos), status="failed",
+                            reason=f"agent: skipped, endpoint down: {self._dead}"[:180])
         status = "ok"
         try:
             obj = self._extract(self.complete(
@@ -288,6 +311,16 @@ class AgentEngine:
             status = "failed"
             target = float(current_pos)
             reason = _fail_reason(e)
+            # A retired model or a dead key answers every call the same way, and
+            # each of those calls still waits its turn in _pace(): the 2026-10-19
+            # outage spent 44 minutes a day, for three weeks, pacing 780 calls
+            # that could not succeed. Stop asking for the rest of this process.
+            # The skipped symbols stay status="failed", so the retry rule and
+            # the outage alert in forward.py see exactly what they saw before.
+            # ponytail: trips on a single such error; require two if a
+            # transient 404 ever shows up in decisions.jsonl.
+            if getattr(e, "status_code", None) in _DEAD_STATUS:
+                self._dead = reason
         return Decision(target=target, reason=f"agent: {reason}", status=status)
 
     MAX_WORKERS = 8
