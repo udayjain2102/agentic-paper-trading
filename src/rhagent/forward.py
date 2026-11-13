@@ -430,15 +430,12 @@ def tick_and_reflect(cfg, eval_dir: Path, cost_bps: float | None = None, *,
             bars = get_bars(cfg.strategy.universe, start, today_d.isoformat(),
                             fetch=fetch, cache_dir=cache_dir)
             outcomes = recent_outcomes(eval_dir, bars)
-            # 600 was below the floor: nemotron-super spends 585-826 tokens on
-            # chain-of-thought before writing anything (measured live), so the
-            # cap was inside the truncation range and the reflection died in
-            # its own reasoning -- swallowed by the except below as a stderr
-            # line. Budget reasoning + the reflection it must emit. 2000 covered
-            # nemotron-3-super; nemotron-3.5-super-vl ran the full 2000 on
-            # reasoning alone (measured live 2026-11-12) and finished inside
-            # 4000 in 25s.
-            complete = reflect_complete or nvidia_complete(max_tokens=4000)
+            # Reasoning is switched off outright: with it on, nemotron-3.5-super-vl
+            # spent 5649-8033 tokens (99% reasoning, ~40-token answer) on this
+            # prompt (measured 2026-11-13), so no sane max_tokens cap held --
+            # 4000 truncated the production reflection. Off, the same prompt
+            # finishes in 137 tokens; 4000 is just headroom.
+            complete = reflect_complete or nvidia_complete(max_tokens=4000, thinking=False)
             reflected = bool(reflect(complete, memory_path, outcomes, today_d.isoformat()))
         except Exception as e:
             print(f"!! reflection failed (non-fatal): {e}", file=sys.stderr)

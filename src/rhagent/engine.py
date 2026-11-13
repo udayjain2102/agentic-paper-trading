@@ -59,6 +59,7 @@ class TruncatedResponse(Exception):
 
 def nvidia_complete(
     max_tokens: int | None = None, model: str = "", timeout: float = 90,
+    thinking: bool = True,
 ) -> Callable[[str], str]:
     """Build an NVIDIA OpenAI-compatible `complete(prompt) -> text` callable.
 
@@ -69,6 +70,11 @@ def nvidia_complete(
     config.yaml's value actually reaches the API call instead of a hardcoded default.
     timeout defaults to 90s -- measured single-symbol latency (2026-07-31) ranged
     11-60s, so 45s would fail the slow tail; 90s is 1.5x the worst observed.
+    thinking=False sends chat_template_kwargs enable_thinking=false, the only
+    switch that actually stops nemotron-3.5-super-vl reasoning (the "detailed
+    thinking off" system message does not): measured 2026-11-13 on the
+    reflection prompt, 5649-8033 completion tokens (99% reasoning) with it
+    ignored vs 137 tokens, 0 reasoning, with it set.
     """
     from openai import OpenAI
 
@@ -91,6 +97,8 @@ def nvidia_complete(
             model=model,
             max_tokens=max_tokens,
             temperature=0,
+            extra_body=None if thinking else {
+                "chat_template_kwargs": {"enable_thinking": False}},
             messages=[
                 {"role": "system", "content": "detailed thinking off"},
                 {"role": "user", "content": prompt},
