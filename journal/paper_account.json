@@ -1,27 +1,7 @@
 {
-  "cash_usd": 3188.490043962063,
-  "date": "2026-11-11",
+  "cash_usd": 4580.738538171097,
+  "date": "2026-11-13",
   "positions": {
-    "AAPL": {
-      "cost_basis_usd": 250.0,
-      "shares": 0.753238941239547
-    },
-    "ADBE": {
-      "cost_basis_usd": 250.0,
-      "shares": 1.0822042593165901
-    },
-    "AMD": {
-      "cost_basis_usd": 250.0,
-      "shares": 0.5166356750429715
-    },
-    "AMZN": {
-      "cost_basis_usd": 250.0,
-      "shares": 1.0770755217035253
-    },
-    "ORCL": {
-      "cost_basis_usd": 250.0,
-      "shares": 2.174102136223874
-    },
     "SPY": {
       "cost_basis_usd": 250.0,
       "shares": 0.3382537862994169
@@ -31,5 +11,5 @@
       "shares": 0.7955069395162245
     }
   },
-  "realized_pnl_today_usd": 0.0
+  "realized_pnl_today_usd": 142.24849420903502
 }

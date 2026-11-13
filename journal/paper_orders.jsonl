@@ -1212,3 +1212,14 @@
 {"event": "order_rejected", "notional_usd": 257.00860854234503, "reason": "Order $257.01 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "SPY", "ts": "2026-11-12T19:36:50.419934+00:00"}
 {"event": "order_rejected", "notional_usd": 310.91592932728776, "reason": "Order $310.92 exceeds per-trade cap $250.00.", "side": "sell", "symbol": "TSLA", "ts": "2026-11-12T19:36:50.419951+00:00"}
 {"event": "paper_run_end", "n_accepted": 0, "n_orders": 8, "ts": "2026-11-12T19:36:50.420375+00:00"}
+{"broker_order_id": "mock-1", "event": "order_placed", "notional_usd": 267.30943914501495, "side": "sell", "status": "filled", "symbol": "AAPL", "ts": "2026-11-13T00:55:55.289438+00:00"}
+{"broker_order_id": "mock-2", "event": "order_placed", "notional_usd": 258.14899675160376, "side": "sell", "status": "filled", "symbol": "ADBE", "ts": "2026-11-13T00:55:55.289537+00:00"}
+{"broker_order_id": "mock-3", "event": "order_placed", "notional_usd": 302.38685429606335, "side": "sell", "status": "filled", "symbol": "AMD", "ts": "2026-11-13T00:55:55.289573+00:00"}
+{"broker_order_id": "mock-4", "event": "order_placed", "notional_usd": 288.0530801539697, "side": "sell", "status": "filled", "symbol": "AMZN", "ts": "2026-11-13T00:55:55.289598+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Order would push deployed capital to $2214.52, over cap $2000.00.", "side": "buy", "symbol": "NVDA", "ts": "2026-11-13T00:55:55.289625+00:00"}
+{"broker_order_id": "mock-5", "event": "order_placed", "notional_usd": 276.35012386238327, "side": "sell", "status": "filled", "symbol": "ORCL", "ts": "2026-11-13T00:55:55.289647+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max orders per run reached (5).", "side": "buy", "symbol": "PFE", "ts": "2026-11-13T00:55:55.289667+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max orders per run reached (5).", "side": "buy", "symbol": "PM", "ts": "2026-11-13T00:55:55.289686+00:00"}
+{"event": "order_rejected", "notional_usd": 256.09870503138467, "reason": "Max orders per run reached (5).", "side": "sell", "symbol": "SPY", "ts": "2026-11-13T00:55:55.289703+00:00"}
+{"event": "order_rejected", "notional_usd": 316.17424282150154, "reason": "Max orders per run reached (5).", "side": "sell", "symbol": "TSLA", "ts": "2026-11-13T00:55:55.289721+00:00"}
+{"event": "paper_run_end", "n_accepted": 5, "n_orders": 10, "ts": "2026-11-13T00:55:55.290050+00:00"}
