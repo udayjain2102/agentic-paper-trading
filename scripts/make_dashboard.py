@@ -130,27 +130,41 @@ def _locked_run(runs: list[Path], cfg) -> Path:
     return runs[-1]
 
 
-def _cross_run_buckets(base_dir: Path) -> tuple[list[dict], list[dict]]:
-    """Top loss and win buckets across every bucketing dimension (vol, gap,
-    holding, symbol, side, dow, near_high, ...) over every archived run."""
-    frames = [f for f in (load_run(d)[1] for d in _run_dirs(base_dir)) if len(f)]
-    if not frames:
+_HOLDING_NAMES = {"short": "under 5 bars", "long": "5+ bars"}  # not the trade side
+
+
+def _locked_buckets(locked_dir: Path) -> tuple[list[dict], list[dict]]:
+    """Where the locked strategy's loss dollars and win dollars concentrate.
+
+    One run only (the strategy actually being paper-traded), in dollars, and
+    ranked by lift = a bucket's share of the dollars / its share of the trades.
+    Ranking by raw share just lists the biggest bucket first, in both panels.
+    """
+    trades = flatten_trades(load_run(locked_dir)[1])
+    if not len(trades):
         return [], []
-    trades = flatten_trades(pd.concat(frames, ignore_index=True))
-    n_losses = int((trades["outcome"] == "loss").sum())
-    n_wins = int((trades["outcome"] == "win").sum())
+    pnl = trades["pnl_abs"].astype(float)
+    total_loss, total_win = float(-pnl[pnl < 0].sum()), float(pnl[pnl > 0].sum())
     rows = []
     for dim, labels in _bucket_labels(trades).items():
+        if dim == "symbol":
+            continue  # ~12 trades a name: noise, not a setup
         for bucket, idx in trades.groupby(labels).groups.items():
-            sub = trades.loc[idx]
-            loss_n = int((sub["outcome"] == "loss").sum())
-            win_n = int((sub["outcome"] == "win").sum())
-            rows.append({"dim": dim, "bucket": str(bucket), "lossN": loss_n, "winN": win_n,
-                         "totalN": int(len(sub)),
-                         "wr": float((sub["outcome"] == "win").mean()) if len(sub) else 0.0,
-                         "lossShare": loss_n / n_losses if n_losses else 0.0,
-                         "winShare": win_n / n_wins if n_wins else 0.0})
-    top = lambda key: [{**r, "share": r[key]} for r in sorted(rows, key=lambda r: -r[key])[:5]]  # noqa: E731
+            sub = pnl.loc[idx]
+            share = len(sub) / len(trades)
+            loss = float(-sub[sub < 0].sum()) / total_loss if total_loss else 0.0
+            win = float(sub[sub > 0].sum()) / total_win if total_win else 0.0
+            rows.append({
+                "dim": dim,
+                "bucket": _HOLDING_NAMES.get(str(bucket), str(bucket)) if dim == "holding" else str(bucket),
+                "tradeShare": share, "lossShare": loss, "winShare": win,
+                "wr": float((trades.loc[idx, "outcome"] == "win").mean()),
+            })
+
+    def top(key):
+        out = [{**r, "share": r[key], "lift": r[key] / r["tradeShare"]} for r in rows]
+        return sorted((r for r in out if r["lift"] > 1), key=lambda r: -r["lift"])[:5]
+
     return top("lossShare"), top("winShare")
 
 
@@ -208,7 +222,7 @@ def _build_data(base_dir: Path) -> dict:
     _, _, net = load_run(locked_dir)
     equity = (1.0 + net.astype(float)).cumprod()
     forward_dir = base_dir.parent / "forward"
-    loss_buckets, win_buckets = _cross_run_buckets(base_dir)
+    loss_buckets, win_buckets = _locked_buckets(locked_dir)
     g = cfg.limits
     memory = read_memory()
 
@@ -360,12 +374,11 @@ th.c,td.c{text-align:center}
   <section class="two" style="grid-template-columns:minmax(0,0.85fr) minmax(0,1.15fr)">
     <div class="col" style="gap:20px">
       <div class="card">
-        <h3>Where losses concentrate</h3><div class="sub">Top buckets by share of all losses, across every archived run.</div>
+        <h3>Where losses concentrate</h3><div class="sub">Share of dollars lost, locked strategy only. Ranked by how far a bucket exceeds its share of trades.</div>
         <div id="buckets" class="col"></div>
-        <div class="note" style="margin-top:16px;background:rgba(255,176,32,.07);border:1px solid rgba(255,176,32,.22)">⚠ Measured across every archived paper-trade run, not just the locked config.</div>
       </div>
       <div class="card">
-        <h3>Where we win</h3><div class="sub">Top buckets by share of all wins, across every archived run.</div>
+        <h3>Where we win</h3><div class="sub">Share of dollars won, locked strategy only. Same ranking.</div>
         <div id="winbuckets" class="col"></div>
       </div>
     </div>
@@ -428,10 +441,10 @@ const universe = syms => !syms || !syms.length ? 'no symbols'
   : syms.length <= 5 ? syms.join(', ') : `universe (${syms.length})`;
 const chips = (attr, items, active) => items.map(([id, label, dot]) =>
   `<button class="chip" ${attr}="${esc(id)}" aria-pressed="${id === active}">${dot ? `<span class="dot" style="color:${dot}"></span>` : ''}${esc(label)}</button>`).join('');
-const bucketRow = (b, nKey, color) => `<div>
+const bucketRow = (b, color) => `<div>
   <div class="hdr" style="align-items:baseline;gap:8px;margin-bottom:5px"><span style="font-size:12.5px"><span class="m mu" style="font-size:11px">${esc(b.dim)}</span> · ${esc(b.bucket)}</span><span class="m" style="font-size:12.5px;font-weight:700;color:${color}">${pctAbs(b.share, 1)}</span></div>
   <div class="bar"><i style="width:${(b.share * 100).toFixed(0)}%;background:${color}"></i></div>
-  <div class="m mu" style="font-size:10.5px">${b[nKey].toLocaleString()} of ${b.totalN.toLocaleString()} trades · ${pctAbs(b.wr, 0)} win rate</div></div>`;
+  <div class="m mu" style="font-size:10.5px">${pctAbs(b.tradeShare, 0)} of trades · ${b.lift.toFixed(1)}× its size · ${pctAbs(b.wr, 0)} win rate</div></div>`;
 
 function renderHeaderPills() {
   const g = DATA.guardrails, U = 'var(--up)', W = 'var(--warn)', D = 'var(--down)';
@@ -590,8 +603,8 @@ function renderScorecard() {
 }
 
 function renderBuckets() {
-  $('buckets').innerHTML = DATA.buckets.map(b => bucketRow(b, 'lossN', 'var(--down)')).join('');
-  $('winbuckets').innerHTML = DATA.winBuckets.map(b => bucketRow(b, 'winN', 'var(--up)')).join('');
+  $('buckets').innerHTML = DATA.buckets.map(b => bucketRow(b, 'var(--down)')).join('');
+  $('winbuckets').innerHTML = DATA.winBuckets.map(b => bucketRow(b, 'var(--up)')).join('');
 }
 
 function renderLedger() {
