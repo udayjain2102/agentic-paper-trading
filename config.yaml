@@ -94,3 +94,11 @@ strategy:
     IBM, INTC, JNJ, JPM, KO, LIN, LLY, LOW, MA, MCD, MDT, META, MRK, MS, MSFT,
     NFLX, NKE, NOW, NVDA, ORCL, PEP, PFE, PG, PM, QCOM, SBUX, SPY, T, TMO, TSLA,
     TXN, UNH, UNP, V, VZ, WFC, WMT]
+
+# Fifth forward record (agent_open): no stock list. The agent hunts the whole US
+# market each day; only this tradability FLOOR (a rule, not a list) bounds it.
+open_universe:
+  min_price: 5.0                # last close at or above this
+  min_dollar_volume: 20000000   # median close*volume over the last 20 bars
+  max_positions: 10             # each position is 1/max_positions of the book
+  max_candidates: 40            # names shown to the agent after its screens

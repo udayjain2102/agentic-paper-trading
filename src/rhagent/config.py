@@ -33,6 +33,14 @@ class StrategyConfig:
 
 
 @dataclass(frozen=True)
+class OpenUniverseConfig:
+    min_price: float = 5.0
+    min_dollar_volume: float = 20_000_000
+    max_positions: int = 10
+    max_candidates: int = 40
+
+
+@dataclass(frozen=True)
 class Config:
     limits: Limits
     agent: AgentConfig
@@ -42,6 +50,7 @@ class Config:
     nvidia_api_key: str
     nvidia_base_url: str
     strategy: "StrategyConfig | None" = None
+    open_universe: OpenUniverseConfig = OpenUniverseConfig()
 
 
 def is_live() -> bool:
@@ -67,4 +76,5 @@ def load(path: str | Path = "config.yaml") -> Config:
             "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"
         ),
         strategy=strategy,
+        open_universe=OpenUniverseConfig(**(raw.get("open_universe") or {})),
     )

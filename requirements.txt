@@ -16,3 +16,6 @@ pytest>=8.0
 # Tests build openai error objects, which require real httpx Request/Response
 # types even though openai itself has moved on to httpx2.
 httpx>=0.27
+
+# Whole-market scan for the agent_open record (reads Hugging Face parquet remotely).
+duckdb>=1.0

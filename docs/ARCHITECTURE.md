@@ -421,6 +421,39 @@ until it clears a bar, and it makes the bar *higher* the more you searched.
 
 ---
 
+## 6a. The fifth record: `agent_open` (no stock list)
+
+The other four records trade a fixed 65-name list. `journal/forward/agent_open/`
+has no list: each day the agent decides what to hunt for across the whole US
+market and what to hold (`src/rhagent/open_universe.py`).
+
+- **Floor, not a list.** A daily scan of the public Hugging Face Yahoo dataset
+  (via duckdb) keeps companies with a sector, close >= `min_price`, median 20-bar
+  dollar volume >= `min_dollar_volume` and a bar on the scan's latest date
+  (`open_universe:` in `config.yaml`). Funds have no sector and drop out.
+- **Two model calls.** Call 1 sees a market summary and the feature names and
+  picks up to 3 screens (`{feature, lowest|highest, n}`) -- it chooses among
+  fixed columns, it never writes code or SQL. Call 2 sees a table of the
+  screened candidates (plus current holdings) and picks up to `max_positions`
+  long/short names. Held names not re-picked are closed. Each name is
+  1/`max_positions` of the book; empty slots are cash.
+- **Failure rule.** A failed scan, call or validation records the day as
+  `failed`, holds yesterday's positions and leaves that date out of
+  `returns.csv` (same principle as 1a: a carried position is the P&L of an
+  outage, not of a decision). Past dates are never retried or rewritten, and a
+  date is never decided twice, so a second tick the same day makes no model call.
+- **Returns** go through `backtest.net_returns` per name (7 bp, next_open), and a
+  date is recorded only once every leg has its next bar.
+- **Known limits.** Extreme screens (lowest `ret_1d`, lowest `z20`) will surface
+  bad ticks and unadjusted corporate actions in the scan source; fills come from
+  Yahoo, so a bad tick costs a wasted pick, not fake P&L. A held name that never
+  gets Yahoo bars leaves its days unrecorded; the report prints those loudly
+  after 5 days but nothing closes the position automatically.
+- **Judged forward only.** An LLM remembers how past years went, so a backtest of
+  it picking stocks would be inflated by memory. Only the forward record counts.
+
+---
+
 ## 7. Known weak points
 
 Named here so nobody has to rediscover them.
