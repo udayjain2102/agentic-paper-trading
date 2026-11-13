@@ -1,15 +1,15 @@
 {
-  "cash_usd": 4580.738538171097,
+  "cash_usd": 4653.011486023983,
   "date": "2026-11-13",
   "positions": {
-    "SPY": {
+    "NVDA": {
       "cost_basis_usd": 250.0,
-      "shares": 0.3382537862994169
+      "shares": 1.5043022824922498
     },
-    "TSLA": {
+    "PFE": {
       "cost_basis_usd": 250.0,
-      "shares": 0.7955069395162245
+      "shares": 8.671522742337311
     }
   },
-  "realized_pnl_today_usd": 142.24849420903502
+  "realized_pnl_today_usd": 214.52144206192122
 }

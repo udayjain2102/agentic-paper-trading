@@ -1223,3 +1223,9 @@
 {"event": "order_rejected", "notional_usd": 256.09870503138467, "reason": "Max orders per run reached (5).", "side": "sell", "symbol": "SPY", "ts": "2026-11-13T00:55:55.289703+00:00"}
 {"event": "order_rejected", "notional_usd": 316.17424282150154, "reason": "Max orders per run reached (5).", "side": "sell", "symbol": "TSLA", "ts": "2026-11-13T00:55:55.289721+00:00"}
 {"event": "paper_run_end", "n_accepted": 5, "n_orders": 10, "ts": "2026-11-13T00:55:55.290050+00:00"}
+{"broker_order_id": "mock-1", "event": "order_placed", "notional_usd": 250.0, "side": "buy", "status": "filled", "symbol": "NVDA", "ts": "2026-11-13T18:47:11.361563+00:00"}
+{"broker_order_id": "mock-2", "event": "order_placed", "notional_usd": 250.0, "side": "buy", "status": "filled", "symbol": "PFE", "ts": "2026-11-13T18:47:11.361763+00:00"}
+{"event": "order_rejected", "notional_usd": 250.0, "reason": "Max new positions per run reached (2).", "side": "buy", "symbol": "PM", "ts": "2026-11-13T18:47:11.361803+00:00"}
+{"broker_order_id": "mock-3", "event": "order_placed", "notional_usd": 256.09870503138467, "side": "sell", "status": "filled", "symbol": "SPY", "ts": "2026-11-13T18:47:11.361830+00:00"}
+{"broker_order_id": "mock-4", "event": "order_placed", "notional_usd": 316.17424282150154, "side": "sell", "status": "filled", "symbol": "TSLA", "ts": "2026-11-13T18:47:11.361861+00:00"}
+{"event": "paper_run_end", "n_accepted": 4, "n_orders": 5, "ts": "2026-11-13T18:47:11.362252+00:00"}
