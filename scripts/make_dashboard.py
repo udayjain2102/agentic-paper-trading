@@ -388,7 +388,7 @@ th.c,td.c{text-align:center}
   </section>
 
   <section id="agentnotes" class="card" style="display:none">
-    <h3>Agent's own lessons (self-written)</h3><div class="sub">Reflections the agent journaled after past runs.</div>
+    <h3>Agent's own lessons (self-written)</h3><div class="sub">The agent's current lessons, rewritten after each run.</div>
     <div id="reflections" class="col" style="gap:10px;font-size:12.5px"></div>
   </section>
 
