@@ -9,12 +9,64 @@ static page with a small vanilla-JS layer (sort, filter, per-run drawer).
 
 Reads the ledgers under journal/papertrade/ and journal/forward/; reuses
 rhagent.evaluate so the numbers match the CLI report exactly.
+
+PAYLOAD CONTRACT -- keys added to the dict _build_data returns (every older key
+and its shape is unchanged). Floats are raw (the page formats them); dates are
+"YYYY-MM-DD" strings; a section that cannot be built yields the empty value
+below AND an entry in `health` (level "warn", id "build:<key>"); it never raises.
+
+  asOf         str | null          date of the newest bar in data/SPY.csv.
+  records      list[Record], always 5, in order: mean_reversion_real,
+               mean_reversion, agent, agent_ctx, agent_open. Record =
+               {id: str, label: str, kind: "rule"|"agent", basis: str, note: str,
+                missing: bool,   # true: returns.csv absent, empty or unreadable
+                days: int|null, start: str|null, end: str|null,
+                totalReturn: float|null, sharpe: float|null,
+                sharpeNeeds: int|null,   # min return-days; set only when sharpe is null on a non-missing record
+                maxDrawdown: float|null,   # <= 0
+                spyReturn: float|null,     # SPY buy-and-hold over [start, end]
+                lastNet: float|null,       # last recorded day's return
+                behind: int|null,          # SPY bars after `end`, minus 1, floor 0; null if no SPY data
+                curve: {dates: [str], equity: [float]},   # equity[0] = 1 + first net
+                decisions: {ok: int, failed: int} | null}
+               decisions: agent kinds only; final status per (date, symbol)
+               (agent_open: per date); a row with no status (legacy) counts as neither.
+               null for rule kinds. A missing record has every nullable field null,
+               curve {dates: [], equity: []}, decisions null.
+  today        {date: str|null,    # = asOf
+                open: {date, status, scanDate, nFloor, screens: [..],
+                       screenReason, candidates, positions: [{symbol, target, reason}],
+                       reason, fail} | null,   # null until agent_open has decided a day;
+                       # scalars absent from the log line are null, lists are []
+                agents: [{id, date: str, long: int, short: int, flat: int, failed: int,
+                          changes: [{symbol, from: float, to: float, reason: str|null}]}],
+                       # ids agent, agent_ctx in that order; [] on failure; a record
+                       # with no pos files is omitted. long/short/flat count only
+                       # status-ok rows on `date`; failed rows hold the prior position
+                       # and are counted in `failed`. changes (max 15, biggest move
+                       # first) compare ok rows to the previous decided date (absent = 0).
+                rule: {date: str, held: [str], entered: [str], exited: [str]} | null,
+                       # mean_reversion_real's target positions, newest bar vs the
+                       # one before; held = long on the newest bar.
+                paper: {date: str, orders: int, accepted: int, rejected: int,
+                        rejectReasons: {reason: count}, halted: bool,
+                        haltReason: str|null,
+                        account: {date, cashUsd, realizedPnlTodayUsd,
+                                  positions: [str]} | null} | null}
+                       # newest paper tick in journal/paper_orders.jsonl.
+  memory       {date: str|null, bullets: [str], legacy: bool, archiveEntries: int}
+               # empty value: {date: null, bullets: [], legacy: false, archiveEntries: 0}
+  experiments  list[{created, experiment, variant, sharpe, ciLo, ciHi, annReturn,
+               maxDrawdown, start, end, note}], newest first; [] if none.
+  health       list[{id: str, level: "ok"|"warn"|"bad", title: str, detail: str}]
+  healthLevel  "ok"|"warn"|"bad"   the worst level in `health` ("ok" if it is empty).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import webbrowser
 from datetime import datetime, timezone
@@ -36,8 +88,11 @@ from rhagent.evaluate import (  # noqa: E402
     spy_benchmark,
 )
 from rhagent.evaluate_robust import robust_table  # noqa: E402
+from rhagent.data import get_bars  # noqa: E402
 from rhagent.features import flatten_trades  # noqa: E402
-from rhagent.memory import read_memory  # noqa: E402
+from rhagent.forward import _agent_outage, _latest_decisions, _positions  # noqa: E402
+from rhagent.memory import archive_path, read_memory  # noqa: E402
+from rhagent.open_universe import _rows, _stuck  # noqa: E402
 
 HALT_FILE = Path("HALT")
 
@@ -213,6 +268,294 @@ def _win_trades(run_dir: Path) -> list[dict]:
     } for i, t in enumerate(trades.itertuples(), start=1)]
 
 
+# ---- data layer for the single-page overview (see PAYLOAD CONTRACT above) ----
+
+_EXPERIMENTS = Path(__file__).resolve().parents[1] / "experiments" / "results.jsonl"
+_LEVELS = ["ok", "warn", "bad"]
+_RECORDS = [  # (id, label, kind, basis, note)
+    ("mean_reversion_real", "Rule, honest fill", "rule", "7 bp · next-open fill",
+     "The honest rule number: 7 bp costs, filled at the next open."),
+    ("mean_reversion", "Rule, 1 bp", "rule", "1 bp · close fill",
+     "Flattering: 1 bp cost and a same-close fill; kept only for continuity with older numbers."),
+    ("agent", "Agent", "agent", "7 bp · next-open fill",
+     "A language model picks long, short or flat for each stock on a fixed list every day."),
+    ("agent_ctx", "Agent + market context", "agent", "7 bp · next-open fill",
+     "The same agent, also shown a market-context block (SPY moves, breadth, momentum rank)."),
+    ("agent_open", "Agent, no stock list", "agent", "7 bp · next-open fill",
+     "The agent screens a daily scan of the wider market and picks its own names."),
+]
+
+
+def _safe(health: list, key: str, empty, fn, *args):
+    """fn(*args), or `empty` plus a health entry -- a dashboard number must never fail the run."""
+    try:
+        return fn(*args)
+    except Exception as e:  # noqa: BLE001
+        health.append({"id": f"build:{key}", "level": "warn",
+                       "title": f"{key} could not be built", "detail": f"{type(e).__name__}: {e}"})
+        return empty
+
+
+def _spy_dates(data_dir: Path) -> list:
+    path = data_dir / "SPY.csv"
+    if not path.exists():
+        return []
+    return sorted(pd.read_csv(path, parse_dates=["date"])["date"])
+
+
+def _decision_counts(eval_dir: Path, per_date: bool) -> dict:
+    if per_date:  # agent_open decides one day at a time; the last row for a date wins
+        latest = {r["date"]: r for r in _rows(eval_dir / "decisions.jsonl")}
+    else:
+        latest = _latest_decisions(eval_dir)
+    status = [r.get("status") for r in latest.values()]
+    return {"ok": status.count("ok"), "failed": sum(s not in ("ok", None) for s in status)}
+
+
+def _empty_record(spec: tuple) -> dict:
+    rid, label, kind, basis, note = spec
+    return {"id": rid, "label": label, "kind": kind, "basis": basis, "note": note,
+            "missing": True, "days": None, "start": None, "end": None, "totalReturn": None,
+            "sharpe": None, "sharpeNeeds": None, "maxDrawdown": None, "spyReturn": None,
+            "lastNet": None, "behind": None, "curve": {"dates": [], "equity": []},
+            "decisions": None}
+
+
+def _record(spec: tuple, forward_dir: Path, spy_dates: list, data_dir: Path) -> dict:
+    out = _empty_record(spec)
+    eval_dir = forward_dir / spec[0]
+    if not (eval_dir / "returns.csv").exists():
+        return out
+    net = pd.read_csv(eval_dir / "returns.csv", parse_dates=["date"]).set_index("date")["net"].astype(float)
+    if not len(net):
+        return out
+    a = aggregate(pd.DataFrame(), net)
+    spy = spy_benchmark(net.index, data_dir)
+    end = net.index[-1]
+    out.update({
+        "missing": False, "days": a["n_return_days"],
+        "start": str(net.index[0])[:10], "end": str(end)[:10],
+        "totalReturn": a["total_return"], "sharpe": a["sharpe"],
+        "sharpeNeeds": MIN_RETURN_DAYS_FOR_SHARPE if a["sharpe"] is None else None,
+        "maxDrawdown": a["max_drawdown"],
+        "spyReturn": spy["return"] if spy["n_days"] else None,
+        "lastNet": float(net.iloc[-1]),
+        "behind": max(0, sum(d > end for d in spy_dates) - 1) if spy_dates else None,
+        "curve": {"dates": [str(d)[:10] for d in net.index],
+                  "equity": [float(v) for v in (1.0 + net).cumprod()]},
+        "decisions": _decision_counts(eval_dir, spec[0] == "agent_open") if spec[2] == "agent" else None,
+    })
+    return out
+
+
+def _today_open(forward_dir: Path) -> dict | None:
+    rows = _rows(forward_dir / "agent_open" / "decisions.jsonl")
+    if not rows:
+        return None
+    r = rows[-1]
+    return {"date": r.get("date"), "status": r.get("status"), "scanDate": r.get("scan_date"),
+            "nFloor": r.get("n_floor"), "screens": r.get("screens") or [],
+            "screenReason": r.get("screen_reason"), "candidates": r.get("candidates"),
+            "positions": [{"symbol": p.get("symbol"), "target": p.get("target"), "reason": p.get("reason")}
+                          for p in r.get("positions") or []],
+            "reason": r.get("reason"), "fail": r.get("fail")}
+
+
+def _today_agent(forward_dir: Path, rid: str) -> dict | None:
+    eval_dir = forward_dir / rid
+    frames = []
+    for f in sorted(eval_dir.glob("pos_*.csv")):
+        df = pd.read_csv(f)
+        if "status" not in df:
+            df["status"] = "ok"  # rows seeded before the status column existed
+        df["symbol"] = f.stem[len("pos_"):]
+        frames.append(df)
+    if not frames:
+        return None
+    pos = pd.concat(frames)
+    dates = sorted(pos["date"].unique())
+    date = dates[-1]
+    prev = pos[pos["date"] == dates[-2]].set_index("symbol")["pos"] if len(dates) > 1 else pd.Series(dtype=float)
+    cur = pos[pos["date"] == date]
+    ok = cur[cur["status"] == "ok"]
+    reasons = {s: r.get("reason") for (d, s), r in _latest_decisions(eval_dir).items() if d == date}
+    changes = [{"symbol": r.symbol, "from": float(prev.get(r.symbol, 0.0)), "to": float(r.pos),
+                "reason": reasons.get(r.symbol)}
+               for r in ok.itertuples() if float(r.pos) != float(prev.get(r.symbol, 0.0))]
+    changes.sort(key=lambda c: (-abs(c["to"] - c["from"]), c["symbol"]))
+    return {"id": rid, "date": str(date), "long": int((ok["pos"] > 0).sum()),
+            "short": int((ok["pos"] < 0).sum()), "flat": int((ok["pos"] == 0).sum()),
+            "failed": int(len(cur) - len(ok)), "changes": changes[:15]}
+
+
+def _today_agents(forward_dir: Path) -> list:
+    return [a for a in (_today_agent(forward_dir, rid) for rid in ("agent", "agent_ctx")) if a]
+
+
+def _today_rule(cfg, data_dir: Path) -> dict | None:
+    """Same call rhagent.paper_run makes for the rule's target positions."""
+    bars = get_bars(list(cfg.strategy.universe), "", "", fetch=lambda *a: {}, cache_dir=data_dir)
+    pos, _ = _positions(cfg, cfg.strategy.name, bars, Path())
+    pos = {s: p for s, p in pos.items() if len(p)}
+    if not pos:
+        return None
+    last = {s: (float(p.iloc[-1]), float(p.iloc[-2]) if len(p) > 1 else 0.0) for s, p in pos.items()}
+    return {"date": str(max(p.index[-1] for p in pos.values()))[:10],
+            "held": sorted(s for s, (now, _) in last.items() if now > 0),
+            "entered": sorted(s for s, (now, was) in last.items() if now > 0 >= was),
+            "exited": sorted(s for s, (now, was) in last.items() if was > 0 >= now)}
+
+
+def _today_paper(journal: Path) -> dict | None:
+    """Newest paper tick: the events journaled since the previous paper_run_end /
+    paper_run_halted, closed by the newest one (rhagent.paper_run writes both)."""
+    rows = _rows(journal / "paper_orders.jsonl")
+    ends = [i for i, r in enumerate(rows) if r.get("event") in ("paper_run_end", "paper_run_halted")]
+    if not ends:
+        return None
+    end = rows[ends[-1]]
+    tick = rows[(ends[-2] + 1 if len(ends) > 1 else 0):ends[-1]]
+    reasons: dict = {}
+    for r in tick:
+        if r.get("event") == "order_rejected":
+            reasons[r.get("reason")] = reasons.get(r.get("reason"), 0) + 1
+    halted = end["event"] == "paper_run_halted"
+    acct = None
+    if (journal / "paper_account.json").exists():
+        raw = json.loads((journal / "paper_account.json").read_text())
+        acct = {"date": raw.get("date"), "cashUsd": raw.get("cash_usd"),
+                "realizedPnlTodayUsd": raw.get("realized_pnl_today_usd"),
+                "positions": sorted(raw.get("positions", {}))}
+    return {"date": str(end.get("ts", ""))[:10], "orders": int(end.get("n_orders", 0)),
+            "accepted": int(end.get("n_accepted", 0)), "rejected": sum(reasons.values()),
+            "rejectReasons": reasons, "halted": halted,
+            "haltReason": end.get("reason") if halted else None, "account": acct}
+
+
+def _memory(journal: Path) -> dict:
+    mem_path = journal / "agent_memory.md"
+    arch = archive_path(mem_path)
+    lines = read_memory(mem_path).strip().splitlines()
+    return {"date": lines[0][3:].strip() if lines else None,
+            "bullets": [re.sub(r"^[-*•]\s+", "", x.strip()) for x in lines[1:] if x.strip()],
+            "legacy": not arch.exists(),
+            "archiveEntries": ("\n" + arch.read_text()).count("\n## ") if arch.exists() else 0}
+
+
+def _experiments(path: Path) -> list[dict]:
+    rows = _rows(path)
+    order = sorted(range(len(rows)), key=lambda i: (rows[i]["created"], i), reverse=True)
+    return [{"created": r["created"], "experiment": r["experiment"], "variant": r["variant"],
+             "sharpe": r.get("sharpe"), "ciLo": r.get("sharpe_ci_lo"), "ciHi": r.get("sharpe_ci_hi"),
+             "annReturn": r.get("ann_return"), "maxDrawdown": r.get("max_drawdown"),
+             "start": r.get("start"), "end": r.get("end"), "note": r.get("note", "")}
+            for r in (rows[i] for i in order)]
+
+
+def _item(id_: str, level: str, title: str, detail: str = "") -> dict:
+    return {"id": id_, "level": level, "title": title, "detail": detail}
+
+
+def _chk_records(records: list) -> list:
+    out = []
+    for r in records:
+        rid, b = r["id"], r["behind"]
+        if r["missing"]:
+            lvl = "warn" if rid == "agent_open" else "bad"
+            why = "starts on the next scheduled run" if rid == "agent_open" else "no returns recorded"
+            out.append(_item(f"record:{rid}", lvl, f"{r['label']}: no record", why))
+        elif b is None:
+            out.append(_item(f"record:{rid}", "warn", f"{r['label']}: freshness unknown",
+                             "no SPY bars to compare against"))
+        else:
+            lvl = "ok" if b == 0 else "warn" if b <= 3 else "bad"
+            out.append(_item(f"record:{rid}", lvl,
+                             f"{r['label']}: " + ("up to date" if b == 0 else f"{b} bar(s) behind"),
+                             f"last recorded day {r['end']}"))
+    return out
+
+
+def _chk_outage(forward_dir: Path) -> list:
+    out = []
+    for rid in ("agent", "agent_ctx"):
+        if (forward_dir / rid).exists():
+            down = _agent_outage(forward_dir / rid)
+            out.append(_item(f"outage:{rid}", "bad" if down else "ok",
+                             f"{rid}: " + ("model outage" if down else "deciding"),
+                             "every decision on the newest bar failed" if down else ""))
+    return out
+
+
+def _chk_open(forward_dir: Path, today_open: dict | None, data_dir: Path, now: datetime) -> list:
+    if today_open is None:
+        return []
+    failed = today_open["status"] == "failed"
+    out = [_item("open:decision", "bad" if failed else "ok",
+                 "agent_open: " + (f"newest decision failed ({today_open['date']})" if failed
+                                   else "newest decision ok"),
+                 str(today_open["fail"] or "") if failed else "")]
+    stuck = _stuck(forward_dir / "agent_open", data_dir / "open", now.replace(tzinfo=None))
+    if stuck:
+        out.append(_item("open:stuck", "warn", "agent_open: days unrealized for over 5 days",
+                         "; ".join(f"{d} (no bar after it for: {', '.join(m) or 'calendar'})"
+                                   for d, m in stuck.items())))
+    return out
+
+
+def _chk_memory(memory: dict, agent: dict) -> list:
+    out = []
+    if memory["legacy"]:
+        out.append(_item("memory:legacy", "warn", "Memory is the old log",
+                         "reflection has not rewritten the memory yet"))
+    if memory["date"] and agent["end"]:
+        age = (pd.Timestamp(agent["end"]) - pd.Timestamp(memory["date"])).days
+        out.append(_item("memory:fresh", "warn" if age > 3 else "ok",
+                         "Memory " + (f"is {age} days older than the agent record" if age > 3 else "is current"),
+                         f"memory {memory['date']}, agent record ends {agent['end']}"))
+    return out
+
+
+def _chk_data(as_of: str | None, now: datetime) -> list:
+    if as_of is None:
+        return [_item("data:spy", "warn", "No SPY price data", "data/SPY.csv is missing or empty")]
+    age = (pd.Timestamp(now.replace(tzinfo=None)).normalize() - pd.Timestamp(as_of)).days
+    return [_item("data:spy", "warn" if age > 4 else "ok",
+                  "Price data " + (f"is {age} days old" if age > 4 else "is fresh"),
+                  f"newest SPY bar {as_of}")]
+
+
+def _health(records, today, memory, as_of, forward_dir, data_dir, now) -> list:
+    agent = next(r for r in records if r["id"] == "agent")
+    checks = {"records": lambda: _chk_records(records), "outage": lambda: _chk_outage(forward_dir),
+              "open": lambda: _chk_open(forward_dir, today["open"], data_dir, now),
+              "memory": lambda: _chk_memory(memory, agent), "data": lambda: _chk_data(as_of, now)}
+    out: list = []
+    for key, fn in checks.items():
+        out += _safe(out, f"health:{key}", [], fn)
+    return out
+
+
+def _new_sections(base_dir: Path, cfg, data_dir: Path, now: datetime) -> dict:
+    journal, health = base_dir.parent, []
+    forward_dir = journal / "forward"
+    spy = _safe(health, "asOf", [], _spy_dates, data_dir)
+    as_of = str(spy[-1])[:10] if spy else None
+    records = [_safe(health, f"record:{spec[0]}", _empty_record(spec), _record, spec, forward_dir, spy, data_dir)
+               for spec in _RECORDS]
+    today = {"date": as_of,
+             "open": _safe(health, "today.open", None, _today_open, forward_dir),
+             "agents": _safe(health, "today.agents", [], _today_agents, forward_dir),
+             "rule": _safe(health, "today.rule", None, _today_rule, cfg, data_dir),
+             "paper": _safe(health, "today.paper", None, _today_paper, journal)}
+    memory = _safe(health, "memory", {"date": None, "bullets": [], "legacy": False, "archiveEntries": 0},
+                   _memory, journal)
+    experiments = _safe(health, "experiments", [], _experiments, _EXPERIMENTS)
+    health += _safe(health, "health", [], _health, records, today, memory, as_of, forward_dir, data_dir, now)
+    level = max((h["level"] for h in health), key=_LEVELS.index, default="ok")
+    return {"asOf": as_of, "records": records, "today": today, "memory": memory,
+            "experiments": experiments, "health": health, "healthLevel": level}
+
+
 def _build_data(base_dir: Path) -> dict:
     runs = _run_dirs(base_dir)
     if not runs:
@@ -263,6 +606,7 @@ def _build_data(base_dir: Path) -> dict:
         "runbook": [list(x) for x in _RUNBOOK],
         "reflections": memory.split("\n## ")[1:][-3:] if memory else [],
         "actionsUrl": _ACTIONS_URL,
+        **_new_sections(base_dir, cfg, Path("data"), datetime.now(timezone.utc)),
     }
 
 
