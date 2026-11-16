@@ -69,7 +69,7 @@ import json
 import re
 import sys
 import webbrowser
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html import escape
 from pathlib import Path
 
@@ -502,6 +502,41 @@ def _chk_open(forward_dir: Path, today_open: dict | None, data_dir: Path, now: d
     return out
 
 
+def _chk_decisions(forward_dir: Path, today) -> list:
+    """Failed-decision share over the last 30 days, per agent record.
+
+    Cumulative failed counts are meaningless -- retries heal old failures, so
+    the totals in `decisions` only ever grow (agent: 845, agent_ctx: 585 on
+    real data, nearly all healed). What matters is whether decisions are
+    failing NOW: more failures than successes in the window means the record
+    is mostly outage, not signal -- the hole record freshness can't see,
+    because returns.csv keeps appending flat days through an outage.
+    """
+    since = (today - timedelta(days=30)).isoformat()
+    out = []
+    for rid, per_date in (("agent", False), ("agent_ctx", False), ("agent_open", True)):
+        log = forward_dir / rid / "decisions.jsonl"
+        if not log.exists():
+            continue
+        if per_date:  # agent_open decides one day at a time; last row per date wins
+            latest = {r["date"]: r for r in _rows(log)}
+            rows = [r for d, r in latest.items() if d >= since]
+        else:
+            latest = _latest_decisions(forward_dir / rid)
+            rows = [r for (d, _s), r in latest.items() if d >= since]
+        ok = sum(r.get("status") == "ok" for r in rows)
+        failed = sum(r.get("status") not in (None, "ok") for r in rows)
+        total = ok + failed  # legacy rows (no status) count as neither
+        if not total:
+            continue
+        lvl = "bad" if failed > ok else "warn" if failed else "ok"
+        out.append(_item(f"decisions:{rid}", lvl,
+                         f"{rid}: {failed} failed of {total} decisions (30d)",
+                         "failures hold the prior position; healed dates count ok"
+                         if failed else ""))
+    return out
+
+
 def _chk_memory(memory: dict, agent: dict) -> list:
     out = []
     if memory["legacy"]:
@@ -528,6 +563,7 @@ def _health(records, today, memory, as_of, forward_dir, data_dir, now) -> list:
     agent = next(r for r in records if r["id"] == "agent")
     checks = {"records": lambda: _chk_records(records), "outage": lambda: _chk_outage(forward_dir),
               "open": lambda: _chk_open(forward_dir, today["open"], data_dir, now),
+              "decisions": lambda: _chk_decisions(forward_dir, now.date()),
               "memory": lambda: _chk_memory(memory, agent), "data": lambda: _chk_data(as_of, now)}
     out: list = []
     for key, fn in checks.items():
@@ -673,9 +709,37 @@ th.c,td.c{text-align:center}
 </header>
 
 <main style="max-width:1240px;margin:0 auto;padding:26px 26px 90px">
+  <div id="healthbanner" style="margin-bottom:16px"></div>
   <section style="margin-top:0">
     <h2 class="mu" style="margin:0 0 12px;font-size:12px;letter-spacing:.14em;text-transform:uppercase">The verdict · agent vs baseline · forward paper track</h2>
     <div id="verdict"></div>
+  </section>
+
+  <section class="card">
+    <div class="hdr" style="align-items:baseline;gap:10px;margin-bottom:6px">
+      <div><h3>Forward records</h3><div class="sub">All five live paper tracks on one basis where noted. A record only counts days where every name got a real decision.</div></div>
+      <span id="asof" class="m mu" style="font-size:11px"></span>
+    </div>
+    <div class="scroll"><table style="min-width:980px"><thead><tr>
+      <th class="l">record</th><th class="l">basis</th><th>days</th><th class="l">window</th><th>equity</th>
+      <th>total return</th><th>sharpe</th><th>max DD</th><th>vs SPY</th><th>behind</th><th>decisions</th>
+    </tr></thead><tbody id="records"></tbody></table></div>
+  </section>
+
+  <section class="two" style="grid-template-columns:minmax(0,1.2fr) minmax(0,0.8fr)">
+    <div class="card">
+      <div class="hdr" style="align-items:baseline;gap:10px;margin-bottom:6px">
+        <div><h3>Today</h3><div class="sub" id="todaysub"></div></div>
+      </div>
+      <div id="today" class="col"></div>
+    </div>
+    <div class="card">
+      <div class="hdr" style="align-items:baseline;gap:10px;margin-bottom:6px">
+        <div><h3>Agent memory</h3><div class="sub">The lessons block the agent is (or isn't) running with.</div></div>
+        <span id="memlegacy"></span>
+      </div>
+      <div id="memory" class="col" style="font-size:12.5px"></div>
+    </div>
   </section>
 
   <section class="card">
@@ -734,6 +798,16 @@ th.c,td.c{text-align:center}
       <div class="scroll"><table style="min-width:520px"><thead><tr><th class="l">#</th><th class="l">sym</th><th class="l">entry → exit</th><th>bars</th><th>pnl %</th><th>pnl $</th><th style="min-width:90px">weight</th></tr></thead><tbody id="ledger"></tbody></table></div>
       <div id="ledgermore" style="margin-top:12px;text-align:center"></div>
     </div>
+  </section>
+
+  <section class="card">
+    <div class="hdr" style="align-items:baseline;gap:10px;margin-bottom:6px">
+      <div><h3>Experiments</h3><div class="sub">Recorded research experiments, newest first.</div></div>
+    </div>
+    <div class="scroll"><table style="min-width:860px"><thead><tr>
+      <th class="l">created</th><th class="l">experiment</th><th class="l">variant</th><th>sharpe</th><th>95% CI</th>
+      <th>ann. return</th><th>max DD</th><th class="l">window</th><th class="l">note</th>
+    </tr></thead><tbody id="experiments"></tbody></table></div>
   </section>
 
   <section class="card">
@@ -985,6 +1059,142 @@ function renderAgentNotes() {
   if (has) $('reflections').innerHTML = DATA.reflections.map(r => `<p style="margin:0">## ${esc(r)}</p>`).join('');
 }
 
+// ---- overview sections: health, five forward records, today, memory, experiments ----
+// Every field the payload contract marks nullable is guarded here -- a missing
+// section must render empty, never throw (one throw would blank every panel
+// registered after it in the render list below).
+
+function renderHealth() {
+  const items = DATA.health || [];
+  const el = $('healthbanner');
+  if (!items.length) { el.innerHTML = ''; return; }
+  const lvl = { ok: 'var(--up)', warn: 'var(--warn)', bad: 'var(--down)' };
+  const c = lvl[DATA.healthLevel] || 'var(--line)';
+  const bad = items.filter(h => h.level !== 'ok').slice(0, 6);
+  const more = items.filter(h => h.level !== 'ok').length - bad.length;
+  el.innerHTML = `<div class="note" style="border:1px solid ${c};background:var(--panel)">
+    <div class="hdr" style="align-items:center;gap:10px;flex-wrap:wrap">
+      <span class="tag" style="background:${c}22;color:${c}">${esc((DATA.healthLevel || 'ok').toUpperCase())}</span>
+      <span class="mu" style="font-size:12px">${bad.length
+        ? bad.map(h => `<b style="color:${lvl[h.level] || 'var(--fg)'}">${esc(h.title)}</b>${h.detail ? ` — ${esc(h.detail)}` : ''}`).join('<br>')
+          + (more > 0 ? `<br><span class="mu">+${more} more</span>` : '')
+        : 'all checks passing'}</span>
+    </div></div>`;
+}
+
+const spark = eq => {
+  if (!eq || eq.length < 2) return '<span class="mu">—</span>';
+  const w = 96, h = 24;
+  const lo = Math.min(...eq), hi = Math.max(...eq), sp = (hi - lo) || 1;
+  const pts = eq.map((v, i) => `${(i / (eq.length - 1) * w).toFixed(1)},${(h - 2 - (v - lo) / sp * (h - 4)).toFixed(1)}`).join(' ');
+  const c = eq[eq.length - 1] >= eq[0] ? 'var(--up)' : 'var(--down)';
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block"><polyline points="${pts}" fill="none" stroke="${c}" stroke-width="1.5"/></svg>`;
+};
+
+function renderRecords() {
+  const recs = DATA.records || [];
+  $('asof').textContent = DATA.asOf ? `data through ${DATA.asOf}` : '';
+  $('records').innerHTML = recs.map(r => {
+    if (r.missing) {
+      return `<tr><td class="l"><b>${esc(r.label)}</b><div class="mu" style="font-size:10.5px">${esc(r.note)}</div></td>
+        <td class="l mu" style="font-size:11px">${esc(r.basis)}</td>
+        <td colspan="9" class="l mu">no record yet</td></tr>`;
+    }
+    const sharpe = r.sharpe == null
+      ? `<span class="mu" title="needs ${r.sharpeNeeds} return-days, have ${r.days}">n/a</span>` : r.sharpe.toFixed(2);
+    const dec = r.decisions == null ? '—'
+      : `${r.decisions.ok} ok · ${r.decisions.failed ? `<b style="color:var(--down)">${r.decisions.failed} failed</b>` : '0 failed'}`;
+    const behind = r.behind == null ? '—'
+      : r.behind === 0 ? '<span style="color:var(--up)">current</span>'
+      : `<span style="color:var(--warn)">${r.behind} behind</span>`;
+    return `<tr>
+      <td class="l"><b>${esc(r.label)}</b>${r.kind === 'agent' ? ' <span class="tag" style="background:rgba(77,184,255,.12);color:var(--accent);font-size:9.5px">AGENT</span>' : ''}
+        <div class="mu" style="font-size:10.5px">${esc(r.note)}</div></td>
+      <td class="l mu" style="font-size:11px">${esc(r.basis)}</td>
+      <td>${r.days}</td>
+      <td class="l mu" style="font-size:11px">${esc(r.start)} → ${esc(r.end)}</td>
+      <td>${spark(r.curve && r.curve.equity)}</td>
+      <td style="color:${ud(r.totalReturn)};font-weight:600">${r.totalReturn == null ? '—' : pct(r.totalReturn, 1)}</td>
+      <td>${sharpe}</td>
+      <td style="color:var(--down)">${r.maxDrawdown == null ? '—' : pctAbs(r.maxDrawdown, 1)}</td>
+      <td>${r.spyReturn == null ? '—' : `<span style="color:${ud(r.spyReturn)}">${pct(r.spyReturn, 1)}</span>`}</td>
+      <td>${behind}</td>
+      <td class="mu" style="font-size:11px">${dec}</td></tr>`;
+  }).join('') || '<tr><td colspan="11" class="l mu">no records</td></tr>';
+}
+
+const todaySub = (title, inner) => `<div>
+  <div style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:6px">${esc(title)}</div>
+  ${inner}</div>`;
+
+function renderToday() {
+  const t = DATA.today || {};
+  $('todaysub').textContent = t.date ? `as of ${t.date}` : '';
+  const blocks = [];
+
+  const o = t.open;
+  blocks.push(todaySub('agent_open scan', !o ? '<span class="mu">no scan decision recorded yet</span>' : `
+    <div class="m" style="font-size:12px">${o.date ? esc(o.date) + ' · ' : ''}status
+      <b style="color:${o.status === 'ok' ? 'var(--up)' : 'var(--down)'}">${esc(o.status || '?')}</b>
+      ${o.scanDate ? ` · scan ${esc(o.scanDate)}` : ''}${o.nFloor != null ? ` · floor ${o.nFloor}` : ''}</div>
+    <div class="mu" style="font-size:11.5px;margin-top:4px">${esc(o.screenReason || '')}${o.screens && o.screens.length ? ' · screens: ' + o.screens.map(esc).join(', ') : ''}${o.candidates != null ? ` · ${o.candidates} candidates` : ''}</div>
+    ${o.fail ? `<div style="font-size:11.5px;color:var(--down);margin-top:4px">${esc(o.fail)}</div>` : ''}
+    <div style="margin-top:6px">${(o.positions || []).map(p =>
+      `<span class="pill" style="border-radius:6px;margin:0 4px 4px 0">${esc(p.symbol)} ${p.target > 0 ? '+' : p.target < 0 ? '−' : '·'}${p.reason ? ' ' + esc(p.reason) : ''}</span>`).join('') || '<span class="mu">no positions</span>'}</div>`));
+
+  const agents = t.agents || [];
+  blocks.push(todaySub('agents today', agents.length ? agents.map(a => `
+    <div style="margin-bottom:10px">
+      <div class="m" style="font-size:12px"><b>${esc(a.id)}</b> · ${esc(a.date)} ·
+        <span style="color:var(--up)">${a.long}L</span> <span style="color:var(--down)">${a.short}S</span> ${a.flat} flat
+        ${a.failed ? ` · <b style="color:var(--down)">${a.failed} failed</b>` : ''}</div>
+      ${(a.changes || []).slice(0, 8).map(c =>
+        `<div class="m mu" style="font-size:11px">${esc(c.symbol)} ${c.from} → ${c.to}${c.reason ? ' · ' + esc(c.reason) : ''}</div>`).join('')
+        || '<div class="mu" style="font-size:11px">no position changes</div>'}
+    </div>`).join('') : '<span class="mu">no agent positions yet</span>'));
+
+  const r = t.rule;
+  blocks.push(todaySub('rule · mean_reversion_real', r ? `
+    <div class="m" style="font-size:12px">${esc(r.date)}</div>
+    ${['held', 'entered', 'exited'].map(k =>
+      `<div class="mu" style="font-size:11px;margin-top:4px"><b style="color:var(--fg)">${k}</b>: ${(r[k] || []).join(', ') || '—'}</div>`).join('')}`
+    : '<span class="mu">no rule positions</span>'));
+
+  const p = t.paper;
+  blocks.push(todaySub('paper account', p ? `
+    <div class="m" style="font-size:12px">${p.orders} orders · ${p.accepted} accepted · ${p.rejected} rejected${p.halted ? ' · <b style="color:var(--down)">HALTED</b>' : ''}</div>
+    ${p.haltReason ? `<div style="font-size:11.5px;color:var(--down);margin-top:3px">${esc(p.haltReason)}</div>` : ''}
+    ${p.rejectReasons && Object.keys(p.rejectReasons).length ? `<div class="mu" style="font-size:11px;margin-top:3px">${Object.entries(p.rejectReasons).map(([k, v]) => `${esc(k)} ×${v}`).join(' · ')}</div>` : ''}
+    ${p.account ? `<div class="mu" style="font-size:11px;margin-top:5px">cash ${p.account.cashUsd == null ? '—' : money(p.account.cashUsd, 0)} · today ${p.account.realizedPnlTodayUsd == null ? '—' : signed(p.account.realizedPnlTodayUsd, 0)} · ${p.account.positions.length} positions</div>` : ''}`
+    : '<span class="mu">no paper tick recorded</span>'));
+
+  $('today').innerHTML = blocks.join('');
+}
+
+function renderMemory() {
+  const m = DATA.memory || {};
+  $('memlegacy').innerHTML = m.legacy
+    ? '<span class="tag" style="background:rgba(255,176,32,.14);color:var(--warn)">LEGACY LOG</span>' : '';
+  $('memory').innerHTML = `
+    <div class="mu" style="font-size:11px">${m.date ? 'updated ' + esc(m.date) : 'no memory file'}${m.archiveEntries ? ` · ${m.archiveEntries} archived reflections` : ''}</div>
+    <div class="col" style="gap:8px;margin-top:10px">${(m.bullets || []).map(b =>
+      `<div style="padding-left:10px;border-left:2px solid var(--line2)">${esc(b)}</div>`).join('') || '<span class="mu">empty</span>'}</div>`;
+}
+
+function renderExperiments() {
+  const rows = DATA.experiments || [];
+  $('experiments').innerHTML = rows.length ? rows.map(e => `<tr>
+    <td class="l mu" style="font-size:11px">${esc(e.created)}</td>
+    <td class="l">${esc(e.experiment)}</td><td class="l mu">${esc(e.variant)}</td>
+    <td>${e.sharpe == null ? '—' : e.sharpe.toFixed(2)}</td>
+    <td class="mu" style="font-size:11px">${e.ciLo == null ? '—' : `${e.ciLo.toFixed(2)} → ${e.ciHi.toFixed(2)}`}</td>
+    <td style="color:${ud(e.annReturn)}">${e.annReturn == null ? '—' : pct(e.annReturn, 1)}</td>
+    <td style="color:var(--down)">${e.maxDrawdown == null ? '—' : pctAbs(e.maxDrawdown, 1)}</td>
+    <td class="l mu" style="font-size:11px">${esc(e.start)} → ${esc(e.end)}</td>
+    <td class="l mu" style="font-size:11px;max-width:300px">${esc(e.note)}</td></tr>`).join('')
+    : '<tr><td colspan="9" class="l mu">no experiments recorded</td></tr>';
+}
+
 function renderDrawer() {
   const wrap = $('drawerwrap');
   const r = ST.selectedRun && DATA.runs.find(x => x.id === ST.selectedRun);
@@ -1065,8 +1275,10 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && ST.selectedRun) { ST.selectedRun = null; renderDrawer(); } });
 
-[renderHeaderPills, renderVerdict, renderChart, renderGuardrails, renderBakeoff, renderRuns,
- renderScorecard, renderBuckets, renderLedger, renderRunbook, renderAgentNotes, renderDrawer].forEach(f => f());
+[renderHealth, renderHeaderPills, renderVerdict, renderRecords, renderToday, renderMemory,
+ renderChart, renderGuardrails, renderBakeoff, renderRuns,
+ renderScorecard, renderBuckets, renderLedger, renderExperiments, renderRunbook,
+ renderAgentNotes, renderDrawer].forEach(f => f());
 </script>
 </body>
 </html>

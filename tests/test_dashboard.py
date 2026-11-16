@@ -438,3 +438,42 @@ def test_build_data_keeps_every_old_key_and_adds_the_new_ones(tmp_path, monkeypa
     new = {"asOf", "records", "today", "memory", "experiments", "health", "healthLevel"}
     assert old <= set(data) and new <= set(data)
     json.dumps(data)   # the page embeds it with json.dumps
+
+
+def test_page_renders_the_new_payload_sections():
+    """The payload contract added records/today/memory/experiments/health --
+    the page needs an element and a registered render call for each, or the
+    data ships to the browser and nothing shows it."""
+    src = _SOURCE.read_text()
+    for el in ('id="healthbanner"', 'id="asof"', 'id="records"', 'id="today"',
+               'id="todaysub"', 'id="memory"', 'id="memlegacy"',
+               'id="experiments"'):
+        assert el in src, el
+    tail = src.split(".forEach(f => f())")[0]
+    render_list = tail[tail.rfind("["):]
+    for fn in ("renderHealth", "renderRecords", "renderToday",
+               "renderMemory", "renderExperiments"):
+        assert f"function {fn}(" in src, fn
+        assert fn in render_list, f"{fn} not registered in the render list"
+
+
+def test_health_decision_failures_last_30d(tmp_path):
+    """Cumulative failed counts only grow (retries heal old dates); health
+    must look at the last 30 days only -- a stale failure and a live outage
+    are different problems."""
+    mod = _dashboard_module()
+    fwd = tmp_path
+    _jl(fwd / "agent" / "decisions.jsonl",
+        {"date": "2026-05-01", "symbol": "A", "status": "failed"},   # outside window
+        {"date": "2026-07-01", "symbol": "A", "status": "ok"},
+        {"date": "2026-07-02", "symbol": "A", "status": "failed"},
+        {"date": "2026-07-02", "symbol": "B", "status": "ok"})
+    _jl(fwd / "agent_ctx" / "decisions.jsonl",
+        {"date": "2026-07-01", "symbol": "A", "status": "failed"},
+        {"date": "2026-07-02", "symbol": "A", "status": "failed"},
+        {"date": "2026-07-02", "symbol": "B", "status": "ok"})
+    _jl(fwd / "agent_open" / "decisions.jsonl",
+        {"date": "2026-07-03", "status": "ok"})
+    lv = _levels(mod._chk_decisions(fwd, NOW.date()))
+    assert lv == {"decisions:agent": "warn", "decisions:agent_ctx": "bad",
+                  "decisions:agent_open": "ok"}
