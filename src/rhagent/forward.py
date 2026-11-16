@@ -198,6 +198,66 @@ def _agent_positions(eval_dir: Path, bars: dict[str, pd.DataFrame],
     return out, excluded
 
 
+def _model_positions(eval_dir: Path, bars: dict[str, pd.DataFrame]
+                     ) -> tuple[dict[str, pd.Series], set]:
+    """Target-position series for the price-only model engine, plus exclusions.
+
+    Same pos_<SYM>.csv freeze-to-disk pattern as _agent_positions, but the
+    "decision" is deterministic: price_model.positions_on retrains on labels
+    resolved by each new bar's date and scores the cross-section in one pass,
+    so there is nothing to retry and no failure mode to exclude -- every
+    decided row is status "ok" and the exclusion set stays empty. Seeded
+    (legacy) bars behave exactly like the agent's: flat, never re-decided.
+    """
+    from . import price_model
+
+    syms = list(bars)
+    decided: dict[str, dict] = {}
+    stat: dict[str, dict] = {}
+    for s in syms:
+        cache = eval_dir / f"pos_{s}.csv"
+        if cache.exists():
+            prev = pd.read_csv(cache, parse_dates=["date"]).set_index("date")
+            decided[s] = dict(prev["pos"])
+            stat[s] = dict(prev["status"]) if "status" in prev else \
+                {ts: _LEGACY for ts in prev.index}
+        else:
+            decided[s] = {ts: 0.0 for ts in bars[s].index[:-1]}
+            stat[s] = {ts: _LEGACY for ts in bars[s].index[:-1]}
+
+    all_dates = sorted(set().union(*(b.index for b in bars.values())))
+    todo_dates = [ts for ts in all_dates
+                  if any(ts in bars[s].index and ts not in decided[s]
+                         for s in syms)]
+    new_rows = []
+    if todo_dates:
+        calls = price_model.positions_on(bars, todo_dates)
+        for ts in todo_dates:
+            for s in syms:
+                if ts not in bars[s].index or ts in decided[s]:
+                    continue
+                tgt, prob = calls.get(ts, {}).get(s, (0.0, None))
+                decided[s][ts] = tgt
+                stat[s][ts] = "ok"
+                new_rows.append({"date": str(ts.date()), "symbol": s,
+                                 "target": tgt,
+                                 "reason": f"model: p={prob:.3f}"
+                                 if prob is not None else "model: no features",
+                                 "status": "ok"})
+
+    out, excluded = {}, set()
+    for s in syms:
+        pos = pd.Series(decided[s]).reindex(bars[s].index).astype(float)
+        st = pd.Series(stat[s], dtype=object).reindex(bars[s].index) \
+            .fillna(_LEGACY)
+        pd.DataFrame({"pos": pos, "status": st}).rename_axis("date").to_csv(
+            eval_dir / f"pos_{s}.csv")
+        out[s] = pos
+        excluded |= set(st.index[st != "ok"])
+    _append_decisions(eval_dir, new_rows)
+    return out, excluded
+
+
 def _append_decisions(eval_dir: Path, rows: list[dict]) -> None:
     if not rows:
         return
@@ -245,6 +305,9 @@ def _positions(cfg, engine: str, bars: dict[str, pd.DataFrame],
             agent = _build_agent(cfg)
         return _agent_positions(eval_dir, {s: bars[s] for s in cfg.strategy.universe},
                                 agent)
+    if engine == "model":
+        return _model_positions(eval_dir, {s: bars[s]
+                                            for s in cfg.strategy.universe})
     from .strategies import build
 
     strat = build(engine, cfg.strategy.params)
@@ -583,7 +646,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="rhagent.forward")
     p.add_argument("--out-dir", default="journal/forward")
     p.add_argument("--eval-id", help="record dir name (default: engine name)")
-    p.add_argument("--engine", help="momentum|mean_reversion|agent "
+    p.add_argument("--engine", help="momentum|mean_reversion|agent|model "
                                     "(default: config strategy)")
     p.add_argument("--cost-bps", type=float, default=None,
                    help="per-side cost in bps (default: config.yaml strategy.cost_bps)")

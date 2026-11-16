@@ -52,6 +52,17 @@ echo "== tick forward record (realistic fills) =="
 python -m rhagent.forward --eval-id mean_reversion_real --cost-bps 7 --fill-mode next_open \
   || tick_failed mean_reversion_real
 
+echo "== tick forward record (price-only model) =="
+# Sixth record: the small logistic model from rhagent.price_model -- trained
+# only on price history, no LLM, retrained on resolved labels each new bar.
+# Backtest showed no edge over buy-and-hold (rank IC ~0), so this record
+# exists to settle that with unbiased forward data, not because it earned it.
+# Same honest basis as mean_reversion_real. Needs the deep data/ cache
+# (scripts/fetch_long_history.py) to have any training depth at all.
+python -m rhagent.forward --engine model --eval-id model \
+  --cost-bps 7 --fill-mode next_open \
+  || tick_failed model
+
 echo "== tick forward record (agent) =="
 # The agent tick needs NVIDIA_API_KEY (one LLM call per symbol per new bar).
 # Without the key it can't run; don't let it kill the strategy record above.
