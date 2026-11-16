@@ -9,15 +9,67 @@ static page with a small vanilla-JS layer (sort, filter, per-run drawer).
 
 Reads the ledgers under journal/papertrade/ and journal/forward/; reuses
 rhagent.evaluate so the numbers match the CLI report exactly.
+
+PAYLOAD CONTRACT -- keys added to the dict _build_data returns (every older key
+and its shape is unchanged). Floats are raw (the page formats them); dates are
+"YYYY-MM-DD" strings; a section that cannot be built yields the empty value
+below AND an entry in `health` (level "warn", id "build:<key>"); it never raises.
+
+  asOf         str | null          date of the newest bar in data/SPY.csv.
+  records      list[Record], always 5, in order: mean_reversion_real,
+               mean_reversion, agent, agent_ctx, agent_open. Record =
+               {id: str, label: str, kind: "rule"|"agent", basis: str, note: str,
+                missing: bool,   # true: returns.csv absent, empty or unreadable
+                days: int|null, start: str|null, end: str|null,
+                totalReturn: float|null, sharpe: float|null,
+                sharpeNeeds: int|null,   # min return-days; set only when sharpe is null on a non-missing record
+                maxDrawdown: float|null,   # <= 0
+                spyReturn: float|null,     # SPY buy-and-hold over [start, end]
+                lastNet: float|null,       # last recorded day's return
+                behind: int|null,          # SPY bars after `end`, minus 1, floor 0; null if no SPY data
+                curve: {dates: [str], equity: [float]},   # equity[0] = 1 + first net
+                decisions: {ok: int, failed: int} | null}
+               decisions: agent kinds only; final status per (date, symbol)
+               (agent_open: per date); a row with no status (legacy) counts as neither.
+               null for rule kinds. A missing record has every nullable field null,
+               curve {dates: [], equity: []}, decisions null.
+  today        {date: str|null,    # = asOf
+                open: {date, status, scanDate, nFloor, screens: [..],
+                       screenReason, candidates, positions: [{symbol, target, reason}],
+                       reason, fail} | null,   # null until agent_open has decided a day;
+                       # scalars absent from the log line are null, lists are []
+                agents: [{id, date: str, long: int, short: int, flat: int, failed: int,
+                          changes: [{symbol, from: float, to: float, reason: str|null}]}],
+                       # ids agent, agent_ctx in that order; [] on failure; a record
+                       # with no pos files is omitted. long/short/flat count only
+                       # status-ok rows on `date`; failed rows hold the prior position
+                       # and are counted in `failed`. changes (max 15, biggest move
+                       # first) compare ok rows to the previous decided date (absent = 0).
+                rule: {date: str, held: [str], entered: [str], exited: [str]} | null,
+                       # mean_reversion_real's target positions, newest bar vs the
+                       # one before; held = long on the newest bar.
+                paper: {date: str, orders: int, accepted: int, rejected: int,
+                        rejectReasons: {reason: count}, halted: bool,
+                        haltReason: str|null,
+                        account: {date, cashUsd, realizedPnlTodayUsd,
+                                  positions: [str]} | null} | null}
+                       # newest paper tick in journal/paper_orders.jsonl.
+  memory       {date: str|null, bullets: [str], legacy: bool, archiveEntries: int}
+               # empty value: {date: null, bullets: [], legacy: false, archiveEntries: 0}
+  experiments  list[{created, experiment, variant, sharpe, ciLo, ciHi, annReturn,
+               maxDrawdown, start, end, note}], newest first; [] if none.
+  health       list[{id: str, level: "ok"|"warn"|"bad", title: str, detail: str}]
+  healthLevel  "ok"|"warn"|"bad"   the worst level in `health` ("ok" if it is empty).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import webbrowser
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html import escape
 from pathlib import Path
 
@@ -36,8 +88,11 @@ from rhagent.evaluate import (  # noqa: E402
     spy_benchmark,
 )
 from rhagent.evaluate_robust import robust_table  # noqa: E402
+from rhagent.data import get_bars  # noqa: E402
 from rhagent.features import flatten_trades  # noqa: E402
-from rhagent.memory import read_memory  # noqa: E402
+from rhagent.forward import _agent_outage, _latest_decisions, _positions  # noqa: E402
+from rhagent.memory import archive_path, read_memory  # noqa: E402
+from rhagent.open_universe import _rows, _stuck  # noqa: E402
 
 HALT_FILE = Path("HALT")
 
@@ -213,6 +268,330 @@ def _win_trades(run_dir: Path) -> list[dict]:
     } for i, t in enumerate(trades.itertuples(), start=1)]
 
 
+# ---- data layer for the single-page overview (see PAYLOAD CONTRACT above) ----
+
+_EXPERIMENTS = Path(__file__).resolve().parents[1] / "experiments" / "results.jsonl"
+_LEVELS = ["ok", "warn", "bad"]
+_RECORDS = [  # (id, label, kind, basis, note)
+    ("mean_reversion_real", "Rule, honest fill", "rule", "7 bp · next-open fill",
+     "The honest rule number: 7 bp costs, filled at the next open."),
+    ("mean_reversion", "Rule, 1 bp", "rule", "1 bp · close fill",
+     "Flattering: 1 bp cost and a same-close fill; kept only for continuity with older numbers."),
+    ("agent", "Agent", "agent", "7 bp · next-open fill",
+     "A language model picks long, short or flat for each stock on a fixed list every day."),
+    ("agent_ctx", "Agent + market context", "agent", "7 bp · next-open fill",
+     "The same agent, also shown a market-context block (SPY moves, breadth, momentum rank)."),
+    ("agent_open", "Agent, no stock list", "agent", "7 bp · next-open fill",
+     "The agent screens a daily scan of the wider market and picks its own names."),
+]
+
+
+def _safe(health: list, key: str, empty, fn, *args):
+    """fn(*args), or `empty` plus a health entry -- a dashboard number must never fail the run."""
+    try:
+        return fn(*args)
+    except Exception as e:  # noqa: BLE001
+        health.append({"id": f"build:{key}", "level": "warn",
+                       "title": f"{key} could not be built", "detail": f"{type(e).__name__}: {e}"})
+        return empty
+
+
+def _spy_dates(data_dir: Path) -> list:
+    path = data_dir / "SPY.csv"
+    if not path.exists():
+        return []
+    return sorted(pd.read_csv(path, parse_dates=["date"])["date"])
+
+
+def _decision_counts(eval_dir: Path, per_date: bool) -> dict:
+    if per_date:  # agent_open decides one day at a time; the last row for a date wins
+        latest = {r["date"]: r for r in _rows(eval_dir / "decisions.jsonl")}
+    else:
+        latest = _latest_decisions(eval_dir)
+    status = [r.get("status") for r in latest.values()]
+    return {"ok": status.count("ok"), "failed": sum(s not in ("ok", None) for s in status)}
+
+
+def _empty_record(spec: tuple) -> dict:
+    rid, label, kind, basis, note = spec
+    return {"id": rid, "label": label, "kind": kind, "basis": basis, "note": note,
+            "missing": True, "days": None, "start": None, "end": None, "totalReturn": None,
+            "sharpe": None, "sharpeNeeds": None, "maxDrawdown": None, "spyReturn": None,
+            "lastNet": None, "behind": None, "curve": {"dates": [], "equity": []},
+            "decisions": None}
+
+
+def _record(spec: tuple, forward_dir: Path, spy_dates: list, data_dir: Path) -> dict:
+    out = _empty_record(spec)
+    eval_dir = forward_dir / spec[0]
+    if not (eval_dir / "returns.csv").exists():
+        return out
+    net = pd.read_csv(eval_dir / "returns.csv", parse_dates=["date"]).set_index("date")["net"].astype(float)
+    if not len(net):
+        return out
+    a = aggregate(pd.DataFrame(), net)
+    spy = spy_benchmark(net.index, data_dir)
+    end = net.index[-1]
+    out.update({
+        "missing": False, "days": a["n_return_days"],
+        "start": str(net.index[0])[:10], "end": str(end)[:10],
+        "totalReturn": a["total_return"], "sharpe": a["sharpe"],
+        "sharpeNeeds": MIN_RETURN_DAYS_FOR_SHARPE if a["sharpe"] is None else None,
+        "maxDrawdown": a["max_drawdown"],
+        "spyReturn": spy["return"] if spy["n_days"] else None,
+        "lastNet": float(net.iloc[-1]),
+        "behind": max(0, sum(d > end for d in spy_dates) - 1) if spy_dates else None,
+        "curve": {"dates": [str(d)[:10] for d in net.index],
+                  "equity": [float(v) for v in (1.0 + net).cumprod()]},
+        "decisions": _decision_counts(eval_dir, spec[0] == "agent_open") if spec[2] == "agent" else None,
+    })
+    return out
+
+
+def _today_open(forward_dir: Path) -> dict | None:
+    rows = _rows(forward_dir / "agent_open" / "decisions.jsonl")
+    if not rows:
+        return None
+    r = rows[-1]
+    return {"date": r.get("date"), "status": r.get("status"), "scanDate": r.get("scan_date"),
+            "nFloor": r.get("n_floor"), "screens": r.get("screens") or [],
+            "screenReason": r.get("screen_reason"), "candidates": r.get("candidates"),
+            "positions": [{"symbol": p.get("symbol"), "target": p.get("target"), "reason": p.get("reason")}
+                          for p in r.get("positions") or []],
+            "reason": r.get("reason"), "fail": r.get("fail")}
+
+
+def _today_agent(forward_dir: Path, rid: str) -> dict | None:
+    eval_dir = forward_dir / rid
+    frames = []
+    for f in sorted(eval_dir.glob("pos_*.csv")):
+        df = pd.read_csv(f)
+        if "status" not in df:
+            df["status"] = "ok"  # rows seeded before the status column existed
+        df["symbol"] = f.stem[len("pos_"):]
+        frames.append(df)
+    if not frames:
+        return None
+    pos = pd.concat(frames)
+    dates = sorted(pos["date"].unique())
+    date = dates[-1]
+    prev = pos[pos["date"] == dates[-2]].set_index("symbol")["pos"] if len(dates) > 1 else pd.Series(dtype=float)
+    cur = pos[pos["date"] == date]
+    ok = cur[cur["status"] == "ok"]
+    reasons = {s: r.get("reason") for (d, s), r in _latest_decisions(eval_dir).items() if d == date}
+    changes = [{"symbol": r.symbol, "from": float(prev.get(r.symbol, 0.0)), "to": float(r.pos),
+                "reason": reasons.get(r.symbol)}
+               for r in ok.itertuples() if float(r.pos) != float(prev.get(r.symbol, 0.0))]
+    changes.sort(key=lambda c: (-abs(c["to"] - c["from"]), c["symbol"]))
+    return {"id": rid, "date": str(date), "long": int((ok["pos"] > 0).sum()),
+            "short": int((ok["pos"] < 0).sum()), "flat": int((ok["pos"] == 0).sum()),
+            "failed": int(len(cur) - len(ok)), "changes": changes[:15]}
+
+
+def _today_agents(forward_dir: Path) -> list:
+    return [a for a in (_today_agent(forward_dir, rid) for rid in ("agent", "agent_ctx")) if a]
+
+
+def _today_rule(cfg, data_dir: Path) -> dict | None:
+    """Same call rhagent.paper_run makes for the rule's target positions."""
+    bars = get_bars(list(cfg.strategy.universe), "", "", fetch=lambda *a: {}, cache_dir=data_dir)
+    pos, _ = _positions(cfg, cfg.strategy.name, bars, Path())
+    pos = {s: p for s, p in pos.items() if len(p)}
+    if not pos:
+        return None
+    last = {s: (float(p.iloc[-1]), float(p.iloc[-2]) if len(p) > 1 else 0.0) for s, p in pos.items()}
+    return {"date": str(max(p.index[-1] for p in pos.values()))[:10],
+            "held": sorted(s for s, (now, _) in last.items() if now > 0),
+            "entered": sorted(s for s, (now, was) in last.items() if now > 0 >= was),
+            "exited": sorted(s for s, (now, was) in last.items() if was > 0 >= now)}
+
+
+def _today_paper(journal: Path) -> dict | None:
+    """Newest paper tick: the events journaled since the previous paper_run_end /
+    paper_run_halted, closed by the newest one (rhagent.paper_run writes both)."""
+    rows = _rows(journal / "paper_orders.jsonl")
+    ends = [i for i, r in enumerate(rows) if r.get("event") in ("paper_run_end", "paper_run_halted")]
+    if not ends:
+        return None
+    end = rows[ends[-1]]
+    tick = rows[(ends[-2] + 1 if len(ends) > 1 else 0):ends[-1]]
+    reasons: dict = {}
+    for r in tick:
+        if r.get("event") == "order_rejected":
+            reasons[r.get("reason")] = reasons.get(r.get("reason"), 0) + 1
+    halted = end["event"] == "paper_run_halted"
+    acct = None
+    if (journal / "paper_account.json").exists():
+        raw = json.loads((journal / "paper_account.json").read_text())
+        acct = {"date": raw.get("date"), "cashUsd": raw.get("cash_usd"),
+                "realizedPnlTodayUsd": raw.get("realized_pnl_today_usd"),
+                "positions": sorted(raw.get("positions", {}))}
+    return {"date": str(end.get("ts", ""))[:10], "orders": int(end.get("n_orders", 0)),
+            "accepted": int(end.get("n_accepted", 0)), "rejected": sum(reasons.values()),
+            "rejectReasons": reasons, "halted": halted,
+            "haltReason": end.get("reason") if halted else None, "account": acct}
+
+
+def _memory(journal: Path) -> dict:
+    mem_path = journal / "agent_memory.md"
+    arch = archive_path(mem_path)
+    lines = read_memory(mem_path).strip().splitlines()
+    return {"date": lines[0][3:].strip() if lines else None,
+            "bullets": [re.sub(r"^[-*•]\s+", "", x.strip()) for x in lines[1:] if x.strip()],
+            "legacy": not arch.exists(),
+            "archiveEntries": ("\n" + arch.read_text()).count("\n## ") if arch.exists() else 0}
+
+
+def _experiments(path: Path) -> list[dict]:
+    rows = _rows(path)
+    order = sorted(range(len(rows)), key=lambda i: (rows[i]["created"], i), reverse=True)
+    return [{"created": r["created"], "experiment": r["experiment"], "variant": r["variant"],
+             "sharpe": r.get("sharpe"), "ciLo": r.get("sharpe_ci_lo"), "ciHi": r.get("sharpe_ci_hi"),
+             "annReturn": r.get("ann_return"), "maxDrawdown": r.get("max_drawdown"),
+             "start": r.get("start"), "end": r.get("end"), "note": r.get("note", "")}
+            for r in (rows[i] for i in order)]
+
+
+def _item(id_: str, level: str, title: str, detail: str = "") -> dict:
+    return {"id": id_, "level": level, "title": title, "detail": detail}
+
+
+def _chk_records(records: list) -> list:
+    out = []
+    for r in records:
+        rid, b = r["id"], r["behind"]
+        if r["missing"]:
+            lvl = "warn" if rid == "agent_open" else "bad"
+            why = "starts on the next scheduled run" if rid == "agent_open" else "no returns recorded"
+            out.append(_item(f"record:{rid}", lvl, f"{r['label']}: no record", why))
+        elif b is None:
+            out.append(_item(f"record:{rid}", "warn", f"{r['label']}: freshness unknown",
+                             "no SPY bars to compare against"))
+        else:
+            lvl = "ok" if b == 0 else "warn" if b <= 3 else "bad"
+            out.append(_item(f"record:{rid}", lvl,
+                             f"{r['label']}: " + ("up to date" if b == 0 else f"{b} bar(s) behind"),
+                             f"last recorded day {r['end']}"))
+    return out
+
+
+def _chk_outage(forward_dir: Path) -> list:
+    out = []
+    for rid in ("agent", "agent_ctx"):
+        if (forward_dir / rid).exists():
+            down = _agent_outage(forward_dir / rid)
+            out.append(_item(f"outage:{rid}", "bad" if down else "ok",
+                             f"{rid}: " + ("model outage" if down else "deciding"),
+                             "every decision on the newest bar failed" if down else ""))
+    return out
+
+
+def _chk_open(forward_dir: Path, today_open: dict | None, data_dir: Path, now: datetime) -> list:
+    if today_open is None:
+        return []
+    failed = today_open["status"] == "failed"
+    out = [_item("open:decision", "bad" if failed else "ok",
+                 "agent_open: " + (f"newest decision failed ({today_open['date']})" if failed
+                                   else "newest decision ok"),
+                 str(today_open["fail"] or "") if failed else "")]
+    stuck = _stuck(forward_dir / "agent_open", data_dir / "open", now.replace(tzinfo=None))
+    if stuck:
+        out.append(_item("open:stuck", "warn", "agent_open: days unrealized for over 5 days",
+                         "; ".join(f"{d} (no bar after it for: {', '.join(m) or 'calendar'})"
+                                   for d, m in stuck.items())))
+    return out
+
+
+def _chk_decisions(forward_dir: Path, today) -> list:
+    """Failed-decision share over the last 30 days, per agent record.
+
+    Cumulative failed counts are meaningless -- retries heal old failures, so
+    the totals in `decisions` only ever grow (agent: 845, agent_ctx: 585 on
+    real data, nearly all healed). What matters is whether decisions are
+    failing NOW: more failures than successes in the window means the record
+    is mostly outage, not signal -- the hole record freshness can't see,
+    because returns.csv keeps appending flat days through an outage.
+    """
+    since = (today - timedelta(days=30)).isoformat()
+    out = []
+    for rid, per_date in (("agent", False), ("agent_ctx", False), ("agent_open", True)):
+        log = forward_dir / rid / "decisions.jsonl"
+        if not log.exists():
+            continue
+        if per_date:  # agent_open decides one day at a time; last row per date wins
+            latest = {r["date"]: r for r in _rows(log)}
+            rows = [r for d, r in latest.items() if d >= since]
+        else:
+            latest = _latest_decisions(forward_dir / rid)
+            rows = [r for (d, _s), r in latest.items() if d >= since]
+        ok = sum(r.get("status") == "ok" for r in rows)
+        failed = sum(r.get("status") not in (None, "ok") for r in rows)
+        total = ok + failed  # legacy rows (no status) count as neither
+        if not total:
+            continue
+        lvl = "bad" if failed > ok else "warn" if failed else "ok"
+        out.append(_item(f"decisions:{rid}", lvl,
+                         f"{rid}: {failed} failed of {total} decisions (30d)",
+                         "failures hold the prior position; healed dates count ok"
+                         if failed else ""))
+    return out
+
+
+def _chk_memory(memory: dict, agent: dict) -> list:
+    out = []
+    if memory["legacy"]:
+        out.append(_item("memory:legacy", "warn", "Memory is the old log",
+                         "reflection has not rewritten the memory yet"))
+    if memory["date"] and agent["end"]:
+        age = (pd.Timestamp(agent["end"]) - pd.Timestamp(memory["date"])).days
+        out.append(_item("memory:fresh", "warn" if age > 3 else "ok",
+                         "Memory " + (f"is {age} days older than the agent record" if age > 3 else "is current"),
+                         f"memory {memory['date']}, agent record ends {agent['end']}"))
+    return out
+
+
+def _chk_data(as_of: str | None, now: datetime) -> list:
+    if as_of is None:
+        return [_item("data:spy", "warn", "No SPY price data", "data/SPY.csv is missing or empty")]
+    age = (pd.Timestamp(now.replace(tzinfo=None)).normalize() - pd.Timestamp(as_of)).days
+    return [_item("data:spy", "warn" if age > 4 else "ok",
+                  "Price data " + (f"is {age} days old" if age > 4 else "is fresh"),
+                  f"newest SPY bar {as_of}")]
+
+
+def _health(records, today, memory, as_of, forward_dir, data_dir, now) -> list:
+    agent = next(r for r in records if r["id"] == "agent")
+    checks = {"records": lambda: _chk_records(records), "outage": lambda: _chk_outage(forward_dir),
+              "open": lambda: _chk_open(forward_dir, today["open"], data_dir, now),
+              "decisions": lambda: _chk_decisions(forward_dir, now.date()),
+              "memory": lambda: _chk_memory(memory, agent), "data": lambda: _chk_data(as_of, now)}
+    out: list = []
+    for key, fn in checks.items():
+        out += _safe(out, f"health:{key}", [], fn)
+    return out
+
+
+def _new_sections(base_dir: Path, cfg, data_dir: Path, now: datetime) -> dict:
+    journal, health = base_dir.parent, []
+    forward_dir = journal / "forward"
+    spy = _safe(health, "asOf", [], _spy_dates, data_dir)
+    as_of = str(spy[-1])[:10] if spy else None
+    records = [_safe(health, f"record:{spec[0]}", _empty_record(spec), _record, spec, forward_dir, spy, data_dir)
+               for spec in _RECORDS]
+    today = {"date": as_of,
+             "open": _safe(health, "today.open", None, _today_open, forward_dir),
+             "agents": _safe(health, "today.agents", [], _today_agents, forward_dir),
+             "rule": _safe(health, "today.rule", None, _today_rule, cfg, data_dir),
+             "paper": _safe(health, "today.paper", None, _today_paper, journal)}
+    memory = _safe(health, "memory", {"date": None, "bullets": [], "legacy": False, "archiveEntries": 0},
+                   _memory, journal)
+    experiments = _safe(health, "experiments", [], _experiments, _EXPERIMENTS)
+    health += _safe(health, "health", [], _health, records, today, memory, as_of, forward_dir, data_dir, now)
+    level = max((h["level"] for h in health), key=_LEVELS.index, default="ok")
+    return {"asOf": as_of, "records": records, "today": today, "memory": memory,
+            "experiments": experiments, "health": health, "healthLevel": level}
+
+
 def _build_data(base_dir: Path) -> dict:
     runs = _run_dirs(base_dir)
     if not runs:
@@ -263,6 +642,7 @@ def _build_data(base_dir: Path) -> dict:
         "runbook": [list(x) for x in _RUNBOOK],
         "reflections": memory.split("\n## ")[1:][-3:] if memory else [],
         "actionsUrl": _ACTIONS_URL,
+        **_new_sections(base_dir, cfg, Path("data"), datetime.now(timezone.utc)),
     }
 
 
@@ -317,6 +697,14 @@ th.c,td.c{text-align:center}
 .note{padding:11px 13px;border-radius:10px;font-size:11.5px;color:var(--muted);text-wrap:pretty}
 .btn{border:1px solid var(--line);background:var(--panel2);color:var(--fg);cursor:pointer;font:600 12.5px 'IBM Plex Sans',sans-serif;padding:8px 16px;border-radius:8px}
 .sortable{cursor:pointer}
+.chartwrap{position:relative}
+#charttip{position:absolute;pointer-events:none;display:none;z-index:30;background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:6px 9px;font:11px 'IBM Plex Mono',monospace;color:var(--fg);white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.4)}
+#ch{stroke:var(--accent);stroke-width:1;opacity:.6}
+.searchbox{background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--fg);font:12px 'IBM Plex Sans',sans-serif;padding:7px 11px;min-width:170px}
+.searchbox:focus{outline:none;border-color:var(--accent)}
+.recdetail{background:var(--bg)}
+.legend-dot{cursor:pointer;opacity:.4;transition:opacity .15s}
+.legend-dot.on{opacity:1}
 </style>
 </head>
 <body>
@@ -329,14 +717,43 @@ th.c,td.c{text-align:center}
 </header>
 
 <main style="max-width:1240px;margin:0 auto;padding:26px 26px 90px">
+  <div id="healthbanner" style="margin-bottom:16px"></div>
   <section style="margin-top:0">
     <h2 class="mu" style="margin:0 0 12px;font-size:12px;letter-spacing:.14em;text-transform:uppercase">The verdict · agent vs baseline · forward paper track</h2>
     <div id="verdict"></div>
   </section>
 
   <section class="card">
+    <div class="hdr" style="align-items:baseline;gap:10px;margin-bottom:6px">
+      <div><h3>Forward records</h3><div class="sub">All five live paper tracks on one basis where noted. Click a row for its curve; "compare curves" overlays every record.</div></div>
+      <div class="hdr" style="align-items:center;gap:10px"><span id="asof" class="m mu" style="font-size:11px"></span><button id="recmode" class="btn" data-recmode style="padding:6px 12px;font-size:12px">compare curves</button></div>
+    </div>
+    <div class="scroll" id="rectable"><table style="min-width:980px"><thead><tr>
+      <th class="l">record</th><th class="l">basis</th><th>days</th><th class="l">window</th><th>equity</th>
+      <th>total return</th><th>sharpe</th><th>max DD</th><th>vs SPY</th><th>behind</th><th>decisions</th>
+    </tr></thead><tbody id="records"></tbody></table></div>
+    <div id="recoverlay" style="display:none"></div>
+  </section>
+
+  <section class="two" style="grid-template-columns:minmax(0,1.2fr) minmax(0,0.8fr)">
+    <div class="card">
+      <div class="hdr" style="align-items:baseline;gap:10px;margin-bottom:6px">
+        <div><h3>Today</h3><div class="sub" id="todaysub"></div></div>
+      </div>
+      <div id="today" class="col"></div>
+    </div>
+    <div class="card">
+      <div class="hdr" style="align-items:baseline;gap:10px;margin-bottom:6px">
+        <div><h3>Agent memory</h3><div class="sub">The lessons block the agent is (or isn't) running with.</div></div>
+        <span id="memlegacy"></span>
+      </div>
+      <div id="memory" class="col" style="font-size:12.5px"></div>
+    </div>
+  </section>
+
+  <section class="card">
     <h3>Equity curve · locked strategy candidate</h3><div class="sub" id="chartsub"></div>
-    <div id="chart"></div>
+    <div class="chartwrap"><div id="chart"></div><div id="charttip"></div></div>
     <div class="mu" style="margin-top:6px;font-size:11.5px">green dot = peak, red dot = trough of the max-drawdown window (shaded); dashed line = break-even.</div>
   </section>
 
@@ -353,8 +770,8 @@ th.c,td.c{text-align:center}
 
   <section class="card">
     <div class="hdr">
-      <div><h3 id="runcount"></h3><div class="sub">Every paper-trade run in the archive. Click a column to sort, a row to open.</div></div>
-      <div id="enginechips" class="chipbar"></div>
+      <div><h3 id="runcount"></h3><div class="sub">Every paper-trade run in the archive. Click a column to sort, a row to open, / to filter.</div></div>
+      <div class="hdr" style="align-items:center;gap:10px"><input id="runsearch" class="searchbox" type="search" placeholder="filter…" aria-label="filter research runs"><div id="enginechips" class="chipbar"></div></div>
     </div>
     <div class="scroll" style="border:1px solid var(--line);border-radius:12px"><table style="min-width:760px"><thead id="runcols"></thead><tbody id="runrows"></tbody></table></div>
   </section>
@@ -393,6 +810,16 @@ th.c,td.c{text-align:center}
   </section>
 
   <section class="card">
+    <div class="hdr" style="align-items:baseline;gap:10px;margin-bottom:6px">
+      <div><h3>Experiments</h3><div class="sub">Recorded research experiments, newest first.</div></div>
+    </div>
+    <div class="scroll"><table style="min-width:860px"><thead><tr>
+      <th class="l">created</th><th class="l">experiment</th><th class="l">variant</th><th>sharpe</th><th>95% CI</th>
+      <th>ann. return</th><th>max DD</th><th class="l">window</th><th class="l">note</th>
+    </tr></thead><tbody id="experiments"></tbody></table></div>
+  </section>
+
+  <section class="card">
     <div class="hdr" style="align-items:center">
       <div><h3>Runbook</h3><div class="mu" style="font-size:12px">Every command that drives this system. Click to copy.</div></div>
       <div class="hdr" style="align-items:center;gap:10px"><span id="trigger-status" class="m mu" style="font-size:11px"></span><button id="trigger-btn" class="btn">Run new research run</button></div>
@@ -414,7 +841,8 @@ th.c,td.c{text-align:center}
 
 <script>
 const DATA = __DATA_JSON__;
-const ST = { engine: 'all', runSort: 'id', runDir: -1, tradeFilter: 'all', copied: -1, selectedRun: null, ledgerAll: false };
+const ST = { engine: 'all', runSort: 'id', runDir: -1, tradeFilter: 'all', copied: -1, selectedRun: null, ledgerAll: false,
+             recMode: 'table', recHidden: new Set(), expandedRec: null, runQuery: '', healthAll: false };
 const LEDGER_PREVIEW = 10;
 const $ = id => document.getElementById(id);
 
@@ -523,8 +951,24 @@ function renderChart() {
     <polygon points="${px(0).toFixed(1)},${py(lo).toFixed(1)} ${line} ${px(n - 1).toFixed(1)},${py(lo).toFixed(1)}" fill="${stroke}" opacity="0.1"/>
     ${(1 >= lo && 1 <= hi) ? `<line x1="${padL}" y1="${py(1)}" x2="${W - padR}" y2="${py(1)}" stroke="#4db8ff" stroke-dasharray="4 4" opacity="0.5"/>` : ''}
     <polyline points="${line}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linejoin="round"/>
+    <line id="ch" y1="${padT}" y2="${padT + plotH}" style="display:none"/>
     ${dot(peakI, '#05c46b')}${ddMin < 0 ? dot(ddI, '#ff5c5c') : ''}
   </svg>`;
+  // Hover crosshair: nearest day index from the x fraction (the svg preserves
+  // its 960x320 aspect, so x maps linearly across the wrap's width).
+  const wrap = document.querySelector('.chartwrap'), tip = $('charttip'), ch = $('ch');
+  wrap.onmousemove = e => {
+    const r = wrap.getBoundingClientRect();
+    if (!r.width) return;
+    const i = Math.max(0, Math.min(n - 1, Math.round((e.clientX - r.left) / r.width * (n - 1))));
+    ch.style.display = '';
+    ch.setAttribute('x1', px(i)); ch.setAttribute('x2', px(i));
+    tip.style.display = 'block';
+    tip.style.left = Math.min(e.clientX - r.left + 14, r.width - 150) + 'px';
+    tip.style.top = Math.max(e.clientY - r.top - 14, 0) + 'px';
+    tip.innerHTML = `<b>${esc(dates[i])}</b> · equity ${ys[i].toFixed(3)}×`;
+  };
+  wrap.onmouseleave = () => { tip.style.display = 'none'; ch.style.display = 'none'; };
 }
 
 function renderGuardrails() {
@@ -553,16 +997,19 @@ function renderBakeoff() {
 const RUN_COLS = [['id', 'run'], ['engine', 'engine'], ['overlay', 'overlay'], ['n', 'trades'], ['wr', 'win %'], ['pf', 'PF'], ['pnl', 'P&L'], ['ret', 'return']];
 
 function renderRuns() {
-  $('runcount').textContent = `Research runs · ${DATA.runs.length} total`;
   $('enginechips').innerHTML = chips('data-engine',
     [['all', 'all', 'var(--muted)'], ...new Set(DATA.runs.map(r => r.engine))].map(e => Array.isArray(e) ? e : [e, e, engineColor(e)]), ST.engine);
   $('runcols').innerHTML = '<tr>' + RUN_COLS.map(([k, label], i) =>
     `<th class="sortable ${i < 3 ? 'l' : ''}" data-sort="${k}">${esc(label)}<span style="color:var(--accent)">${ST.runSort === k ? (ST.runDir < 0 ? ' ↓' : ' ↑') : ''}</span></th>`).join('') + '</tr>';
 
-  const rows = DATA.runs.filter(r => ST.engine === 'all' || r.engine === ST.engine).slice().sort((a, b) => {
+  const q = ST.runQuery;
+  const rows = DATA.runs.filter(r => (ST.engine === 'all' || r.engine === ST.engine)
+    && (!q || (r.id + ' ' + r.engine + ' ' + (r.overlay || '')).toLowerCase().includes(q)))
+    .slice().sort((a, b) => {
     const av = a[ST.runSort], bv = b[ST.runSort];
-    return typeof av === 'string' ? ST.runDir * av.localeCompare(bv) : ST.runDir * (av - bv);
-  });
+      return typeof av === 'string' ? ST.runDir * av.localeCompare(bv) : ST.runDir * (av - bv);
+    });
+  $('runcount').textContent = `Research runs · ${rows.length} of ${DATA.runs.length} shown`;
   const maxAbsRet = Math.max(...rows.map(r => Math.abs(r.ret)), 0.01);
   $('runrows').innerHTML = rows.map(r => {
     const win = r.id === DATA.winScore.id;
@@ -641,6 +1088,226 @@ function renderAgentNotes() {
   if (has) $('reflections').innerHTML = DATA.reflections.map(r => `<p style="margin:0">## ${esc(r)}</p>`).join('');
 }
 
+// ---- overview sections: health, five forward records, today, memory, experiments ----
+// Every field the payload contract marks nullable is guarded here -- a missing
+// section must render empty, never throw (one throw would blank every panel
+// registered after it in the render list below).
+
+function renderHealth() {
+  const items = DATA.health || [];
+  const el = $('healthbanner');
+  if (!items.length) { el.innerHTML = ''; return; }
+  const lvl = { ok: 'var(--up)', warn: 'var(--warn)', bad: 'var(--down)' };
+  const c = lvl[DATA.healthLevel] || 'var(--line)';
+  const flagged = items.filter(h => h.level !== 'ok');
+  const bad = flagged.slice(0, ST.healthAll ? flagged.length : 6);
+  const more = flagged.length - bad.length;
+  el.innerHTML = `<div class="note" style="border:1px solid ${c};background:var(--panel)">
+    <div class="hdr" style="align-items:center;gap:10px;flex-wrap:wrap">
+      <span class="tag" style="background:${c}22;color:${c}">${esc((DATA.healthLevel || 'ok').toUpperCase())}</span>
+      <span class="mu" style="font-size:12px">${flagged.length
+        ? bad.map(h => `<b style="color:${lvl[h.level] || 'var(--fg)'}">${esc(h.title)}</b>${h.detail ? ` — ${esc(h.detail)}` : ''}`).join('<br>')
+          + (more > 0 ? `<br><span class="mu">+${more} more</span> ` : '')
+          + (flagged.length > 6 ? `<button class="btn" data-healthall style="padding:3px 10px;font-size:11px">${ST.healthAll ? 'show fewer' : `show all ${flagged.length}`}</button>` : '')
+        : 'all checks passing'}</span>
+    </div></div>`;
+}
+
+const spark = eq => {
+  if (!eq || eq.length < 2) return '<span class="mu">—</span>';
+  const w = 96, h = 24;
+  const lo = Math.min(...eq), hi = Math.max(...eq), sp = (hi - lo) || 1;
+  const pts = eq.map((v, i) => `${(i / (eq.length - 1) * w).toFixed(1)},${(h - 2 - (v - lo) / sp * (h - 4)).toFixed(1)}`).join(' ');
+  const c = eq[eq.length - 1] >= eq[0] ? 'var(--up)' : 'var(--down)';
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block"><polyline points="${pts}" fill="none" stroke="${c}" stroke-width="1.5"/></svg>`;
+};
+
+const REC_COLORS = ['var(--up)', 'var(--accent)', 'var(--warn)', 'var(--purple)', 'var(--down)', 'var(--muted)'];
+const recColor = id => { const i = (DATA.records || []).findIndex(r => r.id === id); return REC_COLORS[i % REC_COLORS.length]; };
+
+// A standalone equity sparkline for the expanded record row: polyline +
+// min/max/last labels. Deliberately simpler than the main chart -- this is a
+// glanceable detail, not an analysis tool.
+function recDetailChart(r) {
+  const eq = r.curve && r.curve.equity, ds = r.curve && r.curve.dates;
+  if (!eq || eq.length < 2) return '<span class="mu">no equity curve recorded</span>';
+  const W = 900, H = 140, pad = 8;
+  const lo = Math.min(...eq), hi = Math.max(...eq), sp = (hi - lo) || 1;
+  const px = i => pad + (W - 2 * pad) * (i / (eq.length - 1));
+  const py = v => pad + (H - 2 * pad) * (1 - (v - lo) / sp);
+  const pts = eq.map((v, i) => `${px(i).toFixed(1)},${py(v).toFixed(1)}`).join(' ');
+  const c = eq[eq.length - 1] >= eq[0] ? 'var(--up)' : 'var(--down)';
+  const iLo = eq.indexOf(lo), iHi = eq.indexOf(hi);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">
+    <line x1="${pad}" y1="${py(1)}" x2="${W - pad}" y2="${py(1)}" stroke="#4db8ff" stroke-dasharray="3 4" opacity="0.4"/>
+    <polyline points="${pts}" fill="none" stroke="${c}" stroke-width="1.8" stroke-linejoin="round"/>
+    <circle cx="${px(iLo)}" cy="${py(lo)}" r="3" fill="var(--down)"/>
+    <circle cx="${px(iHi)}" cy="${py(hi)}" r="3" fill="var(--up)"/>
+    <text x="${pad}" y="${H - 1}" fill="#828d9b" font-size="10" font-family="'IBM Plex Mono',monospace">${esc(ds[0] || '')}</text>
+    <text x="${W - pad}" y="${H - 1}" text-anchor="end" fill="#828d9b" font-size="10" font-family="'IBM Plex Mono',monospace">${esc(ds[ds.length - 1] || '')}</text>
+    <text x="${W - pad}" y="${py(hi) - 5}" text-anchor="end" fill="#828d9b" font-size="10" font-family="'IBM Plex Mono',monospace">${hi.toFixed(3)}×</text>
+    <text x="${W - pad}" y="${py(lo) + 12}" text-anchor="end" fill="#828d9b" font-size="10" font-family="'IBM Plex Mono',monospace">${lo.toFixed(3)}×</text>
+  </svg>`;
+}
+
+// Overlay mode: every record's equity curve on one axis, x = trading-day
+// index (records have different calendar windows, so this is NOT a date
+// alignment -- the caption says so). Legend dots toggle a record off.
+function renderRecOverlay(recs) {
+  const vis = recs.filter(r => !r.missing && !ST.recHidden.has(r.id)
+    && r.curve && r.curve.equity && r.curve.equity.length > 1);
+  const legend = recs.filter(r => !r.missing).map(r =>
+    `<span class="legend-dot ${ST.recHidden.has(r.id) ? '' : 'on'}" data-rechide="${esc(r.id)}" title="toggle ${esc(r.label)}"
+       style="display:inline-flex;align-items:center;gap:6px;margin-right:14px;font-size:11.5px;cursor:pointer">
+       <span class="dot" style="color:${recColor(r.id)}"></span>${esc(r.label)}</span>`).join('');
+  if (!vis.length) {
+    $('recoverlay').innerHTML = `<div class="note mu">no record curves to overlay</div><div style="margin-top:10px">${legend}</div>`;
+    return;
+  }
+  const W = 960, H = 320, padL = 54, padR = 18, padT = 16, padB = 30;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  let lo = Infinity, hi = -Infinity, maxN = 1;
+  for (const r of vis) {
+    maxN = Math.max(maxN, r.curve.equity.length);
+    for (const v of r.curve.equity) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  }
+  const m = (hi - lo) * 0.12 || 0.01; lo -= m; hi += m;
+  const span = hi - lo || 1;
+  const px = i => padL + plotW * (i / (maxN - 1));
+  const py = v => padT + plotH * (1 - (v - lo) / span);
+  let axes = '';
+  for (let k = 0; k < 4; k++) {
+    const v = lo + span * k / 3, y = py(v);
+    axes += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#232a34" opacity="0.55"/>`
+      + `<text x="${padL - 9}" y="${y + 3.5}" text-anchor="end" fill="#828d9b" font-size="11" font-family="'IBM Plex Mono',monospace">${v.toFixed(2)}×</text>`;
+  }
+  axes += `<text x="${padL}" y="${H - 9}" fill="#828d9b" font-size="11" font-family="'IBM Plex Mono',monospace">day 0</text>`
+    + `<text x="${W - padR}" y="${H - 9}" text-anchor="end" fill="#828d9b" font-size="11" font-family="'IBM Plex Mono',monospace">day ${maxN - 1}</text>`;
+  const lines = vis.map(r => {
+    const eq = r.curve.equity, n = eq.length;
+    const pts = eq.map((v, i) => `${px(i * (maxN - 1) / (n - 1)).toFixed(1)},${py(v).toFixed(1)}`).join(' ');
+    return `<polyline points="${pts}" fill="none" stroke="${recColor(r.id)}" stroke-width="1.8" stroke-linejoin="round" opacity="0.9"/>`;
+  }).join('');
+  $('recoverlay').innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">${axes}${lines}</svg>
+    <div class="mu" style="font-size:11px;margin:8px 0 12px">x-axis is each record's own trading-day index, not calendar date -- records started on different days. Click a legend dot to hide a record.</div>
+    <div>${legend}</div>`;
+}
+
+function renderRecords() {
+  const recs = DATA.records || [];
+  $('asof').textContent = DATA.asOf ? `data through ${DATA.asOf}` : '';
+  $('recmode').textContent = ST.recMode === 'overlay' ? 'back to table' : 'compare curves';
+  $('rectable').style.display = ST.recMode === 'overlay' ? 'none' : '';
+  $('recoverlay').style.display = ST.recMode === 'overlay' ? '' : 'none';
+  if (ST.recMode === 'overlay') { renderRecOverlay(recs); return; }
+  $('records').innerHTML = recs.map(r => {
+    if (r.missing) {
+      return `<tr><td class="l"><b>${esc(r.label)}</b><div class="mu" style="font-size:10.5px">${esc(r.note)}</div></td>
+        <td class="l mu" style="font-size:11px">${esc(r.basis)}</td>
+        <td colspan="9" class="l mu">no record yet</td></tr>`;
+    }
+    const sharpe = r.sharpe == null
+      ? `<span class="mu" title="needs ${r.sharpeNeeds} return-days, have ${r.days}">n/a</span>` : r.sharpe.toFixed(2);
+    const dec = r.decisions == null ? '—'
+      : `${r.decisions.ok} ok · ${r.decisions.failed ? `<b style="color:var(--down)">${r.decisions.failed} failed</b>` : '0 failed'}`;
+    const behind = r.behind == null ? '—'
+      : r.behind === 0 ? '<span style="color:var(--up)">current</span>'
+      : `<span style="color:var(--warn)">${r.behind} behind</span>`;
+    const open = ST.expandedRec === r.id;
+    return `<tr class="row" data-recrec="${esc(r.id)}" style="cursor:pointer">
+      <td class="l"><b>${esc(r.label)}</b>${r.kind === 'agent' ? ' <span class="tag" style="background:rgba(77,184,255,.12);color:var(--accent);font-size:9.5px">AGENT</span>' : ''}
+        <div class="mu" style="font-size:10.5px">${esc(r.note)}</div></td>
+      <td class="l mu" style="font-size:11px">${esc(r.basis)}</td>
+      <td>${r.days}</td>
+      <td class="l mu" style="font-size:11px">${esc(r.start)} → ${esc(r.end)}</td>
+      <td>${spark(r.curve && r.curve.equity)}</td>
+      <td style="color:${ud(r.totalReturn)};font-weight:600">${r.totalReturn == null ? '—' : pct(r.totalReturn, 1)}</td>
+      <td>${sharpe}</td>
+      <td style="color:var(--down)">${r.maxDrawdown == null ? '—' : pctAbs(r.maxDrawdown, 1)}</td>
+      <td>${r.spyReturn == null ? '—' : `<span style="color:${ud(r.spyReturn)}">${pct(r.spyReturn, 1)}</span>`}</td>
+      <td>${behind}</td>
+      <td class="mu" style="font-size:11px">${dec}</td></tr>
+    ${open ? `<tr class="recdetail"><td colspan="11" style="padding:14px 18px">
+      <div class="m mu" style="font-size:11px;margin-bottom:8px">${esc(r.id)} · equity since ${esc(r.start)} · last day ${r.lastNet == null ? '—' : pct(r.lastNet, 2)}</div>
+      ${recDetailChart(r)}
+      <div class="mu" style="font-size:11px;margin-top:8px">click the row again to collapse</div>
+    </td></tr>` : ''}`;
+  }).join('') || '<tr><td colspan="11" class="l mu">no records</td></tr>';
+}
+
+const todaySub = (title, inner) => `<div>
+  <div style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:6px">${esc(title)}</div>
+  ${inner}</div>`;
+
+function renderToday() {
+  const t = DATA.today || {};
+  $('todaysub').textContent = t.date ? `as of ${t.date}` : '';
+  const blocks = [];
+
+  const o = t.open;
+  blocks.push(todaySub('agent_open scan', !o ? '<span class="mu">no scan decision recorded yet</span>' : `
+    <div class="m" style="font-size:12px">${o.date ? esc(o.date) + ' · ' : ''}status
+      <b style="color:${o.status === 'ok' ? 'var(--up)' : 'var(--down)'}">${esc(o.status || '?')}</b>
+      ${o.scanDate ? ` · scan ${esc(o.scanDate)}` : ''}${o.nFloor != null ? ` · floor ${o.nFloor}` : ''}</div>
+    <div class="mu" style="font-size:11.5px;margin-top:4px">${esc(o.screenReason || '')}${o.screens && o.screens.length ? ' · screens: ' + o.screens.map(esc).join(', ') : ''}${o.candidates != null ? ` · ${o.candidates} candidates` : ''}</div>
+    ${o.fail ? `<div style="font-size:11.5px;color:var(--down);margin-top:4px">${esc(o.fail)}</div>` : ''}
+    <div style="margin-top:6px">${(o.positions || []).map(p =>
+      `<span class="pill" style="border-radius:6px;margin:0 4px 4px 0">${esc(p.symbol)} ${p.target > 0 ? '+' : p.target < 0 ? '−' : '·'}${p.reason ? ' ' + esc(p.reason) : ''}</span>`).join('') || '<span class="mu">no positions</span>'}</div>`));
+
+  const agents = t.agents || [];
+  blocks.push(todaySub('agents today', agents.length ? agents.map(a => `
+    <div style="margin-bottom:10px">
+      <div class="m" style="font-size:12px"><b>${esc(a.id)}</b> · ${esc(a.date)} ·
+        <span style="color:var(--up)">${a.long}L</span> <span style="color:var(--down)">${a.short}S</span> ${a.flat} flat
+        ${a.failed ? ` · <b style="color:var(--down)">${a.failed} failed</b>` : ''}</div>
+      ${(a.changes || []).slice(0, 8).map(c =>
+        `<div class="m mu" style="font-size:11px">${esc(c.symbol)} ${c.from} → ${c.to}${c.reason ? ' · ' + esc(c.reason) : ''}</div>`).join('')
+        || '<div class="mu" style="font-size:11px">no position changes</div>'}
+    </div>`).join('') : '<span class="mu">no agent positions yet</span>'));
+
+  const r = t.rule;
+  blocks.push(todaySub('rule · mean_reversion_real', r ? `
+    <div class="m" style="font-size:12px">${esc(r.date)}</div>
+    ${['held', 'entered', 'exited'].map(k =>
+      `<div class="mu" style="font-size:11px;margin-top:4px"><b style="color:var(--fg)">${k}</b>: ${(r[k] || []).join(', ') || '—'}</div>`).join('')}`
+    : '<span class="mu">no rule positions</span>'));
+
+  const p = t.paper;
+  blocks.push(todaySub('paper account', p ? `
+    <div class="m" style="font-size:12px">${p.orders} orders · ${p.accepted} accepted · ${p.rejected} rejected${p.halted ? ' · <b style="color:var(--down)">HALTED</b>' : ''}</div>
+    ${p.haltReason ? `<div style="font-size:11.5px;color:var(--down);margin-top:3px">${esc(p.haltReason)}</div>` : ''}
+    ${p.rejectReasons && Object.keys(p.rejectReasons).length ? `<div class="mu" style="font-size:11px;margin-top:3px">${Object.entries(p.rejectReasons).map(([k, v]) => `${esc(k)} ×${v}`).join(' · ')}</div>` : ''}
+    ${p.account ? `<div class="mu" style="font-size:11px;margin-top:5px">cash ${p.account.cashUsd == null ? '—' : money(p.account.cashUsd, 0)} · today ${p.account.realizedPnlTodayUsd == null ? '—' : signed(p.account.realizedPnlTodayUsd, 0)} · ${p.account.positions.length} positions</div>` : ''}`
+    : '<span class="mu">no paper tick recorded</span>'));
+
+  $('today').innerHTML = blocks.join('');
+}
+
+function renderMemory() {
+  const m = DATA.memory || {};
+  $('memlegacy').innerHTML = m.legacy
+    ? '<span class="tag" style="background:rgba(255,176,32,.14);color:var(--warn)">LEGACY LOG</span>' : '';
+  $('memory').innerHTML = `
+    <div class="mu" style="font-size:11px">${m.date ? 'updated ' + esc(m.date) : 'no memory file'}${m.archiveEntries ? ` · ${m.archiveEntries} archived reflections` : ''}</div>
+    <div class="col" style="gap:8px;margin-top:10px">${(m.bullets || []).map(b =>
+      `<div style="padding-left:10px;border-left:2px solid var(--line2)">${esc(b)}</div>`).join('') || '<span class="mu">empty</span>'}</div>`;
+}
+
+function renderExperiments() {
+  const rows = DATA.experiments || [];
+  $('experiments').innerHTML = rows.length ? rows.map(e => `<tr>
+    <td class="l mu" style="font-size:11px">${esc(e.created)}</td>
+    <td class="l">${esc(e.experiment)}</td><td class="l mu">${esc(e.variant)}</td>
+    <td>${e.sharpe == null ? '—' : e.sharpe.toFixed(2)}</td>
+    <td class="mu" style="font-size:11px">${e.ciLo == null ? '—' : `${e.ciLo.toFixed(2)} → ${e.ciHi.toFixed(2)}`}</td>
+    <td style="color:${ud(e.annReturn)}">${e.annReturn == null ? '—' : pct(e.annReturn, 1)}</td>
+    <td style="color:var(--down)">${e.maxDrawdown == null ? '—' : pctAbs(e.maxDrawdown, 1)}</td>
+    <td class="l mu" style="font-size:11px">${esc(e.start)} → ${esc(e.end)}</td>
+    <td class="l mu" style="font-size:11px;max-width:300px">${esc(e.note)}</td></tr>`).join('')
+    : '<tr><td colspan="9" class="l mu">no experiments recorded</td></tr>';
+}
+
 function renderDrawer() {
   const wrap = $('drawerwrap');
   const r = ST.selectedRun && DATA.runs.find(x => x.id === ST.selectedRun);
@@ -700,10 +1367,14 @@ async function triggerResearchRun() {
 }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-engine],[data-sort],[data-open],[data-tradefilter],[data-ledgertoggle],[data-copy],[data-close],#trigger-btn');
+  const t = e.target.closest('[data-engine],[data-sort],[data-open],[data-tradefilter],[data-ledgertoggle],[data-copy],[data-close],[data-recmode],[data-rechide],[data-recrec],[data-healthall],#trigger-btn');
   if (!t) return;
   const d = t.dataset;
   if (d.engine) { ST.engine = d.engine; renderRuns(); }
+  else if (d.recmode != null) { ST.recMode = ST.recMode === 'overlay' ? 'table' : 'overlay'; renderRecords(); }
+  else if (d.rechide != null) { ST.recHidden.has(d.rechide) ? ST.recHidden.delete(d.rechide) : ST.recHidden.add(d.rechide); renderRecords(); }
+  else if (d.recrec != null) { ST.expandedRec = ST.expandedRec === d.recrec ? null : d.recrec; renderRecords(); }
+  else if (d.healthall != null) { ST.healthAll = !ST.healthAll; renderHealth(); }
   else if (d.sort) {
     if (ST.runSort === d.sort) ST.runDir = -ST.runDir;
     else { ST.runSort = d.sort; ST.runDir = ['id', 'engine', 'overlay'].includes(d.sort) ? 1 : -1; }
@@ -719,10 +1390,21 @@ document.addEventListener('click', e => {
     setTimeout(() => { ST.copied = -1; renderRunbook(); }, 1400);
   } else if (d.close != null) { ST.selectedRun = null; renderDrawer(); }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && ST.selectedRun) { ST.selectedRun = null; renderDrawer(); } });
+$('runsearch').addEventListener('input', e => { ST.runQuery = e.target.value.trim().toLowerCase(); renderRuns(); });
+document.addEventListener('keydown', e => {
+  const typing = /INPUT|TEXTAREA/.test(document.activeElement && document.activeElement.tagName || '');
+  if (e.key === '/' && !typing) { e.preventDefault(); $('runsearch').focus(); }
+  else if (e.key === 'Escape') {
+    if (ST.selectedRun) { ST.selectedRun = null; renderDrawer(); }
+    else if (ST.expandedRec) { ST.expandedRec = null; renderRecords(); }
+    else if (document.activeElement === $('runsearch')) document.activeElement.blur();
+  }
+});
 
-[renderHeaderPills, renderVerdict, renderChart, renderGuardrails, renderBakeoff, renderRuns,
- renderScorecard, renderBuckets, renderLedger, renderRunbook, renderAgentNotes, renderDrawer].forEach(f => f());
+[renderHealth, renderHeaderPills, renderVerdict, renderRecords, renderToday, renderMemory,
+ renderChart, renderGuardrails, renderBakeoff, renderRuns,
+ renderScorecard, renderBuckets, renderLedger, renderExperiments, renderRunbook,
+ renderAgentNotes, renderDrawer].forEach(f => f());
 </script>
 </body>
 </html>
