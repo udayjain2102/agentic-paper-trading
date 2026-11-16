@@ -655,63 +655,68 @@ _TEMPLATE = r"""<!doctype html>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#0a0c10;--panel:#12161c;--panel2:#171d25;--line:#232a34;--line2:#2e3742;--fg:#e8edf4;--muted:#828d9b;--up:#05c46b;--down:#ff5c5c;--accent:#4db8ff;--warn:#ffb020;--purple:#b388ff}
+:root{--bg:#0a0a0a;--panel:#111111;--panel2:#171717;--line:#2a2a2a;--line2:#3d3d3d;--fg:#e8e8e6;--muted:#8f8f86;--up:#4af626;--down:#ff3b30;--accent:#00d4ff;--warn:#ffb000;--purple:#b78cff}
 *{box-sizing:border-box}
 html,body{margin:0}
-body{background:radial-gradient(1200px 600px at 78% -8%,rgba(77,184,255,.06),transparent 60%),var(--bg);color:var(--fg);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+body{background:var(--bg);color:var(--fg);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+/* faint CRT scanlines over everything -- pointer-events:none keeps it inert */
+body::after{content:"";position:fixed;inset:0;z-index:60;pointer-events:none;background:repeating-linear-gradient(0deg,transparent 0 2px,rgba(0,0,0,.09) 2px 3px);opacity:.35}
 a{color:var(--accent);text-decoration:none}
-::selection{background:rgba(5,196,107,.25)}
+::selection{background:rgba(74,166,38,.28)}
 @keyframes drawerIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .m{font-family:'IBM Plex Mono',monospace}
 .mu{color:var(--muted)}
 section{margin-top:30px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px}
-.card h3,.card h2{margin:0 0 4px;font-size:15px;font-weight:600}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:0;padding:20px 22px}
+.card h3,.card h2{margin:0 0 4px;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
 .sub{font-size:12px;color:var(--muted);margin-bottom:16px}
 .grid{display:grid;gap:11px}
 .two{display:grid;gap:20px}
 .col{display:flex;flex-direction:column;gap:14px}
 .hdr{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
-.tile{background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:13px 15px}
+.tile{background:var(--bg);border:1px solid var(--line);border-radius:0;padding:13px 15px}
 .tile .v{font-size:20px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-.01em;overflow-wrap:anywhere}
 .tile .v.sm{font-size:13px;line-height:1.35}
-.tile .k{font-size:11px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
-.chipbar{display:flex;gap:5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px;flex-wrap:wrap}
-.chip{border:none;cursor:pointer;font:600 12px 'IBM Plex Sans',sans-serif;padding:6px 13px;border-radius:7px;background:transparent;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.tile .k{font-size:10px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.08em;font-family:'IBM Plex Mono',monospace}
+.chipbar{display:flex;gap:5px;background:var(--bg);border:1px solid var(--line);border-radius:0;padding:3px;flex-wrap:wrap}
+.chip{border:none;cursor:pointer;font:600 11px 'IBM Plex Mono',monospace;padding:6px 13px;border-radius:0;background:transparent;color:var(--muted);display:inline-flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:.06em;transition:background .12s,color .12s}
 .chip[aria-pressed=true]{background:var(--panel2);color:var(--fg)}
-.tag{padding:2px 9px;border-radius:6px;font:700 11px 'IBM Plex Mono',monospace;white-space:nowrap}
-.pill{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font:600 11px 'IBM Plex Mono',monospace;border:1px solid var(--line);background:var(--panel2);color:var(--muted)}
+.chip:hover{color:var(--fg)}
+.tag{padding:2px 9px;border-radius:0;font:700 10px 'IBM Plex Mono',monospace;white-space:nowrap;letter-spacing:.08em;text-transform:uppercase}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font:600 10px 'IBM Plex Mono',monospace;border:1px solid var(--line);background:var(--panel2);color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
 .dot{width:7px;height:7px;border-radius:50%;flex:none;background:currentColor}
+.caret::before{content:"// ";color:var(--accent)}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
-th{padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);color:var(--muted);text-align:right;white-space:nowrap}
+th{padding:8px 10px;font-weight:600;border-bottom:1px solid var(--line);color:var(--muted);text-align:right;white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase}
 td{padding:9px 10px;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;text-align:right}
 th.l,td.l{text-align:left}
 th.c,td.c{text-align:center}
-.bar{height:8px;background:var(--bg);border:1px solid var(--line);border-radius:4px;overflow:hidden}
-.bar>i{display:block;height:100%;border-radius:4px}
+.bar{height:8px;background:var(--bg);border:1px solid var(--line);border-radius:0;overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:0}
 .scroll{overflow-x:auto}
 .scroll::-webkit-scrollbar{height:9px;width:9px}
-.scroll::-webkit-scrollbar-thumb{background:#2b333f;border-radius:6px}
+.scroll::-webkit-scrollbar-thumb{background:#2b2b2b;border-radius:0}
 .row:hover{background:var(--panel2)}
 .row{cursor:pointer}
-.note{padding:11px 13px;border-radius:10px;font-size:11.5px;color:var(--muted);text-wrap:pretty}
-.btn{border:1px solid var(--line);background:var(--panel2);color:var(--fg);cursor:pointer;font:600 12.5px 'IBM Plex Sans',sans-serif;padding:8px 16px;border-radius:8px}
-.sortable{cursor:pointer}
-.chartwrap{position:relative}
-#charttip{position:absolute;pointer-events:none;display:none;z-index:30;background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:6px 9px;font:11px 'IBM Plex Mono',monospace;color:var(--fg);white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.4)}
-#ch{stroke:var(--accent);stroke-width:1;opacity:.6}
-.searchbox{background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--fg);font:12px 'IBM Plex Sans',sans-serif;padding:7px 11px;min-width:170px}
+.note{padding:11px 13px;border-radius:0;font-size:11.5px;color:var(--muted);text-wrap:pretty}
+.btn{border:1px solid var(--line);background:var(--panel2);color:var(--fg);cursor:pointer;font:600 11px 'IBM Plex Mono',monospace;padding:8px 16px;border-radius:0;letter-spacing:.06em;text-transform:uppercase;transition:border-color .12s,color .12s}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.searchbox{background:var(--bg);border:1px solid var(--line);border-radius:0;color:var(--fg);font:11px 'IBM Plex Mono',monospace;padding:7px 11px;min-width:170px;text-transform:uppercase;letter-spacing:.05em}
 .searchbox:focus{outline:none;border-color:var(--accent)}
+.chartwrap{position:relative}
+#charttip{position:absolute;pointer-events:none;display:none;z-index:30;background:var(--panel2);border:1px solid var(--line2);border-radius:0;padding:6px 9px;font:11px 'IBM Plex Mono',monospace;color:var(--fg);white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.4)}
+#ch{stroke:var(--accent);stroke-width:1;opacity:.6}
 .recdetail{background:var(--bg)}
 .legend-dot{cursor:pointer;opacity:.4;transition:opacity .15s}
 .legend-dot.on{opacity:1}
 </style>
 </head>
 <body>
-<header class="hdr" style="position:sticky;top:0;z-index:20;align-items:center;padding:14px 26px;background:rgba(10,12,16,.82);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)">
+<header class="hdr" style="position:sticky;top:0;z-index:20;align-items:center;padding:14px 26px;background:rgba(10,10,10,.88);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)">
   <div style="line-height:1.15">
-    <div style="font-weight:700;font-size:15px">RHAGENT<span class="mu" style="font-weight:500"> · Trading Control Room</span></div>
-    <div class="m mu" style="font-size:11px">autonomous US-equities agent · guardrail-enforced</div>
+    <div class="m" style="font-weight:700;font-size:15px;letter-spacing:.18em">RHAGENT<span class="mu" style="font-weight:500"> /// TRADING CONTROL ROOM</span></div>
+    <div class="m mu" style="font-size:10px;letter-spacing:.14em;text-transform:uppercase">autonomous US-equities agent · guardrail-enforced · <span id="hdrdate"></span></div>
   </div>
   <div id="headerpills" class="hdr" style="align-items:center;gap:8px"></div>
 </header>
@@ -779,8 +784,8 @@ th.c,td.c{text-align:center}
   <section class="card">
     <div class="hdr" style="align-items:baseline;gap:10px;margin-bottom:6px">
       <h3>Locked-config scorecard</h3><span id="winid" class="m mu" style="font-size:11px"></span>
-      <span class="tag" style="background:rgba(5,196,107,.14);color:var(--up)">FORWARD CANDIDATE</span>
-      <span class="tag" style="background:rgba(255,176,32,.14);color:var(--warn)">IN-SAMPLE</span>
+      <span class="tag" style="background:rgba(74,166,38,.14);color:var(--up)">FORWARD CANDIDATE</span>
+      <span class="tag" style="background:rgba(255,176,0,.14);color:var(--warn)">IN-SAMPLE</span>
       <div style="flex:1"></div>
     </div>
     <div class="sub">Measured over the same window the strategy was selected on, which is selection-biased, not out-of-sample evidence.</div>
@@ -845,6 +850,12 @@ const ST = { engine: 'all', runSort: 'id', runDir: -1, tradeFilter: 'all', copie
              recMode: 'table', recHidden: new Set(), expandedRec: null, runQuery: '', healthAll: false };
 const LEDGER_PREVIEW = 10;
 const $ = id => document.getElementById(id);
+// JS-side palette mirror of :root -- SVG presentation attributes and inline
+// styles can't always resolve var(), so chart code references these instead
+// of hardcoded hex. Keep in sync with the :root block above.
+const C = { up:'#4af626', down:'#ff3b30', accent:'#00d4ff', warn:'#ffb000',
+            purple:'#b78cff', muted:'#8f8f86', grid:'#2a2a2a', bg:'#0a0a0a',
+            fg:'#e8e8e6', line:'#3d3d3d' };
 
 const money = (x, dp = 2) => (x < 0 ? '-' : '') + '$' + Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
 const signed = (x, dp = 2) => (x >= 0 ? '+' : '') + money(x, dp);
@@ -875,6 +886,7 @@ const bucketRow = (b, color) => `<div>
   <div class="m mu" style="font-size:10.5px">${pctAbs(b.tradeShare, 0)} of trades · ${b.lift.toFixed(1)}× its size · ${pctAbs(b.wr, 0)} win rate</div></div>`;
 
 function renderHeaderPills() {
+  $('hdrdate').textContent = (DATA.asOf || (DATA.updated || '').slice(0, 10));
   const g = DATA.guardrails, U = 'var(--up)', W = 'var(--warn)', D = 'var(--down)';
   $('headerpills').innerHTML = `
     <span class="pill" style="color:${W};border-color:currentColor" title="paper_run.py hardcodes MockBroker unconditionally -- no code path here can place a real order, regardless of the LIVE env var"><span class="dot"></span>NO LIVE ORDER PATH</span>
@@ -911,13 +923,13 @@ function renderVerdict() {
     <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden">
       ${side(agent, 'LLM Agent', 'var(--accent)', 'left')}
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:22px 30px;background:var(--panel2);border-left:1px solid var(--line);border-right:1px solid var(--line);min-width:220px">
-        <div style="padding:6px 16px;border-radius:999px;background:rgba(255,176,32,.12);border:1px solid rgba(255,176,32,.35);color:var(--warn);font-weight:700;font-size:13px">${badge}</div>
+        <div style="padding:6px 16px;border-radius:999px;background:rgba(255,176,0,.12);border:1px solid rgba(255,176,0,.35);color:var(--warn);font-weight:700;font-size:13px">${badge}</div>
         <div class="mu" style="font-size:12px;text-align:center;max-width:210px;text-wrap:pretty">${esc(note)}</div>
       </div>
       ${side(base, 'Mean-Reversion Baseline', 'var(--purple)', 'right')}
     </div>
-    ${banner('rgba(5,196,107,.22)', 'rgba(5,196,107,.06)', `<b style="color:var(--up)">Research winner locked:</b> ${esc(DATA.lockedEngine)}, gated by the <b>${esc(DATA.lockedOverlay || 'no')}</b> overlay. This is the config the forward track is now paper-trading.`)}
-    ${real.days ? banner('rgba(77,184,255,.22)', 'rgba(77,184,255,.06)', `<b style="color:var(--accent)">Honest-fill record (mean_reversion_real):</b> ${money(real.pnl)} over ${esc(sub(real))}. The baseline above is ${fill(base)}, flattering by comparison, kept only because its track record predates this fill.`) : ''}
+    ${banner('rgba(74,166,38,.22)', 'rgba(74,166,38,.06)', `<b style="color:var(--up)">Research winner locked:</b> ${esc(DATA.lockedEngine)}, gated by the <b>${esc(DATA.lockedOverlay || 'no')}</b> overlay. This is the config the forward track is now paper-trading.`)}
+    ${real.days ? banner('rgba(0,212,255,.22)', 'rgba(0,212,255,.06)', `<b style="color:var(--accent)">Honest-fill record (mean_reversion_real):</b> ${money(real.pnl)} over ${esc(sub(real))}. The baseline above is ${fill(base)}, flattering by comparison, kept only because its track record predates this fill.`) : ''}
     <div class="mu" style="margin-top:8px;font-size:11px">SPY benchmark is buy-and-hold over each leg's own tracked window; the strategy is not always fully invested, so this isn't an apples-to-apples exposure comparison.</div>`;
 }
 
@@ -936,23 +948,23 @@ function renderChart() {
   let axes = '';
   for (let k = 0; k < 5; k++) {
     const v = lo + span * k / 4, y = py(v);
-    axes += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#232a34" opacity="0.55"/>` + txt(padL - 9, y + 3.5, v.toFixed(2) + '×', 'end', '#828d9b', 11);
+    axes += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="${C.grid}" opacity="0.55"/>` + txt(padL - 9, y + 3.5, v.toFixed(2) + '×', 'end', C.muted, 11);
   }
-  axes += [0, Math.floor(n / 2), n - 1].map((i, k) => txt(px(i), H - 9, dates[i], ['start', 'middle', 'end'][k === 0 ? 0 : k === 2 ? 2 : 1], '#828d9b', 11)).join('');
+  axes += [0, Math.floor(n / 2), n - 1].map((i, k) => txt(px(i), H - 9, dates[i], ['start', 'middle', 'end'][k === 0 ? 0 : k === 2 ? 2 : 1], C.muted, 11)).join('');
   const line = ys.map((v, i) => px(i).toFixed(1) + ',' + py(v).toFixed(1)).join(' ');
-  const stroke = ys[n - 1] >= 1 ? '#05c46b' : '#ff5c5c';
+  const stroke = ys[n - 1] >= 1 ? C.up : C.down;
   let rm = -Infinity, ddMin = 0, ddI = 0, peakI = 0, pk = -Infinity;
   ys.forEach((v, i) => { rm = Math.max(rm, v); if (v / rm - 1 < ddMin) { ddMin = v / rm - 1; ddI = i; } });
   for (let i = 0; i <= ddI; i++) if (ys[i] > pk) { pk = ys[i]; peakI = i; }
-  const dot = (i, c) => `<circle cx="${px(i)}" cy="${py(ys[i])}" r="3.5" fill="${c}" stroke="#0a0c10" stroke-width="1.5"/>`;
+  const dot = (i, c) => `<circle cx="${px(i)}" cy="${py(ys[i])}" r="3.5" fill="${c}" stroke="${C.bg}" stroke-width="1.5"/>`;
   $('chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">
-    ${ddMin < 0 ? `<rect x="${px(peakI)}" y="${padT}" width="${Math.max(px(ddI) - px(peakI), 1)}" height="${plotH}" fill="#ff5c5c" opacity="0.07"/>` : ''}
+    ${ddMin < 0 ? `<rect x="${px(peakI)}" y="${padT}" width="${Math.max(px(ddI) - px(peakI), 1)}" height="${plotH}" fill="${C.down}" opacity="0.07"/>` : ''}
     ${axes}
     <polygon points="${px(0).toFixed(1)},${py(lo).toFixed(1)} ${line} ${px(n - 1).toFixed(1)},${py(lo).toFixed(1)}" fill="${stroke}" opacity="0.1"/>
-    ${(1 >= lo && 1 <= hi) ? `<line x1="${padL}" y1="${py(1)}" x2="${W - padR}" y2="${py(1)}" stroke="#4db8ff" stroke-dasharray="4 4" opacity="0.5"/>` : ''}
+    ${(1 >= lo && 1 <= hi) ? `<line x1="${padL}" y1="${py(1)}" x2="${W - padR}" y2="${py(1)}" stroke="${C.accent}" stroke-dasharray="4 4" opacity="0.5"/>` : ''}
     <polyline points="${line}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linejoin="round"/>
     <line id="ch" y1="${padT}" y2="${padT + plotH}" style="display:none"/>
-    ${dot(peakI, '#05c46b')}${ddMin < 0 ? dot(ddI, '#ff5c5c') : ''}
+    ${dot(peakI, C.up)}${ddMin < 0 ? dot(ddI, C.down) : ''}
   </svg>`;
   // Hover crosshair: nearest day index from the x fraction (the svg preserves
   // its 960x320 aspect, so x maps linearly across the wrap's width).
@@ -987,7 +999,7 @@ function renderBakeoff() {
   const rows = DATA.bakeoff;
   if (!rows.length) { $('bakeoff').innerHTML = '<tr><td colspan="6" class="l mu">no bake-off data</td></tr>'; return; }
   const maxPoint = Math.max(...rows.map(b => b.point));
-  $('bakeoff').innerHTML = rows.map(b => `<tr style="background:${b.beats ? 'rgba(5,196,107,.07)' : 'transparent'}">
+  $('bakeoff').innerHTML = rows.map(b => `<tr style="background:${b.beats ? 'rgba(74,166,38,.07)' : 'transparent'}">
     <td class="l" style="color:${b.beats ? 'var(--up)' : 'var(--fg)'};font-weight:${b.beats ? 700 : 500}">${esc(b.overlay)}</td>
     <td><div style="display:flex;align-items:center;justify-content:flex-end;gap:8px"><span class="bar" style="width:44px;height:5px"><i style="width:${(b.point / maxPoint * 100).toFixed(0)}%;background:${b.beats ? 'var(--up)' : 'var(--muted)'}"></i></span>${b.point.toFixed(2)}</div></td>
     <td class="mu">${b.deflated == null ? `n/a (${b.nDays}d)` : b.deflated.toFixed(2)}</td><td class="mu">${esc(b.fold)}</td><td class="mu">${esc(b.ci)}</td>
@@ -1013,7 +1025,7 @@ function renderRuns() {
   const maxAbsRet = Math.max(...rows.map(r => Math.abs(r.ret)), 0.01);
   $('runrows').innerHTML = rows.map(r => {
     const win = r.id === DATA.winScore.id;
-    return `<tr class="row" data-open="${esc(r.id)}" style="background:${win ? 'rgba(5,196,107,.06)' : 'transparent'};border-left:3px solid ${win ? 'var(--up)' : 'transparent'}">
+    return `<tr class="row" data-open="${esc(r.id)}" style="background:${win ? 'rgba(74,166,38,.06)' : 'transparent'};border-left:3px solid ${win ? 'var(--up)' : 'transparent'}">
       <td class="l"><span style="color:var(--accent)">${esc(r.sid)}</span>${win ? '<span style="color:var(--up);font-weight:700;font-size:10px;margin-left:6px">◆ LOCKED</span>' : ''}</td>
       <td class="l"><span class="dot" style="display:inline-block;color:${engineColor(r.engine)}"></span> ${esc(r.engine)}</td>
       <td class="l mu">${esc(r.overlay || 'none')}</td><td>${r.n}</td>
@@ -1139,14 +1151,14 @@ function recDetailChart(r) {
   const c = eq[eq.length - 1] >= eq[0] ? 'var(--up)' : 'var(--down)';
   const iLo = eq.indexOf(lo), iHi = eq.indexOf(hi);
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">
-    <line x1="${pad}" y1="${py(1)}" x2="${W - pad}" y2="${py(1)}" stroke="#4db8ff" stroke-dasharray="3 4" opacity="0.4"/>
+    <line x1="${pad}" y1="${py(1)}" x2="${W - pad}" y2="${py(1)}" stroke="${C.accent}" stroke-dasharray="3 4" opacity="0.4"/>
     <polyline points="${pts}" fill="none" stroke="${c}" stroke-width="1.8" stroke-linejoin="round"/>
     <circle cx="${px(iLo)}" cy="${py(lo)}" r="3" fill="var(--down)"/>
     <circle cx="${px(iHi)}" cy="${py(hi)}" r="3" fill="var(--up)"/>
-    <text x="${pad}" y="${H - 1}" fill="#828d9b" font-size="10" font-family="'IBM Plex Mono',monospace">${esc(ds[0] || '')}</text>
-    <text x="${W - pad}" y="${H - 1}" text-anchor="end" fill="#828d9b" font-size="10" font-family="'IBM Plex Mono',monospace">${esc(ds[ds.length - 1] || '')}</text>
-    <text x="${W - pad}" y="${py(hi) - 5}" text-anchor="end" fill="#828d9b" font-size="10" font-family="'IBM Plex Mono',monospace">${hi.toFixed(3)}×</text>
-    <text x="${W - pad}" y="${py(lo) + 12}" text-anchor="end" fill="#828d9b" font-size="10" font-family="'IBM Plex Mono',monospace">${lo.toFixed(3)}×</text>
+    <text x="${pad}" y="${H - 1}" fill="${C.muted}" font-size="10" font-family="'IBM Plex Mono',monospace">${esc(ds[0] || '')}</text>
+    <text x="${W - pad}" y="${H - 1}" text-anchor="end" fill="${C.muted}" font-size="10" font-family="'IBM Plex Mono',monospace">${esc(ds[ds.length - 1] || '')}</text>
+    <text x="${W - pad}" y="${py(hi) - 5}" text-anchor="end" fill="${C.muted}" font-size="10" font-family="'IBM Plex Mono',monospace">${hi.toFixed(3)}×</text>
+    <text x="${W - pad}" y="${py(lo) + 12}" text-anchor="end" fill="${C.muted}" font-size="10" font-family="'IBM Plex Mono',monospace">${lo.toFixed(3)}×</text>
   </svg>`;
 }
 
@@ -1178,11 +1190,11 @@ function renderRecOverlay(recs) {
   let axes = '';
   for (let k = 0; k < 4; k++) {
     const v = lo + span * k / 3, y = py(v);
-    axes += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#232a34" opacity="0.55"/>`
-      + `<text x="${padL - 9}" y="${y + 3.5}" text-anchor="end" fill="#828d9b" font-size="11" font-family="'IBM Plex Mono',monospace">${v.toFixed(2)}×</text>`;
+    axes += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="${C.grid}" opacity="0.55"/>`
+      + `<text x="${padL - 9}" y="${y + 3.5}" text-anchor="end" fill="${C.muted}" font-size="11" font-family="'IBM Plex Mono',monospace">${v.toFixed(2)}×</text>`;
   }
-  axes += `<text x="${padL}" y="${H - 9}" fill="#828d9b" font-size="11" font-family="'IBM Plex Mono',monospace">day 0</text>`
-    + `<text x="${W - padR}" y="${H - 9}" text-anchor="end" fill="#828d9b" font-size="11" font-family="'IBM Plex Mono',monospace">day ${maxN - 1}</text>`;
+  axes += `<text x="${padL}" y="${H - 9}" fill="${C.muted}" font-size="11" font-family="'IBM Plex Mono',monospace">day 0</text>`
+    + `<text x="${W - padR}" y="${H - 9}" text-anchor="end" fill="${C.muted}" font-size="11" font-family="'IBM Plex Mono',monospace">day ${maxN - 1}</text>`;
   const lines = vis.map(r => {
     const eq = r.curve.equity, n = eq.length;
     const pts = eq.map((v, i) => `${px(i * (maxN - 1) / (n - 1)).toFixed(1)},${py(v).toFixed(1)}`).join(' ');
@@ -1216,7 +1228,7 @@ function renderRecords() {
       : `<span style="color:var(--warn)">${r.behind} behind</span>`;
     const open = ST.expandedRec === r.id;
     return `<tr class="row" data-recrec="${esc(r.id)}" style="cursor:pointer">
-      <td class="l"><b>${esc(r.label)}</b>${r.kind === 'agent' ? ' <span class="tag" style="background:rgba(77,184,255,.12);color:var(--accent);font-size:9.5px">AGENT</span>' : ''}
+      <td class="l"><b>${esc(r.label)}</b>${r.kind === 'agent' ? ' <span class="tag" style="background:rgba(0,212,255,.12);color:var(--accent);font-size:9.5px">AGENT</span>' : ''}
         <div class="mu" style="font-size:10.5px">${esc(r.note)}</div></td>
       <td class="l mu" style="font-size:11px">${esc(r.basis)}</td>
       <td>${r.days}</td>
@@ -1287,7 +1299,7 @@ function renderToday() {
 function renderMemory() {
   const m = DATA.memory || {};
   $('memlegacy').innerHTML = m.legacy
-    ? '<span class="tag" style="background:rgba(255,176,32,.14);color:var(--warn)">LEGACY LOG</span>' : '';
+    ? '<span class="tag" style="background:rgba(255,176,0,.14);color:var(--warn)">LEGACY LOG</span>' : '';
   $('memory').innerHTML = `
     <div class="mu" style="font-size:11px">${m.date ? 'updated ' + esc(m.date) : 'no memory file'}${m.archiveEntries ? ` · ${m.archiveEntries} archived reflections` : ''}</div>
     <div class="col" style="gap:8px;margin-top:10px">${(m.bullets || []).map(b =>
@@ -1314,14 +1326,14 @@ function renderDrawer() {
   if (!r) { wrap.innerHTML = ''; return; }
   const win = r.id === DATA.winScore.id;
   wrap.innerHTML = `
-    <div data-close style="position:fixed;inset:0;z-index:40;background:rgba(4,6,9,.6);backdrop-filter:blur(2px)"></div>
+    <div data-close style="position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.6);backdrop-filter:blur(2px)"></div>
     <aside class="scroll" style="position:fixed;top:0;right:0;z-index:41;height:100vh;width:min(540px,94vw);background:var(--panel);border-left:1px solid var(--line2);box-shadow:-24px 0 60px rgba(0,0,0,.5);overflow-y:auto;animation:drawerIn .22s cubic-bezier(.2,.8,.2,1) both">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:20px 24px;border-bottom:1px solid var(--line)">
         <div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span style="font-weight:600;font-size:14px"><span class="dot" style="display:inline-block;color:${engineColor(r.engine)}"></span> ${esc(r.engine)}</span>
             <span class="pill" style="border-radius:6px">${esc(r.overlay || 'no overlay')}</span>
-            ${win ? '<span class="tag" style="background:rgba(5,196,107,.14);color:var(--up)">◆ LOCKED CONFIG</span>' : ''}
+            ${win ? '<span class="tag" style="background:rgba(74,166,38,.14);color:var(--up)">◆ LOCKED CONFIG</span>' : ''}
           </div>
           <div class="m mu" style="font-size:11.5px;margin-top:6px">${esc(r.id)}</div>
         </div>
@@ -1341,7 +1353,7 @@ function renderDrawer() {
             <div style="width:${(r.lost / (r.n || 1) * 100).toFixed(1)}%;background:var(--down)"></div>
           </div>
         </div>
-        <div class="note" style="margin-top:16px;background:rgba(77,184,255,.06);border:1px solid rgba(77,184,255,.22)">${win
+        <div class="note" style="margin-top:16px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.22)">${win
           ? 'This is the config the forward paper track is now trading. Its per-trade ledger is in the Trade ledger panel.'
           : `Per-trade ledger for this run: rhagent.evaluate --run ${esc(r.id)}`}</div>
       </div>
