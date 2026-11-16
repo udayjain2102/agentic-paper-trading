@@ -216,6 +216,7 @@ class AgentEngine:
         allow_short: bool = False,
         max_tokens: int | None = None,
         market_context: bool = False,
+        rich_features: bool = False,
     ) -> None:
         self.complete = complete
         self.model = model
@@ -224,6 +225,7 @@ class AgentEngine:
         self.allow_short = allow_short
         self.max_tokens = max_tokens
         self.market_context = market_context
+        self.rich_features = rich_features
         self._dead = ""  # set once the endpoint proves hard-down; see decide()
 
     def _default_complete(self) -> Callable[[str], str]:
@@ -239,8 +241,63 @@ class AgentEngine:
         """
         return nvidia_complete(max_tokens=self.max_tokens, model=self.model)
 
+    @staticmethod
+    def _ret(close: pd.Series, n: int) -> float:
+        k = min(n, len(close) - 1)
+        return float(close.iloc[-1] / close.iloc[-1 - k] - 1.0) if k >= 1 else 0.0
+
+    @staticmethod
+    def _vol(close: pd.Series, n: int) -> float:
+        rets = close.pct_change().dropna()
+        v = float(rets.tail(n).std()) if len(rets) >= 2 else 0.0
+        return 0.0 if pd.isna(v) else v
+
+    def _rsi14(self, close: pd.Series) -> float:
+        rets = close.pct_change().dropna().tail(14)
+        if len(rets) < 2:
+            return 50.0
+        gains = rets.clip(lower=0.0).mean()
+        losses = (-rets.clip(upper=0.0)).mean()
+        if losses == 0.0:
+            return 100.0 if gains > 0 else 50.0
+        return float(100.0 - 100.0 / (1.0 + gains / losses))
+
+    def _features_rich(self, symbol: str, history: pd.DataFrame,
+                       current_pos: float) -> str:
+        """Full technical snapshot for one symbol -- the base _features line
+        gives the model momentum_5d and vol_20d and nothing else, which is why
+        the live agent's verdicts look like noise dressed in prose: it cannot
+        see trend, mean-reversion distance, volume, or where price sits in its
+        range. Every field degrades gracefully on short history (same spirit
+        as _mom5's fallback)."""
+        close = history["close"].astype(float)
+        last = float(close.iloc[-1])
+        vol20 = self._vol(close, 20)
+        vol60 = self._vol(close, 60)
+        vol_ratio = vol20 / vol60 if vol60 > 0 else 1.0
+        ma20 = float(close.tail(min(20, len(close))).mean())
+        ma50 = float(close.tail(min(50, len(close))).mean())
+        win = close.tail(min(252, len(close)))
+        lo, hi = float(win.min()), float(win.max())
+        range_pos = (last - lo) / (hi - lo) if hi > lo else 0.5
+        volu = 1.0
+        if "volume" in history.columns and len(history) >= 2:
+            vols = history["volume"].astype(float).tail(21)
+            avg = float(vols.iloc[:-1].mean()) if len(vols) > 1 else 0.0
+            if avg > 0:
+                volu = float(vols.iloc[-1] / avg)
+        return (f"{symbol}: close={last:.2f} ret1d={self._ret(close, 1):+.4f} "
+                f"ret5d={self._ret(close, 5):+.4f} ret20d={self._ret(close, 20):+.4f} "
+                f"ret60d={self._ret(close, 60):+.4f} vol20d={vol20:.4f} "
+                f"volratio={vol_ratio:.3f} distma20={last / ma20 - 1.0:+.4f} "
+                f"distma50={last / ma50 - 1.0:+.4f} rsi14={self._rsi14(close):.1f} "
+                f"volu_ratio={volu:.2f} range52w={range_pos:.3f} "
+                f"current_pos={current_pos:+.0f}")
+
     def _features(self, symbol: str, history: pd.DataFrame, current_pos: float) -> str:
         """The one line of model input for a symbol."""
+        if self.rich_features:
+            return self._features_rich(symbol, history, current_pos)
         close = history["close"].astype(float)
         last = float(close.iloc[-1])
         # momentum over up to 5 prior bars; fall back to the whole window when
