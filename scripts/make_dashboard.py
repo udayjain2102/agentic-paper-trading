@@ -697,6 +697,14 @@ th.c,td.c{text-align:center}
 .note{padding:11px 13px;border-radius:10px;font-size:11.5px;color:var(--muted);text-wrap:pretty}
 .btn{border:1px solid var(--line);background:var(--panel2);color:var(--fg);cursor:pointer;font:600 12.5px 'IBM Plex Sans',sans-serif;padding:8px 16px;border-radius:8px}
 .sortable{cursor:pointer}
+.chartwrap{position:relative}
+#charttip{position:absolute;pointer-events:none;display:none;z-index:30;background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:6px 9px;font:11px 'IBM Plex Mono',monospace;color:var(--fg);white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.4)}
+#ch{stroke:var(--accent);stroke-width:1;opacity:.6}
+.searchbox{background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--fg);font:12px 'IBM Plex Sans',sans-serif;padding:7px 11px;min-width:170px}
+.searchbox:focus{outline:none;border-color:var(--accent)}
+.recdetail{background:var(--bg)}
+.legend-dot{cursor:pointer;opacity:.4;transition:opacity .15s}
+.legend-dot.on{opacity:1}
 </style>
 </head>
 <body>
@@ -717,13 +725,14 @@ th.c,td.c{text-align:center}
 
   <section class="card">
     <div class="hdr" style="align-items:baseline;gap:10px;margin-bottom:6px">
-      <div><h3>Forward records</h3><div class="sub">All five live paper tracks on one basis where noted. A record only counts days where every name got a real decision.</div></div>
-      <span id="asof" class="m mu" style="font-size:11px"></span>
+      <div><h3>Forward records</h3><div class="sub">All five live paper tracks on one basis where noted. Click a row for its curve; "compare curves" overlays every record.</div></div>
+      <div class="hdr" style="align-items:center;gap:10px"><span id="asof" class="m mu" style="font-size:11px"></span><button id="recmode" class="btn" data-recmode style="padding:6px 12px;font-size:12px">compare curves</button></div>
     </div>
-    <div class="scroll"><table style="min-width:980px"><thead><tr>
+    <div class="scroll" id="rectable"><table style="min-width:980px"><thead><tr>
       <th class="l">record</th><th class="l">basis</th><th>days</th><th class="l">window</th><th>equity</th>
       <th>total return</th><th>sharpe</th><th>max DD</th><th>vs SPY</th><th>behind</th><th>decisions</th>
     </tr></thead><tbody id="records"></tbody></table></div>
+    <div id="recoverlay" style="display:none"></div>
   </section>
 
   <section class="two" style="grid-template-columns:minmax(0,1.2fr) minmax(0,0.8fr)">
@@ -744,7 +753,7 @@ th.c,td.c{text-align:center}
 
   <section class="card">
     <h3>Equity curve · locked strategy candidate</h3><div class="sub" id="chartsub"></div>
-    <div id="chart"></div>
+    <div class="chartwrap"><div id="chart"></div><div id="charttip"></div></div>
     <div class="mu" style="margin-top:6px;font-size:11.5px">green dot = peak, red dot = trough of the max-drawdown window (shaded); dashed line = break-even.</div>
   </section>
 
@@ -761,8 +770,8 @@ th.c,td.c{text-align:center}
 
   <section class="card">
     <div class="hdr">
-      <div><h3 id="runcount"></h3><div class="sub">Every paper-trade run in the archive. Click a column to sort, a row to open.</div></div>
-      <div id="enginechips" class="chipbar"></div>
+      <div><h3 id="runcount"></h3><div class="sub">Every paper-trade run in the archive. Click a column to sort, a row to open, / to filter.</div></div>
+      <div class="hdr" style="align-items:center;gap:10px"><input id="runsearch" class="searchbox" type="search" placeholder="filter…" aria-label="filter research runs"><div id="enginechips" class="chipbar"></div></div>
     </div>
     <div class="scroll" style="border:1px solid var(--line);border-radius:12px"><table style="min-width:760px"><thead id="runcols"></thead><tbody id="runrows"></tbody></table></div>
   </section>
@@ -832,7 +841,8 @@ th.c,td.c{text-align:center}
 
 <script>
 const DATA = __DATA_JSON__;
-const ST = { engine: 'all', runSort: 'id', runDir: -1, tradeFilter: 'all', copied: -1, selectedRun: null, ledgerAll: false };
+const ST = { engine: 'all', runSort: 'id', runDir: -1, tradeFilter: 'all', copied: -1, selectedRun: null, ledgerAll: false,
+             recMode: 'table', recHidden: new Set(), expandedRec: null, runQuery: '', healthAll: false };
 const LEDGER_PREVIEW = 10;
 const $ = id => document.getElementById(id);
 
@@ -941,8 +951,24 @@ function renderChart() {
     <polygon points="${px(0).toFixed(1)},${py(lo).toFixed(1)} ${line} ${px(n - 1).toFixed(1)},${py(lo).toFixed(1)}" fill="${stroke}" opacity="0.1"/>
     ${(1 >= lo && 1 <= hi) ? `<line x1="${padL}" y1="${py(1)}" x2="${W - padR}" y2="${py(1)}" stroke="#4db8ff" stroke-dasharray="4 4" opacity="0.5"/>` : ''}
     <polyline points="${line}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linejoin="round"/>
+    <line id="ch" y1="${padT}" y2="${padT + plotH}" style="display:none"/>
     ${dot(peakI, '#05c46b')}${ddMin < 0 ? dot(ddI, '#ff5c5c') : ''}
   </svg>`;
+  // Hover crosshair: nearest day index from the x fraction (the svg preserves
+  // its 960x320 aspect, so x maps linearly across the wrap's width).
+  const wrap = document.querySelector('.chartwrap'), tip = $('charttip'), ch = $('ch');
+  wrap.onmousemove = e => {
+    const r = wrap.getBoundingClientRect();
+    if (!r.width) return;
+    const i = Math.max(0, Math.min(n - 1, Math.round((e.clientX - r.left) / r.width * (n - 1))));
+    ch.style.display = '';
+    ch.setAttribute('x1', px(i)); ch.setAttribute('x2', px(i));
+    tip.style.display = 'block';
+    tip.style.left = Math.min(e.clientX - r.left + 14, r.width - 150) + 'px';
+    tip.style.top = Math.max(e.clientY - r.top - 14, 0) + 'px';
+    tip.innerHTML = `<b>${esc(dates[i])}</b> · equity ${ys[i].toFixed(3)}×`;
+  };
+  wrap.onmouseleave = () => { tip.style.display = 'none'; ch.style.display = 'none'; };
 }
 
 function renderGuardrails() {
@@ -971,16 +997,19 @@ function renderBakeoff() {
 const RUN_COLS = [['id', 'run'], ['engine', 'engine'], ['overlay', 'overlay'], ['n', 'trades'], ['wr', 'win %'], ['pf', 'PF'], ['pnl', 'P&L'], ['ret', 'return']];
 
 function renderRuns() {
-  $('runcount').textContent = `Research runs · ${DATA.runs.length} total`;
   $('enginechips').innerHTML = chips('data-engine',
     [['all', 'all', 'var(--muted)'], ...new Set(DATA.runs.map(r => r.engine))].map(e => Array.isArray(e) ? e : [e, e, engineColor(e)]), ST.engine);
   $('runcols').innerHTML = '<tr>' + RUN_COLS.map(([k, label], i) =>
     `<th class="sortable ${i < 3 ? 'l' : ''}" data-sort="${k}">${esc(label)}<span style="color:var(--accent)">${ST.runSort === k ? (ST.runDir < 0 ? ' ↓' : ' ↑') : ''}</span></th>`).join('') + '</tr>';
 
-  const rows = DATA.runs.filter(r => ST.engine === 'all' || r.engine === ST.engine).slice().sort((a, b) => {
+  const q = ST.runQuery;
+  const rows = DATA.runs.filter(r => (ST.engine === 'all' || r.engine === ST.engine)
+    && (!q || (r.id + ' ' + r.engine + ' ' + (r.overlay || '')).toLowerCase().includes(q)))
+    .slice().sort((a, b) => {
     const av = a[ST.runSort], bv = b[ST.runSort];
-    return typeof av === 'string' ? ST.runDir * av.localeCompare(bv) : ST.runDir * (av - bv);
-  });
+      return typeof av === 'string' ? ST.runDir * av.localeCompare(bv) : ST.runDir * (av - bv);
+    });
+  $('runcount').textContent = `Research runs · ${rows.length} of ${DATA.runs.length} shown`;
   const maxAbsRet = Math.max(...rows.map(r => Math.abs(r.ret)), 0.01);
   $('runrows').innerHTML = rows.map(r => {
     const win = r.id === DATA.winScore.id;
@@ -1070,14 +1099,16 @@ function renderHealth() {
   if (!items.length) { el.innerHTML = ''; return; }
   const lvl = { ok: 'var(--up)', warn: 'var(--warn)', bad: 'var(--down)' };
   const c = lvl[DATA.healthLevel] || 'var(--line)';
-  const bad = items.filter(h => h.level !== 'ok').slice(0, 6);
-  const more = items.filter(h => h.level !== 'ok').length - bad.length;
+  const flagged = items.filter(h => h.level !== 'ok');
+  const bad = flagged.slice(0, ST.healthAll ? flagged.length : 6);
+  const more = flagged.length - bad.length;
   el.innerHTML = `<div class="note" style="border:1px solid ${c};background:var(--panel)">
     <div class="hdr" style="align-items:center;gap:10px;flex-wrap:wrap">
       <span class="tag" style="background:${c}22;color:${c}">${esc((DATA.healthLevel || 'ok').toUpperCase())}</span>
-      <span class="mu" style="font-size:12px">${bad.length
+      <span class="mu" style="font-size:12px">${flagged.length
         ? bad.map(h => `<b style="color:${lvl[h.level] || 'var(--fg)'}">${esc(h.title)}</b>${h.detail ? ` — ${esc(h.detail)}` : ''}`).join('<br>')
-          + (more > 0 ? `<br><span class="mu">+${more} more</span>` : '')
+          + (more > 0 ? `<br><span class="mu">+${more} more</span> ` : '')
+          + (flagged.length > 6 ? `<button class="btn" data-healthall style="padding:3px 10px;font-size:11px">${ST.healthAll ? 'show fewer' : `show all ${flagged.length}`}</button>` : '')
         : 'all checks passing'}</span>
     </div></div>`;
 }
@@ -1091,9 +1122,85 @@ const spark = eq => {
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block"><polyline points="${pts}" fill="none" stroke="${c}" stroke-width="1.5"/></svg>`;
 };
 
+const REC_COLORS = ['var(--up)', 'var(--accent)', 'var(--warn)', 'var(--purple)', 'var(--down)', 'var(--muted)'];
+const recColor = id => { const i = (DATA.records || []).findIndex(r => r.id === id); return REC_COLORS[i % REC_COLORS.length]; };
+
+// A standalone equity sparkline for the expanded record row: polyline +
+// min/max/last labels. Deliberately simpler than the main chart -- this is a
+// glanceable detail, not an analysis tool.
+function recDetailChart(r) {
+  const eq = r.curve && r.curve.equity, ds = r.curve && r.curve.dates;
+  if (!eq || eq.length < 2) return '<span class="mu">no equity curve recorded</span>';
+  const W = 900, H = 140, pad = 8;
+  const lo = Math.min(...eq), hi = Math.max(...eq), sp = (hi - lo) || 1;
+  const px = i => pad + (W - 2 * pad) * (i / (eq.length - 1));
+  const py = v => pad + (H - 2 * pad) * (1 - (v - lo) / sp);
+  const pts = eq.map((v, i) => `${px(i).toFixed(1)},${py(v).toFixed(1)}`).join(' ');
+  const c = eq[eq.length - 1] >= eq[0] ? 'var(--up)' : 'var(--down)';
+  const iLo = eq.indexOf(lo), iHi = eq.indexOf(hi);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">
+    <line x1="${pad}" y1="${py(1)}" x2="${W - pad}" y2="${py(1)}" stroke="#4db8ff" stroke-dasharray="3 4" opacity="0.4"/>
+    <polyline points="${pts}" fill="none" stroke="${c}" stroke-width="1.8" stroke-linejoin="round"/>
+    <circle cx="${px(iLo)}" cy="${py(lo)}" r="3" fill="var(--down)"/>
+    <circle cx="${px(iHi)}" cy="${py(hi)}" r="3" fill="var(--up)"/>
+    <text x="${pad}" y="${H - 1}" fill="#828d9b" font-size="10" font-family="'IBM Plex Mono',monospace">${esc(ds[0] || '')}</text>
+    <text x="${W - pad}" y="${H - 1}" text-anchor="end" fill="#828d9b" font-size="10" font-family="'IBM Plex Mono',monospace">${esc(ds[ds.length - 1] || '')}</text>
+    <text x="${W - pad}" y="${py(hi) - 5}" text-anchor="end" fill="#828d9b" font-size="10" font-family="'IBM Plex Mono',monospace">${hi.toFixed(3)}×</text>
+    <text x="${W - pad}" y="${py(lo) + 12}" text-anchor="end" fill="#828d9b" font-size="10" font-family="'IBM Plex Mono',monospace">${lo.toFixed(3)}×</text>
+  </svg>`;
+}
+
+// Overlay mode: every record's equity curve on one axis, x = trading-day
+// index (records have different calendar windows, so this is NOT a date
+// alignment -- the caption says so). Legend dots toggle a record off.
+function renderRecOverlay(recs) {
+  const vis = recs.filter(r => !r.missing && !ST.recHidden.has(r.id)
+    && r.curve && r.curve.equity && r.curve.equity.length > 1);
+  const legend = recs.filter(r => !r.missing).map(r =>
+    `<span class="legend-dot ${ST.recHidden.has(r.id) ? '' : 'on'}" data-rechide="${esc(r.id)}" title="toggle ${esc(r.label)}"
+       style="display:inline-flex;align-items:center;gap:6px;margin-right:14px;font-size:11.5px;cursor:pointer">
+       <span class="dot" style="color:${recColor(r.id)}"></span>${esc(r.label)}</span>`).join('');
+  if (!vis.length) {
+    $('recoverlay').innerHTML = `<div class="note mu">no record curves to overlay</div><div style="margin-top:10px">${legend}</div>`;
+    return;
+  }
+  const W = 960, H = 320, padL = 54, padR = 18, padT = 16, padB = 30;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  let lo = Infinity, hi = -Infinity, maxN = 1;
+  for (const r of vis) {
+    maxN = Math.max(maxN, r.curve.equity.length);
+    for (const v of r.curve.equity) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  }
+  const m = (hi - lo) * 0.12 || 0.01; lo -= m; hi += m;
+  const span = hi - lo || 1;
+  const px = i => padL + plotW * (i / (maxN - 1));
+  const py = v => padT + plotH * (1 - (v - lo) / span);
+  let axes = '';
+  for (let k = 0; k < 4; k++) {
+    const v = lo + span * k / 3, y = py(v);
+    axes += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#232a34" opacity="0.55"/>`
+      + `<text x="${padL - 9}" y="${y + 3.5}" text-anchor="end" fill="#828d9b" font-size="11" font-family="'IBM Plex Mono',monospace">${v.toFixed(2)}×</text>`;
+  }
+  axes += `<text x="${padL}" y="${H - 9}" fill="#828d9b" font-size="11" font-family="'IBM Plex Mono',monospace">day 0</text>`
+    + `<text x="${W - padR}" y="${H - 9}" text-anchor="end" fill="#828d9b" font-size="11" font-family="'IBM Plex Mono',monospace">day ${maxN - 1}</text>`;
+  const lines = vis.map(r => {
+    const eq = r.curve.equity, n = eq.length;
+    const pts = eq.map((v, i) => `${px(i * (maxN - 1) / (n - 1)).toFixed(1)},${py(v).toFixed(1)}`).join(' ');
+    return `<polyline points="${pts}" fill="none" stroke="${recColor(r.id)}" stroke-width="1.8" stroke-linejoin="round" opacity="0.9"/>`;
+  }).join('');
+  $('recoverlay').innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">${axes}${lines}</svg>
+    <div class="mu" style="font-size:11px;margin:8px 0 12px">x-axis is each record's own trading-day index, not calendar date -- records started on different days. Click a legend dot to hide a record.</div>
+    <div>${legend}</div>`;
+}
+
 function renderRecords() {
   const recs = DATA.records || [];
   $('asof').textContent = DATA.asOf ? `data through ${DATA.asOf}` : '';
+  $('recmode').textContent = ST.recMode === 'overlay' ? 'back to table' : 'compare curves';
+  $('rectable').style.display = ST.recMode === 'overlay' ? 'none' : '';
+  $('recoverlay').style.display = ST.recMode === 'overlay' ? '' : 'none';
+  if (ST.recMode === 'overlay') { renderRecOverlay(recs); return; }
   $('records').innerHTML = recs.map(r => {
     if (r.missing) {
       return `<tr><td class="l"><b>${esc(r.label)}</b><div class="mu" style="font-size:10.5px">${esc(r.note)}</div></td>
@@ -1107,7 +1214,8 @@ function renderRecords() {
     const behind = r.behind == null ? '—'
       : r.behind === 0 ? '<span style="color:var(--up)">current</span>'
       : `<span style="color:var(--warn)">${r.behind} behind</span>`;
-    return `<tr>
+    const open = ST.expandedRec === r.id;
+    return `<tr class="row" data-recrec="${esc(r.id)}" style="cursor:pointer">
       <td class="l"><b>${esc(r.label)}</b>${r.kind === 'agent' ? ' <span class="tag" style="background:rgba(77,184,255,.12);color:var(--accent);font-size:9.5px">AGENT</span>' : ''}
         <div class="mu" style="font-size:10.5px">${esc(r.note)}</div></td>
       <td class="l mu" style="font-size:11px">${esc(r.basis)}</td>
@@ -1119,7 +1227,12 @@ function renderRecords() {
       <td style="color:var(--down)">${r.maxDrawdown == null ? '—' : pctAbs(r.maxDrawdown, 1)}</td>
       <td>${r.spyReturn == null ? '—' : `<span style="color:${ud(r.spyReturn)}">${pct(r.spyReturn, 1)}</span>`}</td>
       <td>${behind}</td>
-      <td class="mu" style="font-size:11px">${dec}</td></tr>`;
+      <td class="mu" style="font-size:11px">${dec}</td></tr>
+    ${open ? `<tr class="recdetail"><td colspan="11" style="padding:14px 18px">
+      <div class="m mu" style="font-size:11px;margin-bottom:8px">${esc(r.id)} · equity since ${esc(r.start)} · last day ${r.lastNet == null ? '—' : pct(r.lastNet, 2)}</div>
+      ${recDetailChart(r)}
+      <div class="mu" style="font-size:11px;margin-top:8px">click the row again to collapse</div>
+    </td></tr>` : ''}`;
   }).join('') || '<tr><td colspan="11" class="l mu">no records</td></tr>';
 }
 
@@ -1254,10 +1367,14 @@ async function triggerResearchRun() {
 }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-engine],[data-sort],[data-open],[data-tradefilter],[data-ledgertoggle],[data-copy],[data-close],#trigger-btn');
+  const t = e.target.closest('[data-engine],[data-sort],[data-open],[data-tradefilter],[data-ledgertoggle],[data-copy],[data-close],[data-recmode],[data-rechide],[data-recrec],[data-healthall],#trigger-btn');
   if (!t) return;
   const d = t.dataset;
   if (d.engine) { ST.engine = d.engine; renderRuns(); }
+  else if (d.recmode != null) { ST.recMode = ST.recMode === 'overlay' ? 'table' : 'overlay'; renderRecords(); }
+  else if (d.rechide != null) { ST.recHidden.has(d.rechide) ? ST.recHidden.delete(d.rechide) : ST.recHidden.add(d.rechide); renderRecords(); }
+  else if (d.recrec != null) { ST.expandedRec = ST.expandedRec === d.recrec ? null : d.recrec; renderRecords(); }
+  else if (d.healthall != null) { ST.healthAll = !ST.healthAll; renderHealth(); }
   else if (d.sort) {
     if (ST.runSort === d.sort) ST.runDir = -ST.runDir;
     else { ST.runSort = d.sort; ST.runDir = ['id', 'engine', 'overlay'].includes(d.sort) ? 1 : -1; }
@@ -1273,7 +1390,16 @@ document.addEventListener('click', e => {
     setTimeout(() => { ST.copied = -1; renderRunbook(); }, 1400);
   } else if (d.close != null) { ST.selectedRun = null; renderDrawer(); }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && ST.selectedRun) { ST.selectedRun = null; renderDrawer(); } });
+$('runsearch').addEventListener('input', e => { ST.runQuery = e.target.value.trim().toLowerCase(); renderRuns(); });
+document.addEventListener('keydown', e => {
+  const typing = /INPUT|TEXTAREA/.test(document.activeElement && document.activeElement.tagName || '');
+  if (e.key === '/' && !typing) { e.preventDefault(); $('runsearch').focus(); }
+  else if (e.key === 'Escape') {
+    if (ST.selectedRun) { ST.selectedRun = null; renderDrawer(); }
+    else if (ST.expandedRec) { ST.expandedRec = null; renderRecords(); }
+    else if (document.activeElement === $('runsearch')) document.activeElement.blur();
+  }
+});
 
 [renderHealth, renderHeaderPills, renderVerdict, renderRecords, renderToday, renderMemory,
  renderChart, renderGuardrails, renderBakeoff, renderRuns,
