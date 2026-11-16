@@ -300,3 +300,32 @@ def test_a_rate_limit_or_parse_failure_does_not_trip_the_cutoff():
     eng = AgentEngine(complete=lambda p: next(replies), allow_short=True)
     assert eng.decide("AAA", _hist([10, 11, 12, 13, 14, 15, 16]), 0.0).status == "failed"
     assert eng.decide("AAA", _hist([10, 11, 12, 13, 14, 15, 16]), 0.0).status == "ok"
+
+
+def test_rich_features_prompt_fields_and_short_history():
+    """rich_features=True swaps the 4-field line for the technical snapshot;
+    it must still render on very short history without NaN/inf leaking into
+    the prompt (the model would just see garbage tokens)."""
+    closes = [10 + i * 0.1 for i in range(80)]
+    hist = _hist(closes)
+    hist["volume"] = [1_000_000.0] * len(closes)
+    captured = {}
+
+    def fake(prompt):
+        captured["p"] = prompt
+        return json.dumps({"target": 1, "reason": "ok"})
+
+    AgentEngine(complete=fake, allow_short=True, rich_features=True).decide(
+        "AAA", hist, 0.0)
+    p = captured["p"]
+    for field in ("ret1d=", "ret5d=", "ret20d=", "ret60d=", "vol20d=",
+                  "volratio=", "distma20=", "distma50=", "rsi14=",
+                  "volu_ratio=", "range52w=", "current_pos="):
+        assert field in p
+    assert "nan" not in p.lower() and "inf" not in p.lower()
+
+    # Two-bar history: every lookback degrades, nothing raises.
+    tiny = _hist([10.0, 11.0])
+    tiny["volume"] = [5.0, 6.0]
+    AgentEngine(complete=fake, rich_features=True).decide("BBB", tiny, 0.0)
+    assert "nan" not in captured["p"].lower()

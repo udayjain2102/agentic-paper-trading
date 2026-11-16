@@ -70,6 +70,16 @@ if [ -n "${NVIDIA_API_KEY:-}" ]; then
   # Own dir, own price cache (data/open); a failure here is non-fatal like the rest.
   python -m rhagent.open_universe \
     || tick_failed agent_open
+
+  # Sixth record: agent_v2 -- rich technical features + market context on the
+  # flagship model (nemotron-3-ultra-550b). The control records keep their
+  # original basis; this one measures whether giving the model actual market
+  # structure (returns, vol, MA distance, RSI, volume, 52w range) plus the
+  # bigger model beats the 4-field prompt on nemotron-3.5-super-vl.
+  # market_context also keeps it out of the shared memory/reflection path.
+  python -m rhagent.forward --engine agent --eval-id agent_v2 --market-context \
+    --rich-features --model nvidia/nemotron-3-ultra-550b-a55b \
+    || tick_failed agent_v2
 else
   echo "NVIDIA_API_KEY not set -- skipping agent tick"
 fi

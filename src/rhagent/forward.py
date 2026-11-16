@@ -214,10 +214,12 @@ def _append_decisions(eval_dir: Path, rows: list[dict]) -> None:
             f.write(json.dumps(r) + "\n")
 
 
-def _build_agent(cfg, *, market_context: bool = False, memory_text: str | None = None):
+def _build_agent(cfg, *, market_context: bool = False, memory_text: str | None = None,
+                 rich_features: bool = False, model: str = ""):
     """The one place forward.py constructs a production AgentEngine, so every knob in
     config.yaml reaches every call site. `memory_text` is the already-read
-    agent memory (tick_and_reflect reads it once); None means read it here."""
+    agent memory (tick_and_reflect reads it once); None means read it here.
+    `model=""` defers to cfg.agent.model."""
     from .engine import AgentEngine
     from .memory import read_memory
 
@@ -229,7 +231,8 @@ def _build_agent(cfg, *, market_context: bool = False, memory_text: str | None =
     else:
         lessons = ""
     return AgentEngine(lessons=lessons, allow_short=cfg.agent.allow_short,
-                       market_context=market_context)
+                       market_context=market_context, rich_features=rich_features,
+                       model=model)
 
 
 def _positions(cfg, engine: str, bars: dict[str, pd.DataFrame],
@@ -594,6 +597,14 @@ def main(argv: list[str] | None = None) -> int:
                         "(SPY 1d/5d, breadth, momentum rank) to every prompt. "
                         "Use with its own --eval-id (agent_ctx); never on the "
                         "control agent record.")
+    p.add_argument("--rich-features", action="store_true",
+                   help="agent only: replace the 4-field feature line with the "
+                        "full technical snapshot (returns, vol, MA distance, "
+                        "RSI, volume ratio, 52w range). Use with its own "
+                        "--eval-id; never on the control agent record.")
+    p.add_argument("--model", default="",
+                   help="agent only: override cfg.agent.model for this record "
+                        "(e.g. a different NVIDIA catalog model). Empty = config.")
     args = p.parse_args(sys.argv[1:] if argv is None else argv)
 
     cfg = load()
@@ -602,10 +613,17 @@ def main(argv: list[str] | None = None) -> int:
     engine = args.engine or cfg.strategy.name
     if args.market_context and engine != "agent":
         p.error("--market-context requires --engine agent")
+    if args.rich_features and engine != "agent":
+        p.error("--rich-features requires --engine agent")
+    if args.model and engine != "agent":
+        p.error("--model requires --engine agent")
     eval_dir = Path(args.out_dir) / (args.eval_id or engine)
     if not args.report:
-        agent = (_build_agent(cfg, market_context=True)
-                 if args.market_context else None)
+        agent = (_build_agent(cfg, market_context=args.market_context,
+                              rich_features=args.rich_features, model=args.model)
+                 if engine == "agent" and (args.market_context or args.rich_features
+                                           or args.model)
+                 else None)
         res = tick_and_reflect(cfg, eval_dir, args.cost_bps, engine=engine,
                                fill=args.fill_mode, agent=agent)
         print(f"tick: appended {res['appended']} day(s), {res['total_days']} total")

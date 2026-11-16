@@ -203,7 +203,7 @@ def test_positions_lessons_include_memory(tmp_path, monkeypatch):
     captured = {}
 
     class FakeAgent:
-        def __init__(self, lessons="", allow_short=None, market_context=False):
+        def __init__(self, lessons="", allow_short=None, market_context=False, **_):
             captured["lessons"] = lessons
 
         def decide_all(self, symbols, histories, current_pos, **_):
